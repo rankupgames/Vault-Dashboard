@@ -1,0 +1,61 @@
+/* ==========================================================================
+   drag-drop.css -- Drag handles, indicators, and dragging state
+   ========================================================================== */
+
+.vw-drag-handle {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	cursor: grab;
+	color: var(--text-faint);
+	opacity: 0;
+	transition: opacity 0.15s ease, color 0.15s ease;
+	border-radius: 4px;
+}
+
+.vw-task-row:hover .vw-drag-handle,
+.vw-git-branch-row:hover .vw-drag-handle {
+	opacity: 0.6;
+}
+
+.vw-drag-handle:hover {
+	opacity: 1 !important;
+	color: var(--text-muted);
+	background: var(--background-modifier-hover);
+}
+
+.vw-drag-handle:active {
+	cursor: grabbing;
+}
+
+.vw-drag-handle svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-drag-handle-sm {
+	width: 16px;
+	height: 16px;
+}
+
+.vw-drag-handle-sm svg {
+	width: 12px;
+	height: 12px;
+}
+
+.vw-dragging {
+	opacity: 0.25;
+}
+
+.vw-git-node.vw-drag-above,
+.vw-git-branch-wrap.vw-drag-above {
+	box-shadow: 0 -2px 0 0 var(--interactive-accent);
+}
+
+.vw-git-node.vw-drag-below,
+.vw-git-branch-wrap.vw-drag-below {
+	box-shadow: 0 2px 0 0 var(--interactive-accent);
+}

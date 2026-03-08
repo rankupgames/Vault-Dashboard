@@ -1,0 +1,98 @@
+/* ==========================================================================
+   reports.css -- Report sections, list, rows, open icon, new indicators
+   ========================================================================== */
+
+/* -- Section layout ------------------------------------------------------- */
+
+.vw-report-section {
+	margin-bottom: 8px;
+}
+
+.vw-report-section:last-child {
+	margin-bottom: 0;
+}
+
+.vw-report-section-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	padding: 4px 0 2px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	margin-bottom: 4px;
+}
+
+.vw-report-section-badge {
+	font-size: 10px;
+	font-weight: 600;
+	min-width: 16px;
+	height: 16px;
+	line-height: 16px;
+	text-align: center;
+	border-radius: 8px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	padding: 0 4px;
+}
+
+/* -- Report list ---------------------------------------------------------- */
+
+.vw-report-list {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.vw-report-row {
+	display: flex;
+	align-items: center;
+	padding: 4px 6px;
+	border-radius: 4px;
+	gap: 6px;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+/* -- New-report indicators ------------------------------------------------ */
+
+.vw-report-row.vw-report-new {
+	background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.vw-report-new-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	flex-shrink: 0;
+}
+
+.vw-report-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-report-row:hover .vw-report-open-icon {
+	color: var(--interactive-accent);
+}
+
+/* -- Title and icon ------------------------------------------------------- */
+
+.vw-report-title {
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	flex: 1;
+}
+
+.vw-report-open-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	color: var(--text-faint);
+	transition: color 0.15s ease;
+}

@@ -1,0 +1,218 @@
+/* ==========================================================================
+   timer.css -- Timer circle, display, ring, controls, buttons
+   ========================================================================== */
+
+.vw-timer-section {
+	display: flex;
+	align-items: center;
+	gap: 24px;
+	padding: 24px 20px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.vw-timer-circle {
+	position: relative;
+	width: 187px;
+	height: 187px;
+	flex-shrink: 0;
+}
+
+.vw-timer-circle svg {
+	width: 187px;
+	height: 187px;
+	transform: rotate(-90deg);
+}
+
+.vw-timer-bg {
+	fill: none;
+	stroke: var(--background-modifier-border);
+	stroke-width: 4;
+}
+
+.vw-timer-ring {
+	fill: none;
+	stroke: var(--interactive-accent);
+	stroke-width: 4;
+	stroke-linecap: round;
+	transition: stroke-dashoffset 0.25s ease;
+}
+
+.vw-timer-ring.vw-timer-negative {
+	stroke: #e05252;
+}
+
+.vw-timer-display-wrap {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+}
+
+.vw-timer-display {
+	font-size: 32px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+	line-height: 1;
+}
+
+.vw-timer-display.vw-timer-negative {
+	color: #e05252;
+}
+
+.vw-timer-mode-text {
+	display: flex;
+	align-items: center;
+	gap: 3px;
+	font-size: 9px;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: color 0.15s ease;
+	white-space: nowrap;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.vw-timer-mode-text:hover {
+	color: var(--text-normal);
+}
+
+.vw-timer-mode-icon {
+	display: flex;
+	align-items: center;
+}
+
+.vw-timer-mode-icon svg {
+	width: 10px;
+	height: 10px;
+}
+
+.vw-timer-content {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-width: 0;
+	gap: 12px;
+}
+
+.vw-timer-info {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 0;
+}
+
+.vw-timer-task-title {
+	font-size: 20px;
+	font-weight: 600;
+	line-height: 1.2;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
+}
+
+.vw-timer-next-task {
+	font-size: 13px;
+	color: var(--text-muted);
+	line-height: 1.4;
+}
+
+.vw-timer-rollover {
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+.vw-timer-rollover-positive {
+	color: #52e0a0;
+}
+
+.vw-timer-rollover-negative {
+	color: #e05252;
+}
+
+.vw-timer-rollover-clickable {
+	cursor: pointer;
+	border-radius: 4px;
+	padding: 2px 6px;
+	transition: background 0.15s ease;
+	display: inline-block;
+}
+
+.vw-timer-rollover-clickable:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-timer-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+}
+
+.vw-timer-btn {
+	padding: 8px 16px;
+	border-radius: 6px;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	transition: background 0.15s ease;
+}
+
+.vw-timer-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-timer-btn-primary {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.vw-timer-btn-primary:hover {
+	opacity: 0.85;
+}
+
+.vw-timer-ctrl {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border-radius: 6px;
+	border: none;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	padding: 0;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vw-timer-ctrl:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-timer-ctrl svg {
+	width: 21px;
+	height: 21px;
+}
+
+.vw-timer-ctrl-primary {
+	color: var(--interactive-accent);
+}
+
+.vw-timer-ctrl-primary:hover {
+	color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+

@@ -1,0 +1,347 @@
+/* ==========================================================================
+   modal.css -- Task add/edit modal, form inputs, duration stepper, actions
+   ========================================================================== */
+
+.vw-task-edit-modal h3 {
+	margin: 0 0 12px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-edit-form {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.vw-edit-label {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.vw-edit-input {
+	width: 100%;
+	padding: 6px 10px;
+	font-size: 14px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.vw-edit-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.vw-edit-textarea {
+	width: 100%;
+	padding: 6px 10px;
+	font-size: 13px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	resize: vertical;
+	font-family: var(--font-interface);
+}
+
+.vw-edit-textarea:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.vw-edit-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.vw-duration-stepper {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.vw-dur-group {
+	display: flex;
+	align-items: center;
+	gap: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+	background: var(--background-primary);
+}
+
+.vw-dur-btn {
+	width: 36px;
+	height: 36px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 18px;
+	font-weight: 500;
+	border: none;
+	background: var(--background-secondary);
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: background 0.12s ease;
+	padding: 0;
+}
+
+.vw-dur-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-dur-btn:active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.vw-dur-display {
+	min-width: 48px;
+	text-align: center;
+	font-size: 15px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-normal);
+	padding: 0 4px;
+	user-select: none;
+}
+
+/* -- Modal Subtask List --------------------------------------------------- */
+
+.vw-modal-subtask-section {
+	margin-top: 4px;
+}
+
+.vw-modal-subtask-header {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin-bottom: 6px;
+}
+
+.vw-modal-subtask-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-bottom: 6px;
+	max-height: 260px;
+	overflow-y: auto;
+}
+
+.vw-modal-subtask-list > .vw-git-branch {
+	margin-left: 0;
+}
+
+.vw-modal-subtask-list .vw-git-branch-wrap > .vw-git-branch-row::before {
+	width: calc(36px + var(--branch-dot) / 2);
+}
+
+/* -- Subtask actions (+ and x) ------------------------------------------- */
+
+.vw-modal-subtask-actions {
+	display: flex;
+	gap: 2px;
+	flex-shrink: 0;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.vw-git-branch-row:hover .vw-modal-subtask-actions {
+	opacity: 1;
+}
+
+.vw-modal-subtask-add,
+.vw-modal-subtask-remove {
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--text-faint);
+	transition: color 0.15s ease;
+}
+
+.vw-modal-subtask-add:hover {
+	color: var(--interactive-accent);
+}
+
+.vw-modal-subtask-remove:hover {
+	color: #e05252;
+}
+
+.vw-modal-subtask-add svg,
+.vw-modal-subtask-remove svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* -- Inline child input -------------------------------------------------- */
+
+.vw-modal-subtask-child-input {
+	padding: 4px 4px 4px 28px;
+}
+
+.vw-modal-subtask-input-row {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.vw-modal-subtask-input {
+	flex: 1;
+	padding: 4px 8px;
+	font-size: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+}
+
+.vw-modal-subtask-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+/* -- Linked Documents Section -------------------------------------------- */
+
+.vw-modal-docs-section {
+	margin-top: 4px;
+}
+
+.vw-modal-docs-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	margin-bottom: 6px;
+	max-height: 160px;
+	overflow-y: auto;
+}
+
+.vw-modal-docs-empty {
+	font-size: 11px;
+	color: var(--text-faint);
+	padding: 4px 0;
+	font-style: italic;
+}
+
+.vw-modal-doc-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	border-radius: 4px;
+	background: var(--background-secondary);
+}
+
+.vw-modal-doc-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-modal-doc-icon {
+	flex-shrink: 0;
+	color: var(--text-faint);
+	display: flex;
+	align-items: center;
+}
+
+.vw-modal-doc-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-modal-doc-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+	color: var(--text-accent);
+}
+
+.vw-modal-doc-name:hover {
+	text-decoration: underline;
+}
+
+.vw-modal-docs-actions {
+	display: flex;
+	gap: 6px;
+}
+
+.vw-timer-btn-sm {
+	font-size: 11px;
+	padding: 3px 8px;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.vw-btn-icon {
+	display: inline-flex;
+	align-items: center;
+}
+
+.vw-btn-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.vw-modal-docs-create-input {
+	margin-top: 6px;
+}
+
+.vw-edit-hint {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-style: italic;
+	padding: 2px 0;
+}
+
+/* -- Tag Input Wrapper & Suggestions ------------------------------------- */
+
+.vw-tag-input-wrap {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.vw-tag-input-wrap .vw-modal-subtask-input {
+	width: 100%;
+}
+
+.vw-tag-suggest {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.vw-tag-suggest-chip {
+	font-size: 10px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	cursor: pointer;
+	white-space: nowrap;
+	line-height: 1.4;
+	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.vw-tag-suggest-chip:hover {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}

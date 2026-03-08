@@ -1,0 +1,30 @@
+/* ==========================================================================
+   responsive.css -- Media queries for smaller viewports
+   ========================================================================== */
+
+@media (max-width: 800px) {
+	.vw-root {
+		grid-template-columns: 1fr;
+		grid-template-rows: auto 1fr;
+	}
+
+	.vw-right-col {
+		order: 1;
+		max-height: 50vh;
+	}
+
+	.vw-left-col {
+		order: 2;
+		border-left: none;
+		border-top: 1px solid var(--background-modifier-border);
+	}
+
+	.vw-timer-section {
+		flex-wrap: wrap;
+		gap: 12px;
+	}
+
+	.vw-heatmap-bar {
+		display: none;
+	}
+}

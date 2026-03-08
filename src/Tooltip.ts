@@ -1,0 +1,65 @@
+/*
+ * Author: Miguel A. Lopez
+ * Company: Rank Up Games LLC
+ * Project: Vault Dashboard Welcome
+ * Description: Custom tooltip system -- fast display, larger than native, positioned via fixed overlay
+ * Created: 2026-03-08
+ * Last Modified: 2026-03-08
+ */
+
+let tooltipEl: HTMLDivElement | null = null;
+
+const ensureTooltip = (): HTMLDivElement => {
+	if (tooltipEl === null) {
+		tooltipEl = document.createElement('div');
+		tooltipEl.className = 'vw-tooltip';
+		document.body.appendChild(tooltipEl);
+	}
+	return tooltipEl;
+};
+
+export const showTooltip = (anchor: HTMLElement, text: string): void => {
+	const tip = ensureTooltip();
+	tip.textContent = text;
+	tip.classList.add('vw-tooltip-visible');
+
+	const rect = anchor.getBoundingClientRect();
+	tip.style.top = `${rect.top - 6}px`;
+	tip.style.left = `${rect.left + rect.width / 2}px`;
+	tip.style.transform = 'translate(-50%, -100%)';
+
+	requestAnimationFrame(() => {
+		const tipRect = tip.getBoundingClientRect();
+		if (tipRect.left < 4) {
+			tip.style.left = `${4 + tipRect.width / 2}px`;
+		} else if (tipRect.right > window.innerWidth - 4) {
+			tip.style.left = `${window.innerWidth - 4 - tipRect.width / 2}px`;
+		}
+		if (tipRect.top < 4) {
+			tip.style.top = `${rect.bottom + 6}px`;
+			tip.style.transform = 'translate(-50%, 0)';
+		}
+	});
+};
+
+export const hideTooltip = (): void => {
+	if (tooltipEl) {
+		tooltipEl.classList.remove('vw-tooltip-visible');
+	}
+};
+
+export const attachOverflowTooltip = (el: HTMLElement, text: string): void => {
+	el.addEventListener('mouseenter', () => {
+		if (el.scrollWidth > el.clientWidth) {
+			showTooltip(el, text);
+		}
+	});
+	el.addEventListener('mouseleave', hideTooltip);
+};
+
+export const destroyTooltip = (): void => {
+	if (tooltipEl) {
+		tooltipEl.remove();
+		tooltipEl = null;
+	}
+};

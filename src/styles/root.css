@@ -1,0 +1,70 @@
+/* ==========================================================================
+   root.css -- Root layout and column structure
+   ========================================================================== */
+
+.vw-root {
+	--vw-bg: var(--background-primary);
+	--vw-bg-secondary: var(--background-secondary);
+	--vw-text: var(--text-normal);
+	--vw-text-muted: var(--text-muted);
+	--vw-text-faint: var(--text-faint);
+	--vw-accent: var(--interactive-accent);
+	--vw-accent-hover: var(--interactive-accent-hover);
+	--vw-border: var(--background-modifier-border);
+	--vw-hover: var(--background-modifier-hover);
+	--vw-success: var(--color-green, #52e0a0);
+	--vw-danger: var(--color-red, #e05252);
+	--vw-on-accent: var(--text-on-accent);
+
+	display: grid;
+	grid-template-columns: 2fr 1fr;
+	height: 100%;
+	overflow: hidden;
+	background: var(--vw-bg);
+	color: var(--vw-text);
+	font-family: var(--font-interface);
+}
+
+/* -- Left Column (Scrollable Modules) ------------------------------------- */
+
+.vw-left-col {
+	overflow-y: auto;
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+.vw-module-area {
+	padding: 10px;
+}
+
+.vw-module-grid {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+}
+
+/* -- Right Column (Fixed Timer + Tasks + Timeline) ------------------------ */
+
+.vw-right-col {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+/* -- Top Bar (Timer + Heatmap side by side) ------------------------------- */
+
+.vw-top-bar {
+	display: flex;
+	align-items: stretch;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.vw-top-bar > .vw-timer-section {
+	border-bottom: none;
+	flex: 6;
+	min-width: 0;
+}
+
+.vw-top-bar > .vw-heatmap-bar {
+	flex: 4;
+}

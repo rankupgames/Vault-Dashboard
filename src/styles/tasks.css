@@ -1,0 +1,513 @@
+/* ==========================================================================
+   tasks.css -- Task timeline header, rows, actions, duration, states
+   ========================================================================== */
+
+.vw-tasks-timeline {
+	display: flex;
+	flex-direction: column;
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.vw-tasks-timeline-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 10px 20px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	flex-shrink: 0;
+}
+
+.vw-tasks-timeline-body {
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.vw-tasks-pane {
+	overflow-y: auto;
+	overflow-x: hidden;
+	padding: 8px 16px;
+	height: 100%;
+}
+
+.vw-tasks-title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.vw-tasks-collapse-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	height: 22px;
+	cursor: pointer;
+	color: var(--text-faint);
+	border-radius: 4px;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vw-tasks-collapse-toggle:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-tasks-collapse-toggle svg {
+	width: 13px;
+	height: 13px;
+}
+
+.vw-tasks-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.vw-header-divider {
+	width: 1px;
+	height: 16px;
+	background: var(--background-modifier-border);
+	margin: 0 4px;
+	flex-shrink: 0;
+}
+
+.vw-tasks-add-btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 12px;
+	cursor: pointer;
+	color: var(--interactive-accent);
+	padding: 2px 8px;
+	border-radius: 4px;
+}
+
+.vw-tasks-add-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-tasks-add-btn:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-tasks-clear-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	cursor: pointer;
+	color: var(--text-faint);
+	border-radius: 4px;
+	transition: color 0.15s ease;
+}
+
+.vw-tasks-clear-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-tasks-clear-btn-danger:hover {
+	color: #e05252;
+	background: rgba(224, 82, 82, 0.1);
+}
+
+.vw-tasks-clear-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-task-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 8px 10px;
+	border-radius: 4px;
+	margin-bottom: 0;
+	cursor: pointer;
+}
+
+.vw-task-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-task-row.vw-task-active {
+	background: rgba(100, 220, 200, 0.08);
+	border-left: 3px solid var(--interactive-accent);
+}
+
+.vw-task-duration {
+	font-size: 12px;
+	font-weight: 600;
+	padding: 3px 8px;
+	border-radius: 4px;
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.vw-task-active .vw-task-duration {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.vw-task-name {
+	flex: 1;
+	min-width: 0;
+	font-size: 15px;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+
+.vw-task-actions {
+	display: flex;
+	gap: 4px;
+	flex-shrink: 0;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.vw-task-row:hover .vw-task-actions,
+.vw-task-active .vw-task-actions {
+	opacity: 1;
+}
+
+.vw-task-action-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 26px;
+	height: 26px;
+	padding: 0;
+	border-radius: 4px;
+	cursor: pointer;
+	border: none;
+	background: transparent;
+	color: var(--text-faint);
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vw-task-action-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-task-action-btn-danger:hover {
+	color: #e05252;
+	background: rgba(224, 82, 82, 0.1);
+}
+
+.vw-task-action-btn-disabled {
+	opacity: 0.25;
+	pointer-events: none;
+}
+
+.vw-task-action-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-task-completed {
+	opacity: 0.4;
+	text-decoration: line-through;
+}
+
+/* -- Header layout with tag filter --------------------------------------- */
+
+.vw-tasks-header-left {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+/* -- Custom Tag Dropdown ------------------------------------------------- */
+
+.vw-tag-dropdown {
+	position: relative;
+}
+
+.vw-tag-dropdown-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 3px 8px 3px 6px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.vw-tag-dropdown-trigger:hover {
+	border-color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.vw-tag-dropdown-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.vw-tag-dropdown-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.vw-tag-dropdown-label {
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+.vw-tag-dropdown-chevron {
+	display: flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.vw-tag-dropdown-chevron svg {
+	width: 10px;
+	height: 10px;
+}
+
+.vw-tag-dropdown-menu {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+	overflow: hidden;
+	min-width: 140px;
+	padding: 4px;
+}
+
+.vw-tag-dropdown-item {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	font-size: 12px;
+	color: var(--text-normal);
+	cursor: pointer;
+	border-radius: 4px;
+	transition: background 0.1s ease;
+}
+
+.vw-tag-dropdown-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-tag-dropdown-item-active {
+	color: var(--interactive-accent);
+	font-weight: 600;
+}
+
+.vw-tag-dropdown-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--interactive-accent);
+	flex-shrink: 0;
+}
+
+/* -- Task Name Wrap (for est/actual subtitle) ---------------------------- */
+
+.vw-task-name-wrap {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.vw-task-name-wrap .vw-task-name {
+	flex: none;
+}
+
+.vw-task-est-actual {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+/* -- Tag Pills ----------------------------------------------------------- */
+
+.vw-tag-pills {
+	display: flex;
+	gap: 3px;
+	flex-shrink: 0;
+	flex-wrap: wrap;
+}
+
+.vw-tag-pill {
+	font-size: 10px;
+	padding: 1px 6px;
+	border-radius: 10px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	white-space: nowrap;
+	line-height: 1.4;
+}
+
+.vw-tag-pill-removable {
+	cursor: pointer;
+}
+
+.vw-tag-pill-removable:hover {
+	opacity: 0.7;
+}
+
+/* -- Archive Section ----------------------------------------------------- */
+
+.vw-archive-section {
+	margin-top: 16px;
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 8px;
+}
+
+.vw-archive-header {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-faint);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	margin-bottom: 6px;
+}
+
+.vw-archive-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 4px 10px;
+	border-radius: 4px;
+}
+
+.vw-archive-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* -- Export Menu ---------------------------------------------------------- */
+
+.vw-export-menu {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	overflow: hidden;
+	min-width: 160px;
+}
+
+.vw-export-menu-item {
+	padding: 8px 12px;
+	font-size: 13px;
+	cursor: pointer;
+	color: var(--text-normal);
+}
+
+.vw-export-menu-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+/* -- Linked Docs Badge --------------------------------------------------- */
+
+.vw-task-docs-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 2px 6px;
+	border-radius: 10px;
+	background: var(--background-secondary);
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: background 0.15s ease;
+}
+
+.vw-task-docs-badge:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-task-docs-badge-icon {
+	display: flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.vw-task-docs-badge-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+.vw-task-docs-badge-count {
+	font-size: 10px;
+	font-weight: 600;
+	color: var(--text-muted);
+}
+
+/* -- Linked Docs Popover ------------------------------------------------- */
+
+.vw-docs-popover {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+	overflow: hidden;
+	min-width: 180px;
+	max-width: 300px;
+}
+
+.vw-docs-popover-header {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	padding: 8px 12px 4px;
+}
+
+.vw-docs-popover-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 12px;
+	cursor: pointer;
+}
+
+.vw-docs-popover-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-docs-popover-icon {
+	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.vw-docs-popover-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-docs-popover-link {
+	font-size: 13px;
+	color: var(--text-accent);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-docs-popover-link:hover {
+	text-decoration: underline;
+}

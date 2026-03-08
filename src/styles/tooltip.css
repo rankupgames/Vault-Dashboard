@@ -1,0 +1,26 @@
+/* ==========================================================================
+   tooltip.css -- Custom fast tooltip, 150% larger than native browser tooltip
+   ========================================================================== */
+
+.vw-tooltip {
+	position: fixed;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	color: var(--text-normal);
+	font-size: 15px;
+	line-height: 1.4;
+	padding: 10px 16px;
+	border-radius: 8px;
+	max-width: 400px;
+	white-space: normal;
+	word-break: break-word;
+	z-index: 10000;
+	pointer-events: none;
+	opacity: 0;
+	transition: opacity 0.08s ease;
+	box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.vw-tooltip-visible {
+	opacity: 1;
+}

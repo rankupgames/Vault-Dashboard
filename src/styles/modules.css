@@ -1,0 +1,107 @@
+/* ==========================================================================
+   modules.css -- Module card, header, collapse, refresh, body, empty state
+   ========================================================================== */
+
+.vw-module-card {
+	background: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	overflow: hidden;
+	transition: all 0.15s ease;
+}
+
+.vw-module-card.vw-module-collapsed {
+	overflow: hidden;
+}
+
+.vw-module-card.vw-module-collapsed .vw-module-header {
+	border-bottom: none;
+}
+
+.vw-module-card.vw-module-collapsed .vw-module-body {
+	display: none !important;
+	padding: 0;
+	margin: 0;
+	height: 0;
+	overflow: hidden;
+}
+
+.vw-module-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 8px 12px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	cursor: pointer;
+	user-select: none;
+	transition: background 0.1s ease;
+}
+
+.vw-module-header:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-module-title {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.vw-module-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+}
+
+.vw-module-refresh {
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: color 0.1s ease, background 0.1s ease;
+}
+
+.vw-module-refresh:hover {
+	color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.vw-module-refresh svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-module-collapse {
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	color: var(--text-muted);
+}
+
+.vw-module-collapse svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-module-body {
+	padding: 10px 12px;
+	max-height: 220px;
+	overflow-y: auto;
+}
+
+.vw-module-empty {
+	color: var(--text-faint);
+	font-size: 12px;
+	font-style: italic;
+	padding: 8px 0;
+	text-align: center;
+}

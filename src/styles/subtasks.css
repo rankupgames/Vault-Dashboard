@@ -1,0 +1,36 @@
+/* ==========================================================================
+   subtasks.css -- Subtask rows, inline forms, actions, collapse toggle
+   ========================================================================== */
+
+.vw-subtask-row {
+	flex: 1;
+	min-width: 0;
+	font-size: 15px;
+	color: var(--text-normal);
+}
+
+.vw-subtask-text {
+	display: block;
+	border-radius: 2px;
+	padding: 0 2px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-subtask-completed {
+	opacity: 0.4;
+	text-decoration: line-through;
+}
+
+/* -- Editable text (modal context) ---------------------------------------- */
+
+.vw-subtask-text-editable {
+	cursor: pointer;
+}
+
+.vw-subtask-text-editable:hover {
+	text-decoration: underline;
+	text-decoration-style: dotted;
+}
+

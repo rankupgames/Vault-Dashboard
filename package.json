@@ -1,0 +1,27 @@
+{
+	"name": "vault-welcome",
+	"version": "0.1.0",
+	"description": "Interactive productivity welcome dashboard for Obsidian",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "node esbuild.config.mjs production",
+		"preview": "node esbuild.dev.mjs"
+	},
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"dashboard",
+		"timer",
+		"productivity"
+	],
+	"author": "Miguel A. Lopez",
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"builtin-modules": "^4.0.0",
+		"esbuild": "^0.24.0",
+		"obsidian": "latest",
+		"typescript": "^5.6.0"
+	}
+}

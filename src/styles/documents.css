@@ -1,0 +1,92 @@
+/* ==========================================================================
+   documents.css -- Document list, links, quick access toolbar
+   ========================================================================== */
+
+.vw-doc-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.vw-doc-row {
+	display: flex;
+	align-items: center;
+	padding: 4px 6px;
+	gap: 6px;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: background 0.15s ease;
+}
+
+.vw-doc-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-doc-row:hover .vw-doc-open-icon {
+	color: var(--interactive-accent);
+}
+
+.vw-doc-link {
+	font-size: 12px;
+	flex: 1;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-doc-open-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+	color: var(--text-faint);
+	transition: color 0.15s ease;
+}
+
+.vw-doc-missing {
+	opacity: 0.4;
+}
+
+.vw-doc-remove {
+	cursor: pointer;
+	color: var(--text-faint);
+	padding: 0 4px;
+	display: flex;
+	align-items: center;
+}
+
+.vw-doc-remove svg {
+	width: 12px;
+	height: 12px;
+}
+
+.vw-doc-remove:hover {
+	color: #e05252;
+}
+
+/* -- Quick Access Toolbar ------------------------------------------------- */
+
+.vw-quick-access-toolbar {
+	display: flex;
+	justify-content: flex-end;
+	margin-bottom: 6px;
+}
+
+.vw-quick-access-add {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 11px;
+	cursor: pointer;
+	color: var(--interactive-accent);
+	padding: 2px 8px;
+	border-radius: 4px;
+}
+
+.vw-quick-access-add svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-quick-access-add:hover {
+	background: var(--background-modifier-hover);
+}
