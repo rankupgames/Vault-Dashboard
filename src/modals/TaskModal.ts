@@ -113,23 +113,12 @@ export class TaskModal extends Modal {
 			attr: { type: 'text', value: this.task?.title ?? '', placeholder: 'Task title' },
 		});
 
-		const descToggle = form.createDiv({ cls: 'vw-edit-label vw-edit-label-toggle' });
-		const descChevron = descToggle.createSpan({ cls: 'vw-edit-label-chevron' });
-		setIcon(descChevron, this.task?.description ? 'chevron-down' : 'chevron-right');
-		descToggle.createSpan({ text: 'Description' });
-		const descWrap = form.createDiv({ cls: 'vw-desc-wrap' });
-		const descInput = descWrap.createEl('textarea', {
+		form.createDiv({ cls: 'vw-edit-label', text: 'Description' });
+		const descInput = form.createEl('textarea', {
 			cls: 'vw-edit-textarea',
 			attr: { rows: '3', placeholder: 'Optional description (used as AI instruction context)' },
 		});
 		descInput.value = this.task?.description ?? '';
-		if (!this.task?.description) descWrap.style.display = 'none';
-
-		descToggle.addEventListener('click', () => {
-			const hidden = descWrap.style.display === 'none';
-			descWrap.style.display = hidden ? '' : 'none';
-			setIcon(descChevron, hidden ? 'chevron-down' : 'chevron-right');
-		});
 
 		form.createDiv({ cls: 'vw-edit-label', text: 'Duration' });
 		const durRow = form.createDiv({ cls: 'vw-duration-stepper' });
@@ -138,7 +127,6 @@ export class TaskModal extends Modal {
 
 		const hoursDisplay = durRow.createDiv({ cls: 'vw-dur-display' });
 		const minsDisplay = durRow.createDiv({ cls: 'vw-dur-display' });
-
 		const updateDurDisplay = (): void => {
 			hoursDisplay.setText(`${durHours}h`);
 			minsDisplay.setText(`${durMins}m`);
@@ -170,7 +158,9 @@ export class TaskModal extends Modal {
 
 		durRow.empty();
 		buildStepper(hoursDisplay, 'h', (d) => stepHours(d));
+		durRow.createDiv({ cls: 'vw-dur-sep', text: ':' });
 		buildStepper(minsDisplay, 'm', (d) => stepMins(d * 5));
+		updateDurDisplay();
 
 		form.createDiv({ cls: 'vw-edit-label', text: 'Tags' });
 		this.tagListEl = form.createDiv({ cls: 'vw-tag-pills' });
@@ -299,13 +289,11 @@ export class TaskModal extends Modal {
 		imgAddBtn.addEventListener('click', (e) => {
 			e.preventDefault();
 			new FileSuggestModal(this.app, (file: TFile) => {
-				const ext = file.extension.toLowerCase();
-				if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext) === false) return;
 				if (this.pendingImages.includes(file.path) === false) {
 					this.pendingImages.push(file.path);
 					renderImagesList();
 				}
-			}).open();
+			}, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp']).open();
 		});
 
 		const subtaskSection = form.createDiv({ cls: 'vw-modal-subtask-section' });

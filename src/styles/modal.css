@@ -113,6 +113,14 @@
 	user-select: none;
 }
 
+.vw-dur-sep {
+	font-size: 18px;
+	font-weight: 300;
+	color: var(--text-muted);
+	user-select: none;
+}
+
+
 /* -- Modal Subtask List --------------------------------------------------- */
 
 .vw-modal-subtask-section {

@@ -9,6 +9,8 @@
 
 import { App, Modal, setIcon } from 'obsidian';
 import { Task, PluginSettings } from '../types';
+import { ConfirmModal } from './ConfirmModal';
+import { renderTagPills } from '../Tooltip';
 
 export class ArchiveDetailModal extends Modal {
 	private task: Task;
@@ -53,12 +55,7 @@ export class ArchiveDetailModal extends Modal {
 		}
 
 		if (this.task.tags && this.task.tags.length > 0) {
-			const tagArea = contentEl.createDiv({ cls: 'vw-tag-pills' });
-			for (const tag of this.task.tags) {
-				const pill = tagArea.createSpan({ cls: 'vw-tag-pill', text: tag });
-				const color = this.settings.tagColors[tag];
-				if (color) pill.style.backgroundColor = color;
-			}
+			renderTagPills(contentEl, this.task.tags, this.settings.tagColors, this.task.tags.length);
 		}
 
 		if (this.task.description) {
@@ -82,8 +79,10 @@ export class ArchiveDetailModal extends Modal {
 		setIcon(deleteIcon, 'trash-2');
 		deleteBtn.createSpan({ text: ' Delete' });
 		deleteBtn.addEventListener('click', () => {
-			this.close();
-			this.onDelete();
+			new ConfirmModal(this.app, 'Delete Archived Task', `Permanently delete "${this.task.title}" from the archive?`, () => {
+				this.close();
+				this.onDelete();
+			}, 'Delete').open();
 		});
 
 		const cancelBtn = actions.createEl('button', { text: 'Close' });

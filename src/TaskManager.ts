@@ -282,6 +282,21 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	autoArchiveStale(days: number): void {
+		if (days <= 0) return;
+		const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+		const stale = this.tasks.filter((t) =>
+			(t.status === 'completed' || t.status === 'skipped') && t.completedAt !== undefined && t.completedAt <= cutoff,
+		);
+		if (stale.length === 0) return;
+		this.pushUndo();
+		this.archivedTasks.push(...stale);
+		const staleIds = new Set(stale.map((t) => t.id));
+		this.tasks = this.tasks.filter((t) => staleIds.has(t.id) === false);
+		this.reindex();
+		this.emitChange();
+	}
+
 	restoreFromArchive(id: string): void {
 		const idx = this.archivedTasks.findIndex((t) => t.id === id);
 		if (idx === -1) return;

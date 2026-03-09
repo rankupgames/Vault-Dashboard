@@ -42,6 +42,7 @@ export default class VaultWelcomePlugin extends Plugin {
 			this.data.settings,
 		);
 		this.taskManager = new TaskManager(this.data.tasks, this.data.archivedTasks, this.data.settings);
+		this.taskManager.autoArchiveStale(this.data.settings.autoArchiveDays);
 		this.audioService = new AudioService(this.data.settings);
 
 		this.addSettingTab(new SettingsTab(this.app, this));

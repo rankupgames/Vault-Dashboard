@@ -63,7 +63,7 @@ const renderReportRow = (list: HTMLElement, report: ReportEntry, scanner: Report
 	const row = list.createDiv({ cls: rowCls });
 
 	if (report.isNew) {
-		row.createSpan({ cls: 'vw-report-new-dot' });
+		row.createSpan({ cls: 'vw-report-new-badge', text: 'new' });
 	}
 
 	row.createSpan({ cls: 'vw-report-title', text: report.title });
@@ -74,7 +74,7 @@ const renderReportRow = (list: HTMLElement, report: ReportEntry, scanner: Report
 	row.addEventListener('click', () => {
 		scanner.openReport(report.file);
 		row.removeClass('vw-report-new');
-		row.querySelector('.vw-report-new-dot')?.remove();
+		row.querySelector('.vw-report-new-badge')?.remove();
 	});
 };
 

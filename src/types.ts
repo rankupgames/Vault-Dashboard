@@ -107,6 +107,7 @@ export interface PluginSettings {
 	enableMultiTagFilter: boolean;
 	enableImageAttachments: boolean;
 	showConfirmDialogs: boolean;
+	autoArchiveDays: number;
 }
 
 export interface PluginData {
@@ -168,6 +169,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableMultiTagFilter: true,
 	enableImageAttachments: true,
 	showConfirmDialogs: true,
+	autoArchiveDays: 0,
 };
 
 export const DEFAULT_DATA: PluginData = {

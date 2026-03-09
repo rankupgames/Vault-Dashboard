@@ -31,12 +31,7 @@
 	width: 16px;
 	align-self: stretch;
 	flex-shrink: 0;
-	cursor: grab;
 	padding-top: 13px;
-}
-
-.vw-task-left-controls:active {
-	cursor: grabbing;
 }
 
 .vw-git-node-content {

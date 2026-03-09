@@ -25,10 +25,11 @@ export class AnalyticsExporter {
 		return [header, ...rows].join('\n');
 	}
 
-	static async exportToDailyNote(app: App, tasks: Task[]): Promise<void> {
+	static async exportToDailyNote(app: App, tasks: Task[], dailyNotesFolder = '_DailyNotes'): Promise<void> {
 		const today = new Date();
 		const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-		const notePath = `_DailyNotes/${dateStr}.md`;
+		const folder = dailyNotesFolder.replace(/\/+$/, '');
+		const notePath = `${folder}/${dateStr}.md`;
 
 		const completed = tasks.filter((t) => t.status === 'completed');
 		if (completed.length === 0) return;

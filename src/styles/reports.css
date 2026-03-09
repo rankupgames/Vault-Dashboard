@@ -63,12 +63,17 @@
 	background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
 }
 
-.vw-report-new-dot {
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
+.vw-report-new-badge {
+	font-size: 8px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-on-accent);
 	background: var(--interactive-accent);
+	padding: 1px 5px;
+	border-radius: 4px;
 	flex-shrink: 0;
+	line-height: 1.4;
 }
 
 .vw-report-row:hover {

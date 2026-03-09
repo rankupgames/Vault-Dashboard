@@ -35,22 +35,44 @@ The dashboard is designed to be the first thing you see when you open your vault
 
 ### Sub-Task Tree (Git-Tree View)
 - Nest subtasks up to 4 levels deep under any parent task
-- Visual branch and connector layout with depth-colored lines
+- Visual branch and connector layout with depth-colored lines (customizable branch color)
 - Collapsible branches, inline completion toggling, and drag-to-reorder
 
 ### Task Tags and Templates
 - Freeform color-coded labels for filtering and grouping (e.g. "deep work", "standup")
+- **Multi-tag filter**: Select multiple tags to narrow the task list at once (toggle in settings)
 - Save and reuse task templates (title, duration, subtasks, tags) for recurring work
 
-### Linked Documents
+### Linked Documents and Image Attachments
 - Attach vault documents to any task for context, notes, or specs
 - **Link existing**: Fuzzy-search file picker to attach any markdown file in your vault
 - **Create new**: Type a path (e.g. `Notes/Sprint 4/Design Doc`) to create and link a file in one step -- folders are auto-created
 - Linked docs show as a badge with count on the task row; click to open a popover with direct links
+- **Image attachments**: Attach images to tasks via a filtered file picker (toggle in settings)
 
 ### Task Import from Notes
 - Scan any note's checklists and selectively import items as dashboard tasks
 - File picker with preview and selective import modal
+
+### Archive and Auto-Archive
+- Completed and skipped tasks move to the archive
+- **Archive detail modal**: Click any archived task to view full details, then restore or permanently delete
+- **Auto-archive**: Automatically archive stale tasks after a configurable number of days (0 = disabled)
+- Archive displayed as a card grid with tag pills and timestamps
+
+### Confirmation Dialogs
+- Destructive actions (reset all, delete archived, remove task, start over active timer) prompt a confirmation modal
+- **Start confirmation**: Starting a task while another is running offers Start Now, Queue Next, or Cancel
+- Dialogs can be globally disabled in settings
+
+### AI Integration
+- Optional integration with **Cursor CLI** or **Claude Code CLI** for AI-assisted task management
+- **AI auto-organize**: Suggest tags and position when creating a task
+- **AI auto-order**: Reorder pending tasks by priority from the timeline header
+- **AI auto-scheduler**: Suggest durations for tasks without estimates
+- **AI delegation**: Dispatch a task (with linked docs and images as context) to a CLI tool for execution
+- Writes a temporary prompt file (`_vault-welcome-ai-prompt.md`) and invokes the configured CLI
+- All AI features are individually toggleable; set to `none` to disable entirely
 
 ### Heatmap Tracker
 - GitHub-style contribution grid built from completed tasks and daily note task tags
@@ -63,13 +85,17 @@ The left column is a container of independent widget panels:
 
 | Module | Description |
 |--------|-------------|
-| **Daily Reports** | Lists daily trend reports from configurable vault folders |
-| **Weekly Reports** | Lists weekly job reports from configurable vault folders |
+| **Interview Prep** | Daily interview prep reports |
+| **Daily Trends** | Daily trend reports |
+| **Local Leads** | Daily local lead reports |
+| **App Store Intel** | Daily app store intelligence reports |
+| **Jobs Report** | Weekly job market reports |
+| **Competitor Watch** | Weekly competitor analysis reports |
 | **Last Opened Documents** | Shows recently opened vault files |
 | **Quick Access Documents** | User-pinned file shortcuts (also available via file context menu) |
 | **Heatmap Tracker** | Contribution grid with streak and stat counters |
 
-Each module is collapsible, independently scrollable, and drag-to-reorderable.
+Report modules are powered by a configurable `reportBasePath` setting. Each module is collapsible, independently scrollable, and drag-to-reorderable.
 
 ### Custom Module API
 Other Obsidian plugins can register their own widget panels:
@@ -138,50 +164,54 @@ Start at 6:12, 30 min task, snap = 30 min:
 
 ```
 src/
-  main.ts                -- Plugin lifecycle, commands, ribbon, pinned tab, deep link, module API
-  types.ts               -- Shared interfaces and defaults
-  WelcomeView.ts         -- Main ItemView rendering the dashboard layout
-  TimerEngine.ts         -- Clock-aligned countdown with rollover + pomodoro mode
-  TaskManager.ts         -- Task CRUD, ordering, archiving, tags, templates, undo/redo
-  UndoManager.ts         -- Snapshot-based undo/redo stack for task mutations
-  AudioService.ts        -- Web Audio API tone generator for notifications
-  ModuleContainer.ts     -- Widget registry, grid renderer, drag-and-drop reorder
-  SettingsTab.ts         -- Plugin settings UI (general, timer, audio, heatmap, modules)
-  ColorUtils.ts          -- Hex/HSL conversion, heatmap and branch shade generators
-  Tooltip.ts             -- Custom tooltip and overflow detection
-  ReportScanner.ts       -- Scans report folders, detects new reports since last open
-  DocumentTracker.ts     -- Recent files and quick-access path resolution
+  main.ts                  -- Plugin lifecycle, commands, ribbon, pinned tab, deep link, module API
+  types.ts                 -- Shared interfaces and defaults
+  WelcomeView.ts           -- Main ItemView rendering the dashboard layout
+  TimerEngine.ts           -- Clock-aligned countdown with rollover + pomodoro mode
+  TaskManager.ts           -- Task CRUD, ordering, archiving, tags, templates, undo/redo
+  UndoManager.ts           -- Snapshot-based undo/redo stack for task mutations
+  AudioService.ts          -- Web Audio API tone generator for notifications
+  ModuleContainer.ts       -- Widget registry, grid renderer, drag-and-drop reorder
+  SettingsTab.ts           -- Plugin settings UI (general, timer, audio, heatmap, AI, modules)
+  ColorUtils.ts            -- Hex/HSL conversion, heatmap and branch shade generators
+  Tooltip.ts               -- Custom tooltip, overflow detection, shared tag pill renderer
+  ReportScanner.ts         -- Scans report folders, detects new reports since last open
+  DocumentTracker.ts       -- Recent files and quick-access path resolution
   components/
-    TimerSection.ts      -- Timer circle UI, SVG ring, controls, pomodoro dots
-    HeatmapBar.ts        -- Contribution heatmap with streak counter and summary stats
-    TaskTimeline.ts      -- Task list with git-tree, tag filter, archive, export, undo/redo
-    SubtaskTree.ts       -- Subtask branch rendering with collapse and completion
-    ModuleCard.ts        -- Card wrapper for module renderers with drag handle
-    OnboardingOverlay.ts -- 4-step inline walkthrough for first-run
+    TimerSection.ts        -- Timer circle UI, SVG ring, controls, pomodoro dots
+    HeatmapBar.ts          -- Contribution heatmap with streak counter and summary stats
+    TaskTimeline.ts        -- Task list with git-tree, tag filter, archive, export, undo/redo
+    SubtaskTree.ts         -- Subtask branch rendering with collapse and completion
+    ModuleCard.ts          -- Card wrapper for module renderers with drag handle
+    OnboardingOverlay.ts   -- 4-step inline walkthrough for first-run
   modals/
-    TaskModal.ts         -- Add/edit task modal with tags, templates, subtasks, linked docs
-    ImportModal.ts       -- Note checklist scanner with preview and selective import
-    FileSuggestModal.ts  -- Fuzzy vault file picker for document linking
+    TaskModal.ts           -- Add/edit task modal with tags, templates, subtasks, linked docs
+    ImportModal.ts         -- Note checklist scanner with preview and selective import
+    FileSuggestModal.ts    -- Fuzzy vault file picker for document and image linking
+    ArchiveDetailModal.ts  -- Archived task detail view with restore and delete actions
+    ConfirmModal.ts        -- Reusable confirmation modal for destructive actions
+    ConfirmStartModal.ts   -- Start-while-active prompt (Start Now / Queue Next / Cancel)
   modules/
-    ReportModule.ts      -- Daily and weekly report listing with configurable sources
-    DocumentModule.ts    -- Last opened and quick access document panels
+    ReportModule.ts        -- Sectioned report listing with six configurable sources
+    DocumentModule.ts      -- Last opened and quick access document panels
   services/
-    AnalyticsExporter.ts -- CSV and daily note export
-    TaskImporter.ts      -- Scan note checklists for importable tasks
+    AnalyticsExporter.ts   -- CSV and daily note export
+    TaskImporter.ts        -- Scan note checklists for importable tasks
+    AIDispatcher.ts        -- AI context assembler and CLI dispatcher (Cursor / Claude Code)
   styles/
-    root.css             -- CSS variables, grid layout, column structure
-    timer.css            -- Timer circle, ring, display, controls
-    heatmap.css          -- Heatmap grid, cells, legend, color scales, streaks, stats
-    tasks.css            -- Task rows, actions, tags, archive, export, linked docs
-    git-tree.css         -- Trunk, nodes, dots, branches, depth colors
-    subtasks.css         -- Subtask rows, inline forms, editable text
-    modules.css          -- Module card, header, collapse, refresh
-    reports.css          -- Report sections, lists, new-report indicators
-    documents.css        -- Document list, links, quick access toolbar
-    modal.css            -- Task modal form, duration stepper, subtasks, linked docs
-    drag-drop.css        -- Drag handles, indicators, dragging state
-    tooltip.css          -- Custom tooltip layout
-    responsive.css       -- Media queries for mobile (<800px)
+    root.css               -- CSS variables, grid layout, column structure
+    timer.css              -- Timer circle, ring, display, controls
+    heatmap.css            -- Heatmap grid, cells, legend, color scales, streaks, stats
+    tasks.css              -- Task rows, actions, tags, archive grid, export, linked docs
+    git-tree.css           -- Trunk, nodes, dots, branches, depth colors
+    subtasks.css           -- Subtask rows, inline forms, editable text
+    modules.css            -- Module card, header, collapse, refresh
+    reports.css            -- Report sections, lists, new-report indicators
+    documents.css          -- Document list, links, quick access toolbar
+    modal.css              -- Task modal, confirmation dialogs, archive detail
+    drag-drop.css          -- Drag handles, indicators, dragging state
+    tooltip.css            -- Custom tooltip layout
+    responsive.css         -- Media queries for mobile (<800px)
 ```
 
 ### Data Flow
@@ -211,7 +241,19 @@ All persistent state lives in `data.json` (managed by Obsidian's plugin data API
 | `settings.pomodoroLongBreakInterval` | Sessions before long break (default 4) |
 | `settings.hasSeenOnboarding` | Whether the user dismissed the first-run walkthrough |
 | `settings.moduleOrder[]` | Persisted module panel ordering |
-| `tasks[]` | Task list with status, duration, timestamps, tags, sub-tasks, linked docs |
+| `settings.aiTool` | AI CLI tool: `'cursor'`, `'claude-code'`, or `'none'` |
+| `settings.aiToolPath` | Custom CLI path override |
+| `settings.aiAutoOrganize` | AI tag/position suggestions in task modal |
+| `settings.aiAutoOrder` | AI task reordering in timeline |
+| `settings.aiAutoScheduler` | AI duration suggestions |
+| `settings.aiDelegation` | AI task delegation |
+| `settings.enableMultiTagFilter` | Multi-select tag filtering |
+| `settings.enableImageAttachments` | Image attachment support |
+| `settings.showConfirmDialogs` | Confirmation dialogs for destructive actions |
+| `settings.autoArchiveDays` | Auto-archive stale tasks after N days (0 = off) |
+| `settings.reportBasePath` | Base vault folder for report sources |
+| `settings.branchColor` | Custom git-tree branch color |
+| `tasks[]` | Task list with status, duration, timestamps, tags, sub-tasks, linked docs, images |
 | `archivedTasks[]` | Archived completed/skipped tasks |
 | `timerState` | Current timer: running, paused, end time, rollover balance, pomodoro count |
 
@@ -255,14 +297,20 @@ Reload Obsidian with `Cmd+R` (macOS) or `Ctrl+R` (Windows/Linux) after changes.
 - Clock-aligned rollover timer with time banking and debt
 - Pomodoro mode with configurable intervals
 - Chunked task management with drag-and-drop reorder
-- Sub-task tree with git-style branch visualization (4 levels)
+- Sub-task tree with git-style branch visualization (4 levels, customizable branch color)
 - Task tags, categories, and color-coded labels
+- Multi-tag filter for narrowing the task list
 - Task templates for recurring work
 - Linked documents (fuzzy search + inline creation)
+- Image attachments on tasks
 - Task import from note checklists
+- Archive detail modal with restore and permanent delete
+- Auto-archive stale tasks after configurable days
+- Confirmation dialogs for destructive actions (with start-while-active prompt)
+- AI integration (Cursor CLI / Claude Code CLI) -- auto-organize, auto-order, auto-scheduler, delegation
 - Heatmap tracker with streak and summary stats
 - Modular widget system with drag-to-reorder
-- Daily and weekly report modules
+- Six report modules (Interview Prep, Daily Trends, Local Leads, App Store Intel, Jobs Report, Competitor Watch)
 - Last opened and quick access document modules
 - Audio notifications (completion chime, overtime warning)
 - Keyboard shortcuts for all timer actions

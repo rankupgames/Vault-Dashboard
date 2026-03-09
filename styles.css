@@ -806,9 +806,24 @@
 	background: rgba(224, 82, 82, 0.1);
 }
 
-.vw-task-action-btn-disabled {
-	opacity: 0.25;
-	pointer-events: none;
+.vw-delegation-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 6px;
+	border-radius: 10px;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	user-select: none;
+}
+
+.vw-delegation-badge-icon svg {
+	width: 11px;
+	height: 11px;
 }
 
 .vw-task-action-btn svg {
@@ -972,6 +987,12 @@
 	color: var(--text-on-accent);
 	white-space: nowrap;
 	line-height: 1.4;
+}
+
+.vw-tag-pill-overflow {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	cursor: default;
 }
 
 .vw-tag-pill-removable {
@@ -1229,12 +1250,7 @@
 	width: 16px;
 	align-self: stretch;
 	flex-shrink: 0;
-	cursor: grab;
 	padding-top: 13px;
-}
-
-.vw-task-left-controls:active {
-	cursor: grabbing;
 }
 
 .vw-git-node-content {
@@ -1632,12 +1648,17 @@
 	background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
 }
 
-.vw-report-new-dot {
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
+.vw-report-new-badge {
+	font-size: 8px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: var(--text-on-accent);
 	background: var(--interactive-accent);
+	padding: 1px 5px;
+	border-radius: 4px;
 	flex-shrink: 0;
+	line-height: 1.4;
 }
 
 .vw-report-row:hover {
@@ -1873,6 +1894,14 @@
 	padding: 0 4px;
 	user-select: none;
 }
+
+.vw-dur-sep {
+	font-size: 18px;
+	font-weight: 300;
+	color: var(--text-muted);
+	user-select: none;
+}
+
 
 /* -- Modal Subtask List --------------------------------------------------- */
 

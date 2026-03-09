@@ -19,7 +19,7 @@ import { ConfirmModal } from '../modals/ConfirmModal';
 import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
 import { AIDispatcher } from '../services/AIDispatcher';
 import { AnalyticsExporter } from '../services/AnalyticsExporter';
-import { attachOverflowTooltip } from '../Tooltip';
+import { attachOverflowTooltip, renderTagPills } from '../Tooltip';
 
 export interface TaskTimelineDeps {
 	app: App;
@@ -111,28 +111,6 @@ export class TaskTimeline {
 
 		const headerActions = header.createDiv({ cls: 'vw-tasks-header-actions' });
 
-		const undoMgr = this.deps.taskManager.getUndoManager();
-
-		const undoBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
-		setIcon(undoBtn, 'undo-2');
-		undoBtn.setAttribute('aria-label', 'Undo');
-		undoBtn.setAttribute('tabindex', '0');
-		if (undoMgr.canUndo() === false) undoBtn.style.opacity = '0.3';
-		undoBtn.addEventListener('click', () => {
-			this.deps.taskManager.undo();
-			this.deps.onRenderAll();
-		});
-
-		const redoBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
-		setIcon(redoBtn, 'redo-2');
-		redoBtn.setAttribute('aria-label', 'Redo');
-		redoBtn.setAttribute('tabindex', '0');
-		if (undoMgr.canRedo() === false) redoBtn.style.opacity = '0.3';
-		redoBtn.addEventListener('click', () => {
-			this.deps.taskManager.redo();
-			this.deps.onRenderAll();
-		});
-
 		const resetBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
 		setIcon(resetBtn, 'rotate-ccw');
 		resetBtn.setAttribute('aria-label', 'Reset all tasks to pending');
@@ -214,6 +192,8 @@ export class TaskTimeline {
 			});
 		});
 
+		headerActions.createDiv({ cls: 'vw-header-divider' });
+
 		const deleteCompletedBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn vw-tasks-clear-btn-danger' });
 		setIcon(deleteCompletedBtn, 'trash-2');
 		deleteCompletedBtn.setAttribute('aria-label', 'Delete all completed tasks (archive)');
@@ -268,7 +248,7 @@ export class TaskTimeline {
 
 		const noteBtn = menu.createDiv({ cls: 'vw-export-menu-item', text: 'Append to Daily Note' });
 		noteBtn.addEventListener('click', async () => {
-			await AnalyticsExporter.exportToDailyNote(this.deps.app, this.deps.taskManager.toJSON());
+			await AnalyticsExporter.exportToDailyNote(this.deps.app, this.deps.taskManager.toJSON(), this.deps.settings.dailyNotesFolder);
 			menu.remove();
 		});
 
@@ -391,12 +371,7 @@ export class TaskTimeline {
 			attachOverflowTooltip(name, task.title);
 
 			if (task.tags && task.tags.length > 0) {
-				const tagArea = box.createDiv({ cls: 'vw-tag-pills' });
-				for (const tag of task.tags) {
-					const color = this.deps.settings.tagColors[tag];
-					const pill = tagArea.createSpan({ cls: 'vw-tag-pill', text: tag });
-					if (color) pill.style.backgroundColor = color;
-				}
+				renderTagPills(box, task.tags, this.deps.settings.tagColors);
 			}
 
 			if (task.completedAt) {
@@ -425,16 +400,12 @@ export class TaskTimeline {
 
 			const leftControls = node.createDiv({ cls: 'vw-task-left-controls' });
 
-			const isNew = task.status === 'pending' && !task.startedAt && !task.completedAt;
 			const dotCls = task.status === 'active'
 				? 'vw-git-dot vw-git-dot-active'
 				: (task.status === 'completed' || task.status === 'skipped')
 					? 'vw-git-dot vw-git-dot-completed'
-					: isNew
-						? 'vw-git-dot vw-git-dot-pending vw-git-dot-new'
-						: 'vw-git-dot vw-git-dot-pending';
+					: 'vw-git-dot vw-git-dot-pending';
 			const dotEl = node.createDiv({ cls: dotCls });
-			if (isNew) dotEl.setText('new');
 
 			if (task.status === 'active') {
 				dotEl.setAttribute('aria-label', 'Complete task');
@@ -456,10 +427,10 @@ export class TaskTimeline {
 				});
 			}
 
-			this.setupTaskDrag(node, leftControls, task.id, tree);
-
 			const content = node.createDiv({ cls: 'vw-git-node-content' });
 			const row = content.createDiv({ cls: 'vw-task-row' });
+
+			this.setupTaskDrag(node, row, task.id, tree);
 
 			if (task.status === 'active') row.addClass('vw-task-active');
 			if (task.status === 'completed' || task.status === 'skipped') row.addClass('vw-task-completed');
@@ -495,12 +466,7 @@ export class TaskTimeline {
 			}
 
 			if (task.tags && task.tags.length > 0) {
-				const tagArea = row.createDiv({ cls: 'vw-tag-pills' });
-				for (const tag of task.tags) {
-					const color = this.deps.settings.tagColors[tag];
-					const pill = tagArea.createSpan({ cls: 'vw-tag-pill', text: tag });
-					if (color) pill.style.backgroundColor = color;
-				}
+				renderTagPills(row, task.tags, this.deps.settings.tagColors);
 			}
 
 			if (task.images && task.images.length > 0) {
@@ -546,7 +512,9 @@ export class TaskTimeline {
 	}
 
 	private setupTaskDrag(node: HTMLElement, handle: HTMLElement, taskId: string, tree: HTMLElement): void {
-		handle.addEventListener('mousedown', () => {
+		handle.addEventListener('mousedown', (e: MouseEvent) => {
+			const target = e.target as HTMLElement;
+			if (target.closest('.vw-task-actions') || target.closest('.vw-task-docs-badge')) return;
 			node.setAttribute('draggable', 'true');
 		});
 
@@ -617,9 +585,19 @@ export class TaskTimeline {
 			}
 
 			if (task.delegationStatus) {
-				const badge = this.createIconBtn(actions, task.delegationStatus === 'dispatched' ? 'loader' : task.delegationStatus === 'completed' ? 'check-circle' : 'alert-circle', `Delegation: ${task.delegationStatus}`);
-				badge.addClass('vw-task-action-btn-disabled');
+				const badge = actions.createDiv({ cls: 'vw-delegation-badge' });
+				const badgeIcon = badge.createSpan({ cls: 'vw-delegation-badge-icon' });
+				const iconName = task.delegationStatus === 'dispatched' ? 'loader' : task.delegationStatus === 'completed' ? 'check-circle' : 'alert-circle';
+				setIcon(badgeIcon, iconName);
+				badge.createSpan({ cls: 'vw-delegation-badge-label', text: task.delegationStatus });
+				badge.setAttribute('aria-label', `Delegation: ${task.delegationStatus}`);
 			}
+
+			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
+			copyBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				navigator.clipboard.writeText(this.formatTasksForCopy([task])).then(() => new Notice('Task copied'));
+			});
 
 			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
 			removeBtn.addEventListener('click', (e) => {
@@ -638,6 +616,12 @@ export class TaskTimeline {
 
 			const skipBtn = this.createIconBtn(actions, 'skip-forward', 'Skip task');
 			skipBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleSkipActive(); });
+
+			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
+			copyBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				navigator.clipboard.writeText(this.formatTasksForCopy([task])).then(() => new Notice('Task copied'));
+			});
 		} else if (isCompleted) {
 			const restartBtn = this.createIconBtn(actions, 'rotate-ccw', 'Reset task');
 			restartBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleRestartCompleted(task); });
@@ -648,6 +632,12 @@ export class TaskTimeline {
 				this.deps.taskManager.resetToPending(task.id);
 				this.deps.taskManager.moveToFront(task.id);
 				this.deps.onRenderAll();
+			});
+
+			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
+			copyBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				navigator.clipboard.writeText(this.formatTasksForCopy([task])).then(() => new Notice('Task copied'));
 			});
 
 			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);

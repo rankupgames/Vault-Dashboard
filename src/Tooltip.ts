@@ -63,3 +63,29 @@ export const destroyTooltip = (): void => {
 		tooltipEl = null;
 	}
 };
+
+export const renderTagPills = (
+	container: HTMLElement,
+	tags: string[],
+	tagColors: Record<string, string>,
+	maxVisible = 2,
+): void => {
+	const area = container.createDiv({ cls: 'vw-tag-pills' });
+	const visible = tags.slice(0, maxVisible);
+	const overflow = tags.length - maxVisible;
+
+	for (const tag of visible) {
+		const pill = area.createSpan({ cls: 'vw-tag-pill', text: tag });
+		const color = tagColors[tag];
+		if (color) pill.style.backgroundColor = color;
+	}
+
+	if (overflow > 0) {
+		area.createSpan({ cls: 'vw-tag-pill vw-tag-pill-overflow', text: `+${overflow}` });
+	}
+
+	area.addEventListener('mouseenter', () => {
+		showTooltip(area, tags.join(', '));
+	});
+	area.addEventListener('mouseleave', hideTooltip);
+};

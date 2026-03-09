@@ -208,9 +208,24 @@
 	background: rgba(224, 82, 82, 0.1);
 }
 
-.vw-task-action-btn-disabled {
-	opacity: 0.25;
-	pointer-events: none;
+.vw-delegation-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	padding: 1px 6px;
+	border-radius: 10px;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	user-select: none;
+}
+
+.vw-delegation-badge-icon svg {
+	width: 11px;
+	height: 11px;
 }
 
 .vw-task-action-btn svg {
@@ -374,6 +389,12 @@
 	color: var(--text-on-accent);
 	white-space: nowrap;
 	line-height: 1.4;
+}
+
+.vw-tag-pill-overflow {
+	background: var(--background-modifier-border);
+	color: var(--text-muted);
+	cursor: default;
 }
 
 .vw-tag-pill-removable {

@@ -307,6 +307,20 @@ export class SettingsTab extends PluginSettingTab {
 					await this.save();
 				}),
 			);
+
+		new Setting(el)
+			.setName('Auto-archive after N days')
+			.setDesc('Automatically archive completed/skipped tasks after this many days. Set to 0 to disable.')
+			.addText((text) =>
+				text
+					.setPlaceholder('0')
+					.setValue(String(settings.autoArchiveDays))
+					.onChange(async (val) => {
+						const n = parseInt(val, 10);
+						settings.autoArchiveDays = isNaN(n) || n < 0 ? 0 : n;
+						await this.save();
+					}),
+			);
 	}
 
 	private renderHeatmapSection(el: HTMLElement): void {

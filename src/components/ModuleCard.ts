@@ -65,10 +65,7 @@ export class ModuleCard {
 
 		const header = this.container.createDiv({ cls: 'vw-module-header' });
 
-		const dragHandle = header.createDiv({ cls: 'vw-drag-handle vw-module-drag-handle' });
-		setIcon(dragHandle, 'grip-vertical');
-
-		this.setupModuleDrag(dragHandle);
+		this.setupModuleDrag(header);
 
 		header.createDiv({ cls: 'vw-module-title', text: this.renderer.name });
 
@@ -122,13 +119,16 @@ export class ModuleCard {
 		}
 	}
 
-	private setupModuleDrag(handle: HTMLElement): void {
+	private setupModuleDrag(header: HTMLElement): void {
 		const card = this.container!;
 		const moduleId = this.renderer.id;
 
-		handle.addEventListener('mousedown', (e) => {
-			e.stopPropagation();
+		header.addEventListener('mousedown', () => {
 			card.setAttribute('draggable', 'true');
+		});
+
+		header.addEventListener('mouseup', () => {
+			card.removeAttribute('draggable');
 		});
 
 		card.addEventListener('dragstart', (e: DragEvent) => {
