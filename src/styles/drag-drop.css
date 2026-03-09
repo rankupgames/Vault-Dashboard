@@ -59,3 +59,61 @@
 .vw-git-branch-wrap.vw-drag-below {
 	box-shadow: 0 2px 0 0 var(--interactive-accent);
 }
+
+/* -- Module card drag indicators ----------------------------------------- */
+
+.vw-module-card.vw-drag-above {
+	box-shadow: 0 -2px 0 0 var(--interactive-accent);
+}
+
+.vw-module-card.vw-drag-below {
+	box-shadow: 0 2px 0 0 var(--interactive-accent);
+}
+
+/* -- Module drag preview ------------------------------------------------- */
+
+.vw-drag-preview {
+	position: fixed;
+	top: -1000px;
+	left: -1000px;
+	padding: 6px 14px;
+	border-radius: 6px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	pointer-events: none;
+	z-index: 99999;
+}
+
+/* -- Module remove drop zone --------------------------------------------- */
+
+.vw-module-remove-zone {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(224, 82, 82, 0.06);
+	border: 2px dashed var(--text-faint);
+	border-radius: 8px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-faint);
+	z-index: 100;
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.vw-module-remove-zone-visible {
+	display: flex;
+}
+
+.vw-module-remove-zone-over {
+	background: rgba(224, 82, 82, 0.15);
+	border-color: #e05252;
+	color: #e05252;
+}

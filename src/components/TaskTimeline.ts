@@ -7,14 +7,17 @@
  * Last Modified: 2026-03-07
  */
 
-import { App, setIcon, TFile } from 'obsidian';
-import { Task, PluginSettings } from '../types';
+import { App, setIcon, TFile, Notice } from 'obsidian';
+import { Task, SubTask, PluginSettings } from '../types';
 import { TimerEngine } from '../TimerEngine';
 import { TaskManager } from '../TaskManager';
 import { SubtaskTree } from './SubtaskTree';
 import { TaskModal } from '../modals/TaskModal';
 import { ImportModal } from '../modals/ImportModal';
 import { TimerSection } from './TimerSection';
+import { ConfirmModal } from '../modals/ConfirmModal';
+import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
+import { AIDispatcher } from '../services/AIDispatcher';
 import { AnalyticsExporter } from '../services/AnalyticsExporter';
 import { attachOverflowTooltip } from '../Tooltip';
 
@@ -31,7 +34,7 @@ export interface TaskTimelineDeps {
 const collapsedTaskIds = new Set<string>();
 let allCollapsed = false;
 let showArchive = false;
-let activeTagFilter: string | null = null;
+let activeTagFilters: string[] = [];
 
 export class TaskTimeline {
 	private deps: TaskTimelineDeps;
@@ -91,15 +94,19 @@ export class TaskTimeline {
 		addBtn.createSpan({ text: ' Add Task' });
 		addBtn.addEventListener('click', () => {
 			new TaskModal(this.deps.app, null, this.deps.settings, (result) => {
-				const task = this.deps.taskManager.addTask(result.title, result.durationMinutes, result.tags);
+				const newTask = this.deps.taskManager.addTask(result.title, result.durationMinutes, result.tags);
 				if (result.subtasks) {
-					this.deps.taskManager.replaceSubtasks(task.id, result.subtasks);
+					this.deps.taskManager.replaceSubtasks(newTask.id, result.subtasks);
 				}
-				if (result.linkedDocs) {
-					this.deps.taskManager.updateTask(task.id, { linkedDocs: result.linkedDocs });
+				const updates: Record<string, unknown> = {};
+				if (result.description) updates.description = result.description;
+				if (result.linkedDocs) updates.linkedDocs = result.linkedDocs;
+				if (result.images) updates.images = result.images;
+				if (Object.keys(updates).length > 0) {
+					this.deps.taskManager.updateTask(newTask.id, updates as Partial<Task>);
 				}
 				this.deps.onRenderAll();
-			}, allTags).open();
+			}, allTags, this.deps.taskManager).open();
 		});
 
 		const headerActions = header.createDiv({ cls: 'vw-tasks-header-actions' });
@@ -131,12 +138,42 @@ export class TaskTimeline {
 		resetBtn.setAttribute('aria-label', 'Reset all tasks to pending');
 		resetBtn.setAttribute('tabindex', '0');
 		resetBtn.addEventListener('click', () => {
-			this.deps.timerEngine.cancel();
-			this.deps.timerEngine.resetRollover();
-			this.deps.taskManager.resetAll();
-			this.deps.saveCallback();
-			this.deps.onRenderAll();
+			new ConfirmModal(this.deps.app, 'Reset All Tasks', 'Reset all tasks to pending? This will stop the active timer.', () => {
+				this.deps.timerEngine.cancel();
+				this.deps.timerEngine.resetRollover();
+				this.deps.taskManager.resetAll();
+				this.deps.saveCallback();
+				this.deps.onRenderAll();
+			}).open();
 		});
+
+		if (AIDispatcher.isEnabled(this.deps.settings)) {
+			headerActions.createDiv({ cls: 'vw-header-divider' });
+
+			if (this.deps.settings.aiAutoOrder) {
+				const aiOrderBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
+				setIcon(aiOrderBtn, 'sparkles');
+				aiOrderBtn.setAttribute('aria-label', 'AI auto-order tasks');
+				aiOrderBtn.setAttribute('tabindex', '0');
+				aiOrderBtn.addEventListener('click', async () => {
+					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
+					const prompt = AIDispatcher.composePrompt('order', ctx);
+					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, prompt);
+				});
+			}
+
+			if (this.deps.settings.aiAutoScheduler) {
+				const aiScheduleBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
+				setIcon(aiScheduleBtn, 'calendar-clock');
+				aiScheduleBtn.setAttribute('aria-label', 'AI auto-schedule durations');
+				aiScheduleBtn.setAttribute('tabindex', '0');
+				aiScheduleBtn.addEventListener('click', async () => {
+					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
+					const prompt = AIDispatcher.composePrompt('schedule', ctx);
+					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, prompt);
+				});
+			}
+		}
 
 		headerActions.createDiv({ cls: 'vw-header-divider' });
 
@@ -165,13 +202,27 @@ export class TaskTimeline {
 			this.showExportMenu(exportBtn);
 		});
 
+		const copyBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
+		setIcon(copyBtn, 'copy');
+		copyBtn.setAttribute('aria-label', 'Copy all tasks to clipboard');
+		copyBtn.setAttribute('tabindex', '0');
+		copyBtn.addEventListener('click', () => {
+			const allTasks = this.deps.taskManager.getTasks();
+			const text = this.formatTasksForCopy(allTasks);
+			navigator.clipboard.writeText(text).then(() => {
+				new Notice('Tasks copied to clipboard');
+			});
+		});
+
 		const deleteCompletedBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn vw-tasks-clear-btn-danger' });
 		setIcon(deleteCompletedBtn, 'trash-2');
 		deleteCompletedBtn.setAttribute('aria-label', 'Delete all completed tasks (archive)');
 		deleteCompletedBtn.setAttribute('tabindex', '0');
 		deleteCompletedBtn.addEventListener('click', () => {
-			this.deps.taskManager.archiveCompleted();
-			this.deps.onRenderAll();
+			new ConfirmModal(this.deps.app, 'Archive Completed', 'Archive all completed and skipped tasks?', () => {
+				this.deps.taskManager.archiveCompleted();
+				this.deps.onRenderAll();
+			}).open();
 		});
 
 		const archived = this.deps.taskManager.getArchivedTasks();
@@ -237,10 +288,12 @@ export class TaskTimeline {
 		const trigger = wrapper.createDiv({ cls: 'vw-tag-dropdown-trigger' });
 		const iconEl = trigger.createSpan({ cls: 'vw-tag-dropdown-icon' });
 		setIcon(iconEl, 'tag');
-		trigger.createSpan({
-			cls: 'vw-tag-dropdown-label',
-			text: activeTagFilter ?? 'All Tags',
-		});
+		const label = activeTagFilters.length === 0
+			? 'All Tags'
+			: activeTagFilters.length === 1
+				? activeTagFilters[0]
+				: `${activeTagFilters.length} tags`;
+		trigger.createSpan({ cls: 'vw-tag-dropdown-label', text: label });
 		const chevron = trigger.createSpan({ cls: 'vw-tag-dropdown-chevron' });
 		setIcon(chevron, 'chevron-down');
 
@@ -257,28 +310,36 @@ export class TaskTimeline {
 			menu.style.zIndex = '10000';
 
 			const allItem = menu.createDiv({ cls: 'vw-tag-dropdown-item' });
-			if (activeTagFilter === null) allItem.addClass('vw-tag-dropdown-item-active');
+			if (activeTagFilters.length === 0) allItem.addClass('vw-tag-dropdown-item-active');
 			allItem.createSpan({ text: 'All Tags' });
 			allItem.addEventListener('click', () => {
-				activeTagFilter = null;
+				activeTagFilters = [];
 				menu.remove();
 				this.deps.onRenderAll();
 			});
 
 			for (const tag of allTags) {
 				const item = menu.createDiv({ cls: 'vw-tag-dropdown-item' });
-				if (activeTagFilter === tag) item.addClass('vw-tag-dropdown-item-active');
+				const isSelected = activeTagFilters.includes(tag);
+
+				const checkbox = item.createSpan({ cls: 'vw-tag-dropdown-check' });
+				if (isSelected) {
+					setIcon(checkbox, 'check');
+					item.addClass('vw-tag-dropdown-item-active');
+				}
 
 				const color = this.deps.settings.tagColors[tag];
 				const dot = item.createSpan({ cls: 'vw-tag-dropdown-dot' });
-				if (color) {
-					dot.style.backgroundColor = color;
-				}
+				if (color) dot.style.backgroundColor = color;
 				item.createSpan({ text: tag });
 
-				item.addEventListener('click', () => {
-					activeTagFilter = tag;
-					menu.remove();
+				item.addEventListener('click', (e) => {
+					e.stopPropagation();
+					if (isSelected) {
+						activeTagFilters = activeTagFilters.filter((t) => t !== tag);
+					} else {
+						activeTagFilters = [...activeTagFilters, tag];
+					}
 					this.deps.onRenderAll();
 				});
 			}
@@ -296,15 +357,41 @@ export class TaskTimeline {
 
 	private renderArchiveSection(parent: HTMLElement, archived: Task[]): void {
 		const section = parent.createDiv({ cls: 'vw-archive-section' });
-		section.createDiv({ cls: 'vw-archive-header', text: `Archived (${archived.length})` });
+		const header = section.createDiv({ cls: 'vw-archive-header' });
+		header.createSpan({ text: `Archived (${archived.length})` });
+
+		const clearBtn = header.createDiv({ cls: 'vw-tasks-clear-btn vw-tasks-clear-btn-danger' });
+		setIcon(clearBtn, 'trash-2');
+		clearBtn.setAttribute('aria-label', 'Delete all archived tasks');
+		clearBtn.setAttribute('tabindex', '0');
+		clearBtn.addEventListener('click', () => {
+			new ConfirmModal(this.deps.app, 'Delete All Archived', `Permanently delete ${archived.length} archived task(s)?`, () => {
+				this.deps.taskManager.clearArchive();
+				this.deps.onRenderAll();
+			}).open();
+		});
+
+		const grid = section.createDiv({ cls: 'vw-archive-grid' });
 		for (const task of archived) {
-			const row = section.createDiv({ cls: 'vw-archive-row' });
-			row.createDiv({ cls: 'vw-task-duration vw-task-completed', text: this.formatDuration(task.durationMinutes) });
-			const name = row.createDiv({ cls: 'vw-task-name vw-task-completed', text: task.title });
+			const box = grid.createDiv({ cls: 'vw-archive-box' });
+			box.addEventListener('click', () => {
+				new ArchiveDetailModal(this.deps.app, task, this.deps.settings, () => {
+					this.deps.taskManager.restoreFromArchive(task.id);
+					this.deps.onRenderAll();
+				}, () => {
+					this.deps.taskManager.deleteArchivedTask(task.id);
+					this.deps.onRenderAll();
+				}).open();
+			});
+
+			const dur = box.createDiv({ cls: 'vw-archive-box-dur', text: this.formatDuration(task.durationMinutes) });
+			if (task.status === 'skipped') dur.addClass('vw-archive-box-skipped');
+
+			const name = box.createDiv({ cls: 'vw-archive-box-name', text: task.title });
 			attachOverflowTooltip(name, task.title);
 
 			if (task.tags && task.tags.length > 0) {
-				const tagArea = row.createDiv({ cls: 'vw-tag-pills' });
+				const tagArea = box.createDiv({ cls: 'vw-tag-pills' });
 				for (const tag of task.tags) {
 					const color = this.deps.settings.tagColors[tag];
 					const pill = tagArea.createSpan({ cls: 'vw-tag-pill', text: tag });
@@ -312,20 +399,19 @@ export class TaskTimeline {
 				}
 			}
 
-			const restoreBtn = row.createDiv({ cls: 'vw-task-action-btn' });
-			setIcon(restoreBtn, 'undo-2');
-			restoreBtn.setAttribute('aria-label', 'Restore from archive');
-			restoreBtn.addEventListener('click', () => {
-				this.deps.taskManager.restoreFromArchive(task.id);
-				this.deps.onRenderAll();
-			});
+			if (task.completedAt) {
+				box.createDiv({
+					cls: 'vw-archive-box-date',
+					text: new Date(task.completedAt).toLocaleDateString(),
+				});
+			}
 		}
 	}
 
 	private renderTaskList(section: HTMLElement): void {
 		let tasks = this.deps.taskManager.getTasks();
-		if (activeTagFilter) {
-			tasks = tasks.filter((t) => t.tags?.includes(activeTagFilter!));
+		if (activeTagFilters.length > 0) {
+			tasks = tasks.filter((t) => t.tags?.some((tag) => activeTagFilters.includes(tag)));
 		}
 		const state = this.deps.timerEngine.getState();
 
@@ -339,12 +425,16 @@ export class TaskTimeline {
 
 			const leftControls = node.createDiv({ cls: 'vw-task-left-controls' });
 
+			const isNew = task.status === 'pending' && !task.startedAt && !task.completedAt;
 			const dotCls = task.status === 'active'
 				? 'vw-git-dot vw-git-dot-active'
 				: (task.status === 'completed' || task.status === 'skipped')
 					? 'vw-git-dot vw-git-dot-completed'
-					: 'vw-git-dot vw-git-dot-pending';
+					: isNew
+						? 'vw-git-dot vw-git-dot-pending vw-git-dot-new'
+						: 'vw-git-dot vw-git-dot-pending';
 			const dotEl = node.createDiv({ cls: dotCls });
+			if (isNew) dotEl.setText('new');
 
 			if (task.status === 'active') {
 				dotEl.setAttribute('aria-label', 'Complete task');
@@ -379,13 +469,15 @@ export class TaskTimeline {
 				new TaskModal(this.deps.app, task, this.deps.settings, (result) => {
 					this.deps.taskManager.updateTask(task.id, {
 						title: result.title,
+						description: result.description,
 						durationMinutes: result.durationMinutes,
 						tags: result.tags,
 						linkedDocs: result.linkedDocs,
+						images: result.images,
 					});
 					this.deps.taskManager.replaceSubtasks(task.id, result.subtasks);
 					this.deps.onRenderAll();
-				}, knownTags).open();
+				}, knownTags, this.deps.taskManager).open();
 			});
 
 			const durText = task.status === 'active' && state.isRunning
@@ -409,6 +501,13 @@ export class TaskTimeline {
 					const pill = tagArea.createSpan({ cls: 'vw-tag-pill', text: tag });
 					if (color) pill.style.backgroundColor = color;
 				}
+			}
+
+			if (task.images && task.images.length > 0) {
+				const imgBadge = row.createDiv({ cls: 'vw-task-docs-badge' });
+				const imgBadgeIcon = imgBadge.createSpan({ cls: 'vw-task-docs-badge-icon' });
+				setIcon(imgBadgeIcon, 'image');
+				imgBadge.createSpan({ cls: 'vw-task-docs-badge-count', text: String(task.images.length) });
 			}
 
 			if (task.linkedDocs && task.linkedDocs.length > 0) {
@@ -501,52 +600,57 @@ export class TaskTimeline {
 		const isActive = task.status === 'active';
 		const isCompleted = task.status === 'completed' || task.status === 'skipped';
 
-		const startBtn = this.createIconBtn(actions, 'play', 'Start task');
 		if (isPending) {
+			const startBtn = this.createIconBtn(actions, 'play', 'Start task');
 			startBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleStartTask(task); });
-		} else {
-			startBtn.addClass('vw-task-action-btn-disabled');
-		}
 
-		const restartBtn = this.createIconBtn(actions, 'rotate-ccw', 'Reset task');
-		if (isActive) {
+			if (AIDispatcher.isEnabled(this.deps.settings) && this.deps.settings.aiDelegation) {
+				const delegateBtn = this.createIconBtn(actions, 'bot', 'Delegate to AI');
+				delegateBtn.addEventListener('click', async (e) => {
+					e.stopPropagation();
+					this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' } as Partial<Task>);
+					this.deps.onRenderAll();
+					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
+					const prompt = AIDispatcher.composePrompt('delegate', ctx, task);
+					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, prompt);
+				});
+			}
+
+			if (task.delegationStatus) {
+				const badge = this.createIconBtn(actions, task.delegationStatus === 'dispatched' ? 'loader' : task.delegationStatus === 'completed' ? 'check-circle' : 'alert-circle', `Delegation: ${task.delegationStatus}`);
+				badge.addClass('vw-task-action-btn-disabled');
+			}
+
+			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
+			removeBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				new ConfirmModal(this.deps.app, 'Remove Task', `Remove "${task.title}"?`, () => {
+					this.deps.taskManager.removeTask(task.id);
+					this.deps.onRenderAll();
+				}).open();
+			});
+		} else if (isActive) {
+			const completeBtn = this.createIconBtn(actions, 'check', 'Complete task');
+			completeBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerEngine.stop(); });
+
+			const restartBtn = this.createIconBtn(actions, 'rotate-ccw', 'Restart task');
 			restartBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleRestartActive(); });
-		} else if (isCompleted) {
-			restartBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleRestartCompleted(task); });
-		} else {
-			restartBtn.addClass('vw-task-action-btn-disabled');
-		}
 
-		const skipBtn = this.createIconBtn(actions, 'skip-forward', 'Skip to next task');
-		if (isActive) {
+			const skipBtn = this.createIconBtn(actions, 'skip-forward', 'Skip task');
 			skipBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleSkipActive(); });
-		} else {
-			skipBtn.addClass('vw-task-action-btn-disabled');
-		}
+		} else if (isCompleted) {
+			const restartBtn = this.createIconBtn(actions, 'rotate-ccw', 'Reset task');
+			restartBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleRestartCompleted(task); });
 
-		const requeueBtn = this.createIconBtn(actions, 'list-start', 'Requeue to front');
-		if (isCompleted) {
+			const requeueBtn = this.createIconBtn(actions, 'list-start', 'Requeue to front');
 			requeueBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.deps.taskManager.resetToPending(task.id);
 				this.deps.taskManager.moveToFront(task.id);
 				this.deps.onRenderAll();
 			});
-		} else {
-			requeueBtn.addClass('vw-task-action-btn-disabled');
-		}
 
-		const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
-		if (isActive) {
-			removeBtn.setAttribute('aria-label', 'Stop and remove task');
-			removeBtn.addEventListener('click', (e) => {
-				e.stopPropagation();
-				this.deps.timerEngine.cancel();
-				this.deps.taskManager.removeTask(task.id);
-				this.deps.saveCallback();
-				this.deps.onRenderAll();
-			});
-		} else if (isPending || isCompleted) {
+			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
 			removeBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.deps.taskManager.removeTask(task.id);
@@ -607,6 +711,34 @@ export class TaskTimeline {
 			}
 		};
 		setTimeout(() => document.addEventListener('click', dismiss, true), 0);
+	}
+
+	private formatTasksForCopy(tasks: Task[]): string {
+		const lines: string[] = [];
+		for (const task of tasks) {
+			const check = task.status === 'completed' ? 'x' : task.status === 'skipped' ? '-' : ' ';
+			const dur = this.formatDuration(task.durationMinutes);
+			const tags = task.tags?.length ? ` [${task.tags.join(', ')}]` : '';
+			lines.push(`- [${check}] ${task.title} (${dur})${tags}`);
+			if (task.description) {
+				lines.push(`  ${task.description}`);
+			}
+			if (task.subtasks?.length) {
+				this.formatSubtasksForCopy(task.subtasks, lines, 1);
+			}
+		}
+		return lines.join('\n');
+	}
+
+	private formatSubtasksForCopy(subtasks: SubTask[], lines: string[], depth: number): void {
+		const indent = '  '.repeat(depth);
+		for (const sub of subtasks) {
+			const check = sub.status === 'completed' ? 'x' : ' ';
+			lines.push(`${indent}- [${check}] ${sub.title}`);
+			if (sub.subtasks?.length) {
+				this.formatSubtasksForCopy(sub.subtasks, lines, depth + 1);
+			}
+		}
 	}
 
 	private formatDuration(minutes: number): string {

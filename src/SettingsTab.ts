@@ -25,6 +25,8 @@ export class SettingsTab extends PluginSettingTab {
 		this.renderGeneralSection(containerEl);
 		this.renderTimerSection(containerEl);
 		this.renderAudioSection(containerEl);
+		this.renderAISection(containerEl);
+		this.renderTaskSection(containerEl);
 		this.renderTaskTreeSection(containerEl);
 		this.renderHeatmapSection(containerEl);
 		this.renderReportsSection(containerEl);
@@ -192,6 +194,119 @@ export class SettingsTab extends PluginSettingTab {
 					}),
 				);
 		}
+	}
+
+	private renderAISection(el: HTMLElement): void {
+		el.createEl('h2', { text: 'AI Integration' });
+
+		const settings = this.plugin.data.settings;
+
+		new Setting(el)
+			.setName('AI tool')
+			.setDesc('Select the CLI tool for AI dispatching. Set to "none" to disable all AI features.')
+			.addDropdown((dd) =>
+				dd
+					.addOption('none', 'None (disabled)')
+					.addOption('cursor', 'Cursor CLI')
+					.addOption('claude-code', 'Claude Code CLI')
+					.setValue(settings.aiTool)
+					.onChange(async (val) => {
+						settings.aiTool = val as 'cursor' | 'claude-code' | 'none';
+						await this.save();
+						this.display();
+					}),
+			);
+
+		if (settings.aiTool !== 'none') {
+			new Setting(el)
+				.setName('Custom CLI path')
+				.setDesc('Override the default CLI command path (leave empty for default).')
+				.addText((text) =>
+					text
+						.setPlaceholder(settings.aiTool === 'cursor' ? 'cursor' : 'claude')
+						.setValue(settings.aiToolPath)
+						.onChange(async (val) => {
+							settings.aiToolPath = val.trim();
+							await this.save();
+						}),
+				);
+
+			new Setting(el)
+				.setName('AI auto-organize')
+				.setDesc('Show AI organize button in task modal to suggest tags and position.')
+				.addToggle((toggle) =>
+					toggle.setValue(settings.aiAutoOrganize).onChange(async (val) => {
+						settings.aiAutoOrganize = val;
+						await this.save();
+					}),
+				);
+
+			new Setting(el)
+				.setName('AI auto-order')
+				.setDesc('Show AI sort button in timeline header to reorder pending tasks.')
+				.addToggle((toggle) =>
+					toggle.setValue(settings.aiAutoOrder).onChange(async (val) => {
+						settings.aiAutoOrder = val;
+						await this.save();
+					}),
+				);
+
+			new Setting(el)
+				.setName('AI auto-scheduler')
+				.setDesc('Show AI schedule button to estimate task durations.')
+				.addToggle((toggle) =>
+					toggle.setValue(settings.aiAutoScheduler).onChange(async (val) => {
+						settings.aiAutoScheduler = val;
+						await this.save();
+					}),
+				);
+
+			new Setting(el)
+				.setName('AI delegation')
+				.setDesc('Show delegate button on task rows to dispatch tasks to the AI tool.')
+				.addToggle((toggle) =>
+					toggle.setValue(settings.aiDelegation).onChange(async (val) => {
+						settings.aiDelegation = val;
+						await this.save();
+					}),
+				);
+		}
+	}
+
+	private renderTaskSection(el: HTMLElement): void {
+		el.createEl('h2', { text: 'Tasks' });
+
+		const settings = this.plugin.data.settings;
+
+		new Setting(el)
+			.setName('Multi-tag filter')
+			.setDesc('Allow selecting multiple tags in the timeline filter.')
+			.addToggle((toggle) =>
+				toggle.setValue(settings.enableMultiTagFilter).onChange(async (val) => {
+					settings.enableMultiTagFilter = val;
+					await this.save();
+				}),
+			);
+
+		new Setting(el)
+			.setName('Image attachments')
+			.setDesc('Allow attaching images to tasks.')
+			.addToggle((toggle) =>
+				toggle.setValue(settings.enableImageAttachments).onChange(async (val) => {
+					settings.enableImageAttachments = val;
+					await this.save();
+				}),
+			);
+
+		new Setting(el)
+			.setName('Confirmation dialogs')
+			.setDesc('Show confirmation dialogs before destructive actions.')
+			.addToggle((toggle) =>
+				toggle.setValue(settings.showConfirmDialogs).onChange(async (val) => {
+					settings.showConfirmDialogs = val;
+					await this.save();
+				}),
+			);
 	}
 
 	private renderHeatmapSection(el: HTMLElement): void {

@@ -314,6 +314,21 @@
 	font-weight: 600;
 }
 
+.vw-tag-dropdown-check {
+	width: 14px;
+	height: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	color: var(--interactive-accent);
+}
+
+.vw-tag-dropdown-check svg {
+	width: 12px;
+	height: 12px;
+}
+
 .vw-tag-dropdown-dot {
 	width: 8px;
 	height: 8px;
@@ -378,24 +393,95 @@
 }
 
 .vw-archive-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
 	font-size: 11px;
 	font-weight: 600;
 	color: var(--text-faint);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	margin-bottom: 6px;
+	margin-bottom: 8px;
 }
 
-.vw-archive-row {
-	display: flex;
-	align-items: center;
+.vw-archive-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 	gap: 8px;
-	padding: 4px 10px;
-	border-radius: 4px;
 }
 
-.vw-archive-row:hover {
+.vw-archive-box {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px 12px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.vw-archive-box:hover {
+	border-color: var(--interactive-accent);
 	background: var(--background-modifier-hover);
+}
+
+.vw-archive-box-dur {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.vw-archive-box-skipped {
+	color: var(--text-faint);
+	text-decoration: line-through;
+}
+
+.vw-archive-box-name {
+	font-size: 13px;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-archive-box-date {
+	font-size: 10px;
+	color: var(--text-faint);
+}
+
+/* -- Archive Detail Modal ------------------------------------------------ */
+
+.vw-archive-detail-modal h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-archive-detail-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-bottom: 12px;
+}
+
+.vw-archive-detail-skipped {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.vw-archive-detail-desc {
+	font-size: 13px;
+	color: var(--text-normal);
+	margin: 8px 0 12px;
+	padding: 8px 10px;
+	border-radius: 4px;
+	background: var(--background-secondary);
+	white-space: pre-wrap;
 }
 
 /* -- Export Menu ---------------------------------------------------------- */

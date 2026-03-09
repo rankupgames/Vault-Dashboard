@@ -57,6 +57,7 @@
 	align-items: stretch;
 	border-bottom: 1px solid var(--background-modifier-border);
 	flex-shrink: 0;
+	position: relative;
 }
 
 .vw-top-bar > .vw-timer-section {

@@ -60,7 +60,8 @@ export class TimerSection {
 		ring.setAttribute('class', ringCls);
 		const circumference = 2 * Math.PI * 36;
 		ring.style.strokeDasharray = String(circumference);
-		ring.style.strokeDashoffset = String(circumference);
+		const isRunning = this.deps.timerEngine.getState().isRunning;
+		ring.style.strokeDashoffset = isRunning ? '0' : String(circumference);
 		this.ringEl = ring;
 
 		const displayWrap = circle.createDiv({ cls: 'vw-timer-display-wrap' });
@@ -263,10 +264,9 @@ export class TimerSection {
 	private overrideAndStart(task: Task): void {
 		const state = this.deps.timerEngine.getState();
 		if (state.isRunning && state.currentTaskId) {
-			const rollover = this.deps.timerEngine.getTaskRollover();
-			this.deps.taskManager.completeTask(state.currentTaskId, Date.now());
+			this.deps.taskManager.resetToPending(state.currentTaskId);
 			this.deps.timerEngine.cancel();
-			this.deps.timerEngine.addRollover(rollover);
+			this.deps.timerEngine.resetRollover();
 		}
 		this.startTaskImmediate(task);
 	}
@@ -294,7 +294,7 @@ export class TimerSection {
 		if (this.ringEl) {
 			const circumference = 2 * Math.PI * 36;
 			const progress = this.deps.timerEngine.getProgress();
-			const offset = circumference * (1 - progress);
+			const offset = circumference * progress;
 			this.ringEl.style.strokeDashoffset = String(offset);
 			this.ringEl.toggleClass('vw-timer-negative', this.deps.timerEngine.isNegative());
 		}

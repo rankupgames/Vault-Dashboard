@@ -18,6 +18,7 @@ export interface SubTask {
 export interface Task {
 	id: string;
 	title: string;
+	description?: string;
 	durationMinutes: number;
 	status: 'pending' | 'active' | 'completed' | 'skipped';
 	order: number;
@@ -29,7 +30,10 @@ export interface Task {
 	subtasks?: SubTask[];
 	tags?: string[];
 	linkedDocs?: string[];
+	images?: string[];
 	actualDurationMinutes?: number;
+	delegationStatus?: 'dispatched' | 'completed' | 'failed';
+	delegationFeedback?: string;
 }
 
 export interface TaskTemplate {
@@ -94,6 +98,15 @@ export interface PluginSettings {
 	branchColor: string;
 	heatmapTagFilter: string;
 	reportBasePath: string;
+	aiTool: 'cursor' | 'claude-code' | 'none';
+	aiToolPath: string;
+	aiAutoOrganize: boolean;
+	aiAutoOrder: boolean;
+	aiAutoScheduler: boolean;
+	aiDelegation: boolean;
+	enableMultiTagFilter: boolean;
+	enableImageAttachments: boolean;
+	showConfirmDialogs: boolean;
 }
 
 export interface PluginData {
@@ -146,6 +159,15 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	branchColor: '#4ea8de',
 	heatmapTagFilter: 'Task',
 	reportBasePath: 'WorkspaceVault/Personal/ClaudeCRON',
+	aiTool: 'none',
+	aiToolPath: '',
+	aiAutoOrganize: false,
+	aiAutoOrder: false,
+	aiAutoScheduler: false,
+	aiDelegation: false,
+	enableMultiTagFilter: true,
+	enableImageAttachments: true,
+	showConfirmDialogs: true,
 };
 
 export const DEFAULT_DATA: PluginData = {

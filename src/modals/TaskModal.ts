@@ -11,6 +11,8 @@ import { App, Modal, setIcon, TFile, normalizePath } from 'obsidian';
 import { Task, SubTask, PluginSettings } from '../types';
 import { attachOverflowTooltip } from '../Tooltip';
 import { FileSuggestModal } from './FileSuggestModal';
+import { AIDispatcher } from '../services/AIDispatcher';
+import { TaskManager } from '../TaskManager';
 
 const MAX_SUBTASK_DEPTH = 4;
 
@@ -22,10 +24,12 @@ const cloneSubtasks = (subs: SubTask[]): SubTask[] =>
 
 export interface TaskModalResult {
 	title: string;
+	description?: string;
 	durationMinutes: number;
 	subtasks?: SubTask[];
 	tags?: string[];
 	linkedDocs?: string[];
+	images?: string[];
 }
 
 export class TaskModal extends Modal {
@@ -36,13 +40,15 @@ export class TaskModal extends Modal {
 	private pendingSubtasks: SubTask[] = [];
 	private pendingTags: string[] = [];
 	private pendingLinkedDocs: string[] = [];
+	private pendingImages: string[] = [];
 	private subtaskListEl: HTMLElement | null = null;
 	private tagListEl: HTMLElement | null = null;
 	private tagSuggestEl: HTMLElement | null = null;
 	private linkedDocsListEl: HTMLElement | null = null;
 	private dragSub: { arr: SubTask[]; idx: number } | null = null;
+	private taskManager: TaskManager | null = null;
 
-	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = []) {
+	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = [], taskManager: TaskManager | null = null) {
 		super(app);
 		this.task = task;
 		this.settings = settings;
@@ -58,6 +64,10 @@ export class TaskModal extends Modal {
 		if (task?.linkedDocs) {
 			this.pendingLinkedDocs = [...task.linkedDocs];
 		}
+		if (task?.images) {
+			this.pendingImages = [...task.images];
+		}
+		this.taskManager = taskManager;
 	}
 
 	onOpen(): void {
@@ -101,6 +111,24 @@ export class TaskModal extends Modal {
 		titleInput = form.createEl('input', {
 			cls: 'vw-edit-input',
 			attr: { type: 'text', value: this.task?.title ?? '', placeholder: 'Task title' },
+		});
+
+		const descToggle = form.createDiv({ cls: 'vw-edit-label vw-edit-label-toggle' });
+		const descChevron = descToggle.createSpan({ cls: 'vw-edit-label-chevron' });
+		setIcon(descChevron, this.task?.description ? 'chevron-down' : 'chevron-right');
+		descToggle.createSpan({ text: 'Description' });
+		const descWrap = form.createDiv({ cls: 'vw-desc-wrap' });
+		const descInput = descWrap.createEl('textarea', {
+			cls: 'vw-edit-textarea',
+			attr: { rows: '3', placeholder: 'Optional description (used as AI instruction context)' },
+		});
+		descInput.value = this.task?.description ?? '';
+		if (!this.task?.description) descWrap.style.display = 'none';
+
+		descToggle.addEventListener('click', () => {
+			const hidden = descWrap.style.display === 'none';
+			descWrap.style.display = hidden ? '' : 'none';
+			setIcon(descChevron, hidden ? 'chevron-down' : 'chevron-right');
 		});
 
 		form.createDiv({ cls: 'vw-edit-label', text: 'Duration' });
@@ -208,6 +236,78 @@ export class TaskModal extends Modal {
 			this.showCreateDocInput(docsSection);
 		});
 
+		if (AIDispatcher.isEnabled(this.settings) && this.taskManager) {
+			const aiCreateBtn = docsActions.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-sm' });
+			const aiCreateIcon = aiCreateBtn.createSpan({ cls: 'vw-btn-icon' });
+			setIcon(aiCreateIcon, 'sparkles');
+			aiCreateBtn.createSpan({ text: ' AI Create' });
+			aiCreateBtn.addEventListener('click', async (e) => {
+				e.preventDefault();
+				if (this.taskManager === null) return;
+				const ctx = await AIDispatcher.gatherContext(this.taskManager, this.app);
+				const focusTask = this.task ?? { id: '', title: titleInput.value.trim(), description: descInput.value.trim(), durationMinutes: 0, status: 'pending' as const, order: 0, createdAt: Date.now(), tags: this.pendingTags.length > 0 ? [...this.pendingTags] : undefined };
+				const prompt = AIDispatcher.composePrompt('create-doc', ctx, focusTask);
+				await AIDispatcher.dispatch(this.app, this.settings, prompt);
+			});
+
+			if (this.settings.aiAutoOrganize) {
+				const aiOrganizeBtn = docsActions.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-sm' });
+				const aiOrgIcon = aiOrganizeBtn.createSpan({ cls: 'vw-btn-icon' });
+				setIcon(aiOrgIcon, 'sparkles');
+				aiOrganizeBtn.createSpan({ text: ' AI Organize' });
+				aiOrganizeBtn.addEventListener('click', async (e) => {
+					e.preventDefault();
+					if (this.taskManager === null) return;
+					const ctx = await AIDispatcher.gatherContext(this.taskManager, this.app);
+					const focusTask = this.task ?? { id: '', title: titleInput.value.trim(), description: descInput.value.trim(), durationMinutes: 0, status: 'pending' as const, order: 0, createdAt: Date.now(), tags: this.pendingTags.length > 0 ? [...this.pendingTags] : undefined };
+					const prompt = AIDispatcher.composePrompt('organize', ctx, focusTask);
+					await AIDispatcher.dispatch(this.app, this.settings, prompt);
+				});
+			}
+		}
+
+		const imagesSection = form.createDiv({ cls: 'vw-modal-docs-section' });
+		imagesSection.createDiv({ cls: 'vw-edit-label', text: 'Images' });
+		const imagesListEl = imagesSection.createDiv({ cls: 'vw-modal-docs-list' });
+		const renderImagesList = (): void => {
+			imagesListEl.empty();
+			if (this.pendingImages.length === 0) {
+				imagesListEl.createDiv({ cls: 'vw-modal-docs-empty', text: 'No images attached' });
+				return;
+			}
+			for (const imgPath of this.pendingImages) {
+				const row = imagesListEl.createDiv({ cls: 'vw-modal-doc-row' });
+				const iconEl = row.createSpan({ cls: 'vw-modal-doc-icon' });
+				setIcon(iconEl, 'image');
+				const fileName = imgPath.split('/').pop() ?? imgPath;
+				row.createSpan({ cls: 'vw-modal-doc-name', text: fileName });
+				const removeBtn = row.createDiv({ cls: 'vw-modal-subtask-remove' });
+				setIcon(removeBtn, 'x');
+				removeBtn.addEventListener('click', (e) => {
+					e.stopPropagation();
+					this.pendingImages = this.pendingImages.filter((p) => p !== imgPath);
+					renderImagesList();
+				});
+			}
+		};
+		renderImagesList();
+
+		const imgAddBtn = imagesSection.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-sm' });
+		const imgIcon = imgAddBtn.createSpan({ cls: 'vw-btn-icon' });
+		setIcon(imgIcon, 'image');
+		imgAddBtn.createSpan({ text: ' Attach Image' });
+		imgAddBtn.addEventListener('click', (e) => {
+			e.preventDefault();
+			new FileSuggestModal(this.app, (file: TFile) => {
+				const ext = file.extension.toLowerCase();
+				if (['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'].includes(ext) === false) return;
+				if (this.pendingImages.includes(file.path) === false) {
+					this.pendingImages.push(file.path);
+					renderImagesList();
+				}
+			}).open();
+		});
+
 		const subtaskSection = form.createDiv({ cls: 'vw-modal-subtask-section' });
 		subtaskSection.createDiv({ cls: 'vw-modal-subtask-header', text: 'Subtasks' });
 		this.subtaskListEl = subtaskSection.createDiv({ cls: 'vw-modal-subtask-list' });
@@ -260,12 +360,15 @@ export class TaskModal extends Modal {
 		const doSave = (): void => {
 			const title = titleInput.value.trim();
 			if (title === '') return;
+			const desc = descInput.value.trim();
 			this.onSave({
 				title,
+				description: desc || undefined,
 				durationMinutes: Math.max(durHours * 60 + durMins, 5),
 				subtasks: this.pendingSubtasks.length > 0 ? this.pendingSubtasks : undefined,
 				tags: this.pendingTags.length > 0 ? [...this.pendingTags] : undefined,
 				linkedDocs: this.pendingLinkedDocs.length > 0 ? [...this.pendingLinkedDocs] : undefined,
+				images: this.pendingImages.length > 0 ? [...this.pendingImages] : undefined,
 			});
 			this.close();
 		};

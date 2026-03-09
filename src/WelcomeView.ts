@@ -9,7 +9,7 @@
  */
 
 import { ItemView, WorkspaceLeaf } from 'obsidian';
-import { VIEW_TYPE_WELCOME, PluginData } from './types';
+import { VIEW_TYPE_WELCOME, PluginData, Task } from './types';
 import { TimerEngine } from './TimerEngine';
 import { TaskManager } from './TaskManager';
 import { ModuleContainer } from './ModuleContainer';
@@ -22,7 +22,7 @@ import { ReportScanner } from './ReportScanner';
 import { DailyReportModule, WeeklyReportModule } from './modules/ReportModule';
 import { LastOpenedModule, QuickAccessModule } from './modules/DocumentModule';
 import { AudioService } from './AudioService';
-import { ModuleRenderer } from './components/ModuleCard';
+import { ModuleCard, ModuleRenderer } from './components/ModuleCard';
 import { generateHeatmapShades, generateBranchShades } from './ColorUtils';
 
 const ORPHAN_POPOVER_SELECTORS = '.vw-export-menu, .vw-tag-dropdown-menu, .vw-docs-popover, .vw-heatmap-tooltip';
@@ -69,8 +69,12 @@ export class WelcomeView extends ItemView {
 			if (result.subtasks) {
 				this.taskManager.replaceSubtasks(task.id, result.subtasks);
 			}
-			if (result.linkedDocs) {
-				this.taskManager.updateTask(task.id, { linkedDocs: result.linkedDocs });
+			const updates: Partial<Pick<Task, 'description' | 'linkedDocs' | 'images'>> = {};
+			if (result.description) updates.description = result.description;
+			if (result.linkedDocs) updates.linkedDocs = result.linkedDocs;
+			if (result.images) updates.images = result.images;
+			if (Object.keys(updates).length > 0) {
+				this.taskManager.updateTask(task.id, updates);
 			}
 			this.renderAll();
 		}).open();
@@ -152,6 +156,31 @@ export class WelcomeView extends ItemView {
 		const rightCol = root.createDiv({ cls: 'vw-right-col' });
 
 		const topBar = rightCol.createDiv({ cls: 'vw-top-bar' });
+
+		const removeZone = topBar.createDiv({ cls: 'vw-module-remove-zone' });
+		removeZone.setText('Drop here to hide module');
+		removeZone.addEventListener('dragover', (e: DragEvent) => {
+			if (ModuleCard.draggedModuleId === null) return;
+			e.preventDefault();
+			if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+			removeZone.classList.add('vw-module-remove-zone-over');
+		});
+		removeZone.addEventListener('dragleave', () => {
+			removeZone.classList.remove('vw-module-remove-zone-over');
+		});
+		removeZone.addEventListener('drop', (e: DragEvent) => {
+			e.preventDefault();
+			removeZone.classList.remove('vw-module-remove-zone-over', 'vw-module-remove-zone-visible');
+			const draggedId = ModuleCard.draggedModuleId;
+			if (draggedId === null) return;
+			ModuleCard.draggedModuleId = null;
+			const cfg = this.data.settings.modules.find((m) => m.id === draggedId);
+			if (cfg) {
+				cfg.enabled = false;
+				this.saveCallback();
+				this.renderAll();
+			}
+		});
 
 		this.timerSection = new TimerSection({
 			app: this.app,

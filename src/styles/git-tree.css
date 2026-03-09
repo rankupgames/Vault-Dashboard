@@ -96,6 +96,18 @@
 	border: 2px solid var(--text-muted);
 }
 
+.vw-git-dot-new {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 7px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+}
+
 /* -- Git Branch Container ------------------------------------------------- */
 
 .vw-git-branch {

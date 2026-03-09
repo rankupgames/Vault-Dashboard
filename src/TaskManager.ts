@@ -97,7 +97,7 @@ export class TaskManager {
 		return task;
 	}
 
-	updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'durationMinutes' | 'tags' | 'linkedDocs'>>): void {
+	updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'description' | 'durationMinutes' | 'tags' | 'linkedDocs' | 'images' | 'delegationStatus' | 'delegationFeedback'>>): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
 		this.pushUndo();
@@ -265,6 +265,21 @@ export class TaskManager {
 
 	getArchivedTasks(): Task[] {
 		return [...this.archivedTasks];
+	}
+
+	deleteArchivedTask(id: string): void {
+		const idx = this.archivedTasks.findIndex((t) => t.id === id);
+		if (idx === -1) return;
+		this.pushUndo();
+		this.archivedTasks.splice(idx, 1);
+		this.emitChange();
+	}
+
+	clearArchive(): void {
+		if (this.archivedTasks.length === 0) return;
+		this.pushUndo();
+		this.archivedTasks = [];
+		this.emitChange();
 	}
 
 	restoreFromArchive(id: string): void {

@@ -137,6 +137,15 @@ export class ModuleCard {
 			e.dataTransfer?.setData('text/plain', moduleId);
 			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
 			ModuleCard.draggedModuleId = moduleId;
+
+			const preview = document.createElement('div');
+			preview.className = 'vw-drag-preview';
+			preview.textContent = this.renderer.name;
+			document.body.appendChild(preview);
+			e.dataTransfer?.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+			requestAnimationFrame(() => preview.remove());
+
+			document.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.add('vw-module-remove-zone-visible'));
 		});
 
 		card.addEventListener('dragend', () => {
@@ -146,6 +155,7 @@ export class ModuleCard {
 			card.parentElement?.querySelectorAll('.vw-drag-above, .vw-drag-below').forEach((el) => {
 				el.classList.remove('vw-drag-above', 'vw-drag-below');
 			});
+			document.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.remove('vw-module-remove-zone-visible', 'vw-module-remove-zone-over'));
 		});
 
 		card.addEventListener('dragover', (e: DragEvent) => {

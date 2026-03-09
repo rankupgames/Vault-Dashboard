@@ -309,6 +309,27 @@
 	padding: 2px 0;
 }
 
+.vw-edit-label-toggle {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+}
+
+.vw-edit-label-toggle:hover {
+	color: var(--text-normal);
+}
+
+.vw-edit-label-chevron {
+	display: flex;
+	align-items: center;
+}
+
+.vw-edit-label-chevron svg {
+	width: 12px;
+	height: 12px;
+}
+
 /* -- Tag Input Wrapper & Suggestions ------------------------------------- */
 
 .vw-tag-input-wrap {
@@ -344,4 +365,26 @@
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
 	border-color: var(--interactive-accent);
+}
+
+/* -- Confirm Modal ------------------------------------------------------- */
+
+.vw-confirm-modal h3,
+.vw-confirm-start-modal h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-confirm-desc {
+	font-size: 14px;
+	color: var(--text-muted);
+	margin-bottom: 16px;
+	line-height: 1.5;
+}
+
+.vw-confirm-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
 }

@@ -57,6 +57,7 @@
 	align-items: stretch;
 	border-bottom: 1px solid var(--background-modifier-border);
 	flex-shrink: 0;
+	position: relative;
 }
 
 .vw-top-bar > .vw-timer-section {
@@ -911,6 +912,21 @@
 	font-weight: 600;
 }
 
+.vw-tag-dropdown-check {
+	width: 14px;
+	height: 14px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	color: var(--interactive-accent);
+}
+
+.vw-tag-dropdown-check svg {
+	width: 12px;
+	height: 12px;
+}
+
 .vw-tag-dropdown-dot {
 	width: 8px;
 	height: 8px;
@@ -975,24 +991,95 @@
 }
 
 .vw-archive-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
 	font-size: 11px;
 	font-weight: 600;
 	color: var(--text-faint);
 	text-transform: uppercase;
 	letter-spacing: 0.04em;
-	margin-bottom: 6px;
+	margin-bottom: 8px;
 }
 
-.vw-archive-row {
-	display: flex;
-	align-items: center;
+.vw-archive-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
 	gap: 8px;
-	padding: 4px 10px;
-	border-radius: 4px;
 }
 
-.vw-archive-row:hover {
+.vw-archive-box {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 10px 12px;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	cursor: pointer;
+	transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.vw-archive-box:hover {
+	border-color: var(--interactive-accent);
 	background: var(--background-modifier-hover);
+}
+
+.vw-archive-box-dur {
+	font-size: 11px;
+	font-weight: 600;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.vw-archive-box-skipped {
+	color: var(--text-faint);
+	text-decoration: line-through;
+}
+
+.vw-archive-box-name {
+	font-size: 13px;
+	font-weight: 500;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-archive-box-date {
+	font-size: 10px;
+	color: var(--text-faint);
+}
+
+/* -- Archive Detail Modal ------------------------------------------------ */
+
+.vw-archive-detail-modal h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-archive-detail-info {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	font-size: 13px;
+	color: var(--text-muted);
+	margin-bottom: 12px;
+}
+
+.vw-archive-detail-skipped {
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+.vw-archive-detail-desc {
+	font-size: 13px;
+	color: var(--text-normal);
+	margin: 8px 0 12px;
+	padding: 8px 10px;
+	border-radius: 4px;
+	background: var(--background-secondary);
+	white-space: pre-wrap;
 }
 
 /* -- Export Menu ---------------------------------------------------------- */
@@ -1205,6 +1292,18 @@
 .vw-git-dot-pending {
 	background: var(--background-primary);
 	border: 2px solid var(--text-muted);
+}
+
+.vw-git-dot-new {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 7px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+	color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
 }
 
 /* -- Git Branch Container ------------------------------------------------- */
@@ -1971,6 +2070,27 @@
 	padding: 2px 0;
 }
 
+.vw-edit-label-toggle {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	cursor: pointer;
+}
+
+.vw-edit-label-toggle:hover {
+	color: var(--text-normal);
+}
+
+.vw-edit-label-chevron {
+	display: flex;
+	align-items: center;
+}
+
+.vw-edit-label-chevron svg {
+	width: 12px;
+	height: 12px;
+}
+
 /* -- Tag Input Wrapper & Suggestions ------------------------------------- */
 
 .vw-tag-input-wrap {
@@ -2006,6 +2126,28 @@
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
 	border-color: var(--interactive-accent);
+}
+
+/* -- Confirm Modal ------------------------------------------------------- */
+
+.vw-confirm-modal h3,
+.vw-confirm-start-modal h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-confirm-desc {
+	font-size: 14px;
+	color: var(--text-muted);
+	margin-bottom: 16px;
+	line-height: 1.5;
+}
+
+.vw-confirm-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
 }
 
 /* ==========================================================================
@@ -2068,6 +2210,64 @@
 .vw-git-node.vw-drag-below,
 .vw-git-branch-wrap.vw-drag-below {
 	box-shadow: 0 2px 0 0 var(--interactive-accent);
+}
+
+/* -- Module card drag indicators ----------------------------------------- */
+
+.vw-module-card.vw-drag-above {
+	box-shadow: 0 -2px 0 0 var(--interactive-accent);
+}
+
+.vw-module-card.vw-drag-below {
+	box-shadow: 0 2px 0 0 var(--interactive-accent);
+}
+
+/* -- Module drag preview ------------------------------------------------- */
+
+.vw-drag-preview {
+	position: fixed;
+	top: -1000px;
+	left: -1000px;
+	padding: 6px 14px;
+	border-radius: 6px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 12px;
+	font-weight: 600;
+	white-space: nowrap;
+	pointer-events: none;
+	z-index: 99999;
+}
+
+/* -- Module remove drop zone --------------------------------------------- */
+
+.vw-module-remove-zone {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	background: rgba(224, 82, 82, 0.06);
+	border: 2px dashed var(--text-faint);
+	border-radius: 8px;
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-faint);
+	z-index: 100;
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.vw-module-remove-zone-visible {
+	display: flex;
+}
+
+.vw-module-remove-zone-over {
+	background: rgba(224, 82, 82, 0.15);
+	border-color: #e05252;
+	color: #e05252;
 }
 
 /* ==========================================================================
