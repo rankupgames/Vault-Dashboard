@@ -8,16 +8,23 @@
  */
 
 import { App, TFile } from 'obsidian';
-import { SubTask } from '../types';
+import { SubTask } from '../core/types';
 
+/** A scanned checklist item with optional subtasks for import. */
 export interface TaskImportItem {
+	/** Task title. */
 	title: string;
+	/** Nested subtasks. */
 	subtasks: SubTask[];
+	/** 1-based line number in source. */
 	line: number;
+	/** Whether selected for import. */
 	selected: boolean;
 }
 
+/** Scans note checklists and extracts importable task items with nested subtasks. */
 export class TaskImporter {
+	/** Parses a note and returns importable task items from checklist lines. */
 	static async scanNote(app: App, file: TFile): Promise<TaskImportItem[]> {
 		const content = await app.vault.read(file);
 		const lines = content.split('\n');

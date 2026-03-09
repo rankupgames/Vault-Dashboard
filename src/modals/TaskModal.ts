@@ -4,15 +4,18 @@
  * Project: Vault Dashboard Welcome
  * Description: Unified add/edit task modal with subtask bulk entry
  * Created: 2026-03-07
- * Last Modified: 2026-03-07
+ * Edited By: Miguel A. Lopez
+ * Last Modified: 2026-03-09
  */
 
 import { App, Modal, setIcon, TFile, normalizePath } from 'obsidian';
-import { Task, SubTask, PluginSettings } from '../types';
-import { attachOverflowTooltip } from '../Tooltip';
+import { Task, SubTask, PluginSettings } from '../core/types';
+import { attachOverflowTooltip } from '../ui/Tooltip';
+import { DropZone } from '../ui/DropZone';
 import { FileSuggestModal } from './FileSuggestModal';
+import { ConfirmModal } from './ConfirmModal';
 import { AIDispatcher } from '../services/AIDispatcher';
-import { TaskManager } from '../TaskManager';
+import { TaskManager } from '../core/TaskManager';
 
 const MAX_SUBTASK_DEPTH = 4;
 
@@ -22,16 +25,25 @@ const cloneSubtasks = (subs: SubTask[]): SubTask[] =>
 		subtasks: s.subtasks ? cloneSubtasks(s.subtasks) : undefined,
 	}));
 
+/** Values returned when the task modal is saved. */
 export interface TaskModalResult {
+	/** Task title entered by the user. */
 	title: string;
+	/** Optional extended description for AI context. */
 	description?: string;
+	/** Estimated duration in minutes. */
 	durationMinutes: number;
+	/** Subtask hierarchy, if any. */
 	subtasks?: SubTask[];
+	/** Tag strings attached to the task. */
 	tags?: string[];
+	/** Vault paths to linked documents. */
 	linkedDocs?: string[];
+	/** Vault paths to attached images. */
 	images?: string[];
 }
 
+/** Unified add/edit task modal with subtask bulk entry, tags, linked docs, and images. */
 export class TaskModal extends Modal {
 	private task: Task | null;
 	private settings: PluginSettings;
@@ -46,8 +58,28 @@ export class TaskModal extends Modal {
 	private tagSuggestEl: HTMLElement | null = null;
 	private linkedDocsListEl: HTMLElement | null = null;
 	private dragSub: { arr: SubTask[]; idx: number } | null = null;
+	private dropZones: DropZone[] = [];
 	private taskManager: TaskManager | null = null;
+	private saved = false;
+	private initialTitle = '';
+	private initialDesc = '';
+	private initialDurMinutes = 0;
+	private initialSubtasksJson = '[]';
+	private initialTags = '[]';
+	private initialDocs = '[]';
+	private initialImages = '[]';
+	private titleInputRef: HTMLInputElement | null = null;
+	private descInputRef: HTMLTextAreaElement | null = null;
+	private durGetter: (() => number) | null = null;
 
+	/**
+	 * @param app - Obsidian app instance
+	 * @param task - Existing task to edit, or null for add
+	 * @param settings - Plugin settings (templates, tag colors, etc.)
+	 * @param onSave - Callback invoked with result when user saves
+	 * @param knownTags - Known tags for suggestion dropdown
+	 * @param taskManager - Optional task manager for AI features
+	 */
 	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = [], taskManager: TaskManager | null = null) {
 		super(app);
 		this.task = task;
@@ -70,6 +102,7 @@ export class TaskModal extends Modal {
 		this.taskManager = taskManager;
 	}
 
+	/** @override */
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.addClass('vw-task-edit-modal');
@@ -237,7 +270,7 @@ export class TaskModal extends Modal {
 				const ctx = await AIDispatcher.gatherContext(this.taskManager, this.app);
 				const focusTask = this.task ?? { id: '', title: titleInput.value.trim(), description: descInput.value.trim(), durationMinutes: 0, status: 'pending' as const, order: 0, createdAt: Date.now(), tags: this.pendingTags.length > 0 ? [...this.pendingTags] : undefined };
 				const prompt = AIDispatcher.composePrompt('create-doc', ctx, focusTask);
-				await AIDispatcher.dispatch(this.app, this.settings, prompt);
+				await AIDispatcher.dispatch(this.app, this.settings, 'create-doc', prompt, focusTask);
 			});
 
 			if (this.settings.aiAutoOrganize) {
@@ -251,10 +284,40 @@ export class TaskModal extends Modal {
 					const ctx = await AIDispatcher.gatherContext(this.taskManager, this.app);
 					const focusTask = this.task ?? { id: '', title: titleInput.value.trim(), description: descInput.value.trim(), durationMinutes: 0, status: 'pending' as const, order: 0, createdAt: Date.now(), tags: this.pendingTags.length > 0 ? [...this.pendingTags] : undefined };
 					const prompt = AIDispatcher.composePrompt('organize', ctx, focusTask);
-					await AIDispatcher.dispatch(this.app, this.settings, prompt);
+					await AIDispatcher.dispatch(this.app, this.settings, 'organize', prompt, focusTask);
 				});
 			}
 		}
+
+		const docDropZone = new DropZone(docsSection, {
+			accept: { extensions: ['md', 'txt'], text: true },
+			callbacks: {
+				onExternalFiles: async (files) => {
+					for (const file of files) {
+						const path = await this.saveFileToVault(file);
+						if (path && this.pendingLinkedDocs.includes(path) === false) {
+							this.pendingLinkedDocs.push(path);
+						}
+					}
+					this.refreshLinkedDocsList();
+				},
+				onVaultPaths: (paths) => {
+					for (const p of paths) {
+						if (this.pendingLinkedDocs.includes(p) === false) {
+							this.pendingLinkedDocs.push(p);
+						}
+					}
+					this.refreshLinkedDocsList();
+				},
+				onText: async (text) => {
+					await this.linkOrCreateFromText(text);
+				},
+			},
+			label: 'Drop documents or paste a vault path',
+			icon: 'file-text',
+		});
+		docDropZone.bindPaste(contentEl);
+		this.dropZones.push(docDropZone);
 
 		const imagesSection = form.createDiv({ cls: 'vw-modal-docs-section' });
 		imagesSection.createDiv({ cls: 'vw-edit-label', text: 'Images' });
@@ -295,6 +358,43 @@ export class TaskModal extends Modal {
 				}
 			}, ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp']).open();
 		});
+
+		const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'];
+
+		const imageDropZone = new DropZone(imagesSection, {
+			accept: { extensions: IMAGE_EXTENSIONS, mimeTypes: ['image/*'] },
+			callbacks: {
+				onExternalFiles: async (files) => {
+					for (const file of files) {
+						const path = await this.saveFileToVault(file);
+						if (path && this.pendingImages.includes(path) === false) {
+							this.pendingImages.push(path);
+						}
+					}
+					renderImagesList();
+				},
+				onVaultPaths: (paths) => {
+					for (const p of paths) {
+						const ext = p.split('.').pop()?.toLowerCase() ?? '';
+						if (IMAGE_EXTENSIONS.includes(ext) && this.pendingImages.includes(p) === false) {
+							this.pendingImages.push(p);
+						}
+					}
+					renderImagesList();
+				},
+				onBlob: async (blob, mimeType) => {
+					const path = await this.saveBlobToVault(blob, mimeType);
+					if (path && this.pendingImages.includes(path) === false) {
+						this.pendingImages.push(path);
+						renderImagesList();
+					}
+				},
+			},
+			label: 'Drop images or paste from clipboard',
+			icon: 'image',
+		});
+		imageDropZone.bindPaste(contentEl);
+		this.dropZones.push(imageDropZone);
 
 		const subtaskSection = form.createDiv({ cls: 'vw-modal-subtask-section' });
 		subtaskSection.createDiv({ cls: 'vw-modal-subtask-header', text: 'Subtasks' });
@@ -349,6 +449,7 @@ export class TaskModal extends Modal {
 			const title = titleInput.value.trim();
 			if (title === '') return;
 			const desc = descInput.value.trim();
+			this.saved = true;
 			this.onSave({
 				title,
 				description: desc || undefined,
@@ -368,13 +469,51 @@ export class TaskModal extends Modal {
 			if (e.key === 'Enter') { e.preventDefault(); doSave(); }
 		});
 
+		this.titleInputRef = titleInput;
+		this.descInputRef = descInput;
+		this.durGetter = () => durHours * 60 + durMins;
+		this.initialTitle = titleInput.value;
+		this.initialDesc = descInput.value;
+		this.initialDurMinutes = durHours * 60 + durMins;
+		this.initialSubtasksJson = JSON.stringify(this.pendingSubtasks);
+		this.initialTags = JSON.stringify(this.pendingTags);
+		this.initialDocs = JSON.stringify(this.pendingLinkedDocs);
+		this.initialImages = JSON.stringify(this.pendingImages);
+
 		requestAnimationFrame(() => {
 			titleInput.focus();
 			if (isEdit) titleInput.select();
 		});
 	}
 
+	private isDirty(): boolean {
+		if (this.titleInputRef === null) return false;
+		if (this.titleInputRef.value !== this.initialTitle) return true;
+		if (this.descInputRef && this.descInputRef.value !== this.initialDesc) return true;
+		if (this.durGetter && this.durGetter() !== this.initialDurMinutes) return true;
+		if (JSON.stringify(this.pendingSubtasks) !== this.initialSubtasksJson) return true;
+		if (JSON.stringify(this.pendingTags) !== this.initialTags) return true;
+		if (JSON.stringify(this.pendingLinkedDocs) !== this.initialDocs) return true;
+		if (JSON.stringify(this.pendingImages) !== this.initialImages) return true;
+		return false;
+	}
+
+	/** @override — intercepts Escape / outside-click / Cancel to guard unsaved changes. */
+	close(): void {
+		if (this.saved || this.isDirty() === false) {
+			super.close();
+			return;
+		}
+		new ConfirmModal(this.app, 'Discard Changes', 'You have unsaved changes. Discard them?', () => {
+			this.saved = true;
+			super.close();
+		}, 'Discard').open();
+	}
+
+	/** @override */
 	onClose(): void {
+		for (const dz of this.dropZones) dz.destroy();
+		this.dropZones = [];
 		this.contentEl.empty();
 	}
 
@@ -625,46 +764,64 @@ export class TaskModal extends Modal {
 	}
 
 	private showCreateDocInput(parent: HTMLElement): void {
-		const existing = parent.querySelector('.vw-modal-docs-create-input');
+		const existing = parent.querySelector('.vw-modal-docs-create-panel');
 		if (existing) { existing.remove(); return; }
 
-		const row = parent.createDiv({ cls: 'vw-modal-docs-create-input' });
-		const input = row.createEl('input', {
-			cls: 'vw-modal-subtask-input',
+		const panel = parent.createDiv({ cls: 'vw-modal-docs-create-panel' });
+
+		const titleInput = panel.createEl('input', {
+			cls: 'vw-edit-input',
 			attr: { type: 'text', placeholder: 'Document name (e.g. Notes/My Doc)' },
 		});
 
-		input.addEventListener('keydown', async (e: KeyboardEvent) => {
-			if (e.key === 'Enter') {
-				e.preventDefault();
-				const raw = input.value.trim();
-				if (raw === '') return;
-
-				const path = normalizePath(raw.endsWith('.md') ? raw : `${raw}.md`);
-				const existingFile = this.app.vault.getAbstractFileByPath(path);
-
-				if (existingFile instanceof TFile) {
-					if (this.pendingLinkedDocs.includes(path) === false) {
-						this.pendingLinkedDocs.push(path);
-					}
-				} else {
-					const dir = path.substring(0, path.lastIndexOf('/'));
-					if (dir && this.app.vault.getAbstractFileByPath(dir) === null) {
-						await this.app.vault.createFolder(dir);
-					}
-					await this.app.vault.create(path, '');
-					this.pendingLinkedDocs.push(path);
-				}
-
-				this.refreshLinkedDocsList();
-				row.remove();
-			} else if (e.key === 'Escape') {
-				e.preventDefault();
-				row.remove();
-			}
+		const contentArea = panel.createEl('textarea', {
+			cls: 'vw-edit-textarea vw-create-doc-content',
+			attr: { rows: '12', placeholder: 'Document content (markdown)' },
 		});
 
-		requestAnimationFrame(() => input.focus());
+		const btnRow = panel.createDiv({ cls: 'vw-create-doc-actions' });
+		const createBtn = btnRow.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-primary vw-timer-btn-sm', text: 'Create' });
+		const cancelBtn = btnRow.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-sm', text: 'Cancel' });
+
+		const doCreate = async (): Promise<void> => {
+			const raw = titleInput.value.trim();
+			if (raw === '') return;
+
+			const path = normalizePath(raw.endsWith('.md') ? raw : `${raw}.md`);
+			const content = contentArea.value;
+			const existingFile = this.app.vault.getAbstractFileByPath(path);
+
+			if (existingFile instanceof TFile) {
+				if (content) {
+					await this.app.vault.modify(existingFile, content);
+				}
+				if (this.pendingLinkedDocs.includes(path) === false) {
+					this.pendingLinkedDocs.push(path);
+				}
+			} else {
+				const dir = path.substring(0, path.lastIndexOf('/'));
+				if (dir && this.app.vault.getAbstractFileByPath(dir) === null) {
+					await this.app.vault.createFolder(dir);
+				}
+				await this.app.vault.create(path, content);
+				this.pendingLinkedDocs.push(path);
+			}
+
+			this.refreshLinkedDocsList();
+			panel.remove();
+		};
+
+		createBtn.addEventListener('click', (e) => { e.preventDefault(); doCreate(); });
+		cancelBtn.addEventListener('click', (e) => { e.preventDefault(); panel.remove(); });
+
+		titleInput.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { e.preventDefault(); panel.remove(); }
+		});
+		contentArea.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { e.preventDefault(); panel.remove(); }
+		});
+
+		requestAnimationFrame(() => titleInput.focus());
 	}
 
 	private showChildInput(parent: HTMLElement, sub: SubTask, depth: number): void {
@@ -697,5 +854,82 @@ export class TaskModal extends Modal {
 		});
 
 		requestAnimationFrame(() => input.focus());
+	}
+
+	/**
+	 * Saves a clipboard blob (e.g. pasted screenshot) to the vault
+	 * and returns its vault-relative path.
+	 */
+	private async saveBlobToVault(blob: Blob, mimeType: string): Promise<string | null> {
+		const ext = mimeType.split('/').pop()?.replace('jpeg', 'jpg') ?? 'png';
+		const name = `pasted-${Date.now().toString(36)}.${ext}`;
+		return this.writeAttachment(name, await blob.arrayBuffer());
+	}
+
+	/**
+	 * Saves an external File (dropped from OS) to the vault
+	 * and returns its vault-relative path.
+	 */
+	private async saveFileToVault(file: File): Promise<string | null> {
+		return this.writeAttachment(file.name, await file.arrayBuffer());
+	}
+
+	/** Writes binary data to the vault's attachments folder, returning the path. */
+	private async writeAttachment(name: string, data: ArrayBuffer): Promise<string | null> {
+		const folder = normalizePath(`${this.settings.outputFolder}/attachments`);
+		await this.ensureFolder(folder);
+		let path = normalizePath(`${folder}/${name}`);
+		if (this.app.vault.getAbstractFileByPath(path)) {
+			const dot = name.lastIndexOf('.');
+			const baseName = dot > 0 ? name.substring(0, dot) : name;
+			const ext = dot > 0 ? name.substring(dot) : '';
+			path = normalizePath(`${folder}/${baseName}-${Date.now().toString(36)}${ext}`);
+		}
+		try {
+			await this.app.vault.createBinary(path, data);
+			return path;
+		} catch {
+			return null;
+		}
+	}
+
+	/** Creates nested vault folders if they don't exist. */
+	private async ensureFolder(folderPath: string): Promise<void> {
+		const parts = folderPath.split('/').filter(Boolean);
+		let current = '';
+		for (const part of parts) {
+			current = current ? `${current}/${part}` : part;
+			if (this.app.vault.getAbstractFileByPath(current) === null) {
+				await this.app.vault.createFolder(current);
+			}
+		}
+	}
+
+	/**
+	 * Handles pasted text in the documents zone: links an existing vault file
+	 * if the text matches a path, otherwise creates a new note with the content.
+	 */
+	private async linkOrCreateFromText(text: string): Promise<void> {
+		const trimmed = text.replace(/\n/g, ' ').trim();
+		const normalized = normalizePath(trimmed.endsWith('.md') ? trimmed : `${trimmed}.md`);
+		const existing = this.app.vault.getAbstractFileByPath(normalized);
+
+		if (existing instanceof TFile) {
+			if (this.pendingLinkedDocs.includes(normalized) === false) {
+				this.pendingLinkedDocs.push(normalized);
+			}
+		} else {
+			const docsFolder = normalizePath(`${this.settings.outputFolder}/documents`);
+			await this.ensureFolder(docsFolder);
+			const slug = trimmed.substring(0, 60).replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
+			const path = normalizePath(`${docsFolder}/${slug}.md`);
+			try {
+				await this.app.vault.create(path, text);
+				this.pendingLinkedDocs.push(path);
+			} catch {
+				return;
+			}
+		}
+		this.refreshLinkedDocsList();
 	}
 }

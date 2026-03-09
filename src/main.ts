@@ -14,21 +14,33 @@ import {
 	DEFAULT_DATA,
 	DEFAULT_SETTINGS,
 	VIEW_TYPE_WELCOME,
-} from './types';
-import { TimerEngine } from './TimerEngine';
-import { TaskManager } from './TaskManager';
+} from './core/types';
+import { EventBus } from './core/EventBus';
+import { TaskEvents, TaskStartPayload, TaskSkipPayload } from './core/events';
+import { TimerEngine } from './core/TimerEngine';
+import { TaskManager } from './core/TaskManager';
 import { WelcomeView } from './WelcomeView';
-import { AudioService } from './AudioService';
-import { ModuleRenderer } from './components/ModuleCard';
+import { AudioService } from './core/AudioService';
+import { AIDispatcher } from './services/AIDispatcher';
+import { ModuleRenderer } from './modules/ModuleCard';
+import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
-import { destroyTooltip } from './Tooltip';
+import { destroyTooltip } from './ui/Tooltip';
 
+/** Plugin entry point -- registers view, commands, and manages data persistence. */
 export default class VaultWelcomePlugin extends Plugin {
+	/** Plugin data (tasks, archived, timer state, settings). */
 	data: PluginData = DEFAULT_DATA;
+	/** Event bus for task and timer events. */
+	eventBus!: EventBus;
+	/** Timer engine for clock-aligned and pomodoro modes. */
 	timerEngine!: TimerEngine;
+	/** Task manager for CRUD and undo/redo. */
 	taskManager!: TaskManager;
+	/** Audio service for completion and warning sounds. */
 	audioService!: AudioService;
-	private externalModules: ModuleRenderer[] = [];
+	/** Registry of dashboard modules (quick access, reports, etc.). */
+	moduleRegistry!: ModuleRegistry;
 	private saveTimeout: number | null = null;
 	private lastDateStr = '';
 	private dayCheckInterval: number | null = null;
@@ -37,13 +49,41 @@ export default class VaultWelcomePlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadData_();
 
+		this.eventBus = new EventBus();
 		this.timerEngine = new TimerEngine(
 			{ ...this.data.timerState },
 			this.data.settings,
+			this.eventBus,
 		);
-		this.taskManager = new TaskManager(this.data.tasks, this.data.archivedTasks, this.data.settings);
+		this.taskManager = new TaskManager(this.data.tasks, this.data.archivedTasks, this.data.settings, this.eventBus);
 		this.taskManager.autoArchiveStale(this.data.settings.autoArchiveDays);
-		this.audioService = new AudioService(this.data.settings);
+		this.audioService = new AudioService(this.data.settings, this.eventBus);
+		this.moduleRegistry = new ModuleRegistry();
+
+		if (this.data.dispatchHistory.length > 0) {
+			AIDispatcher.hydrate(this.data.dispatchHistory);
+		}
+		AIDispatcher.onDispatchChange(() => {
+			this.data.dispatchHistory = AIDispatcher.toJSON();
+			this.scheduleSave();
+		});
+		AIDispatcher.onDispatchFinish((record) => {
+			if (record.taskId) {
+				this.taskManager.attachDispatchRecord(record.taskId, {
+					id: record.id,
+					action: record.action,
+					label: record.label,
+					taskId: record.taskId,
+					taskTitle: record.taskTitle,
+					tool: record.tool,
+					status: record.status,
+					startTime: record.startTime,
+					endTime: record.endTime,
+					error: record.error,
+					vaultPath: record.vaultPath,
+				});
+			}
+		});
 
 		this.addSettingTab(new SettingsTab(this.app, this));
 
@@ -76,7 +116,8 @@ export default class VaultWelcomePlugin extends Plugin {
 				this.taskManager,
 				() => this.scheduleSave(),
 				this.audioService,
-				this.externalModules,
+				this.eventBus,
+				this.moduleRegistry,
 			);
 		});
 
@@ -118,10 +159,7 @@ export default class VaultWelcomePlugin extends Plugin {
 			callback: () => {
 				const next = this.taskManager.getNextPendingTask();
 				if (next === undefined) return;
-				const views = this.getWelcomeViews();
-				if (views.length > 0 && views[0].getTimerSection()) {
-					views[0].getTimerSection()!.handleStartTask(next);
-				}
+				this.eventBus.emit<TaskStartPayload>(TaskEvents.Start, { task: next });
 			},
 		});
 
@@ -151,10 +189,9 @@ export default class VaultWelcomePlugin extends Plugin {
 			id: 'skip-current',
 			name: 'Skip Current Task',
 			callback: () => {
-				const views = this.getWelcomeViews();
-				if (views.length > 0 && views[0].getTimerSection()) {
-					views[0].getTimerSection()!.handleSkipActive();
-				}
+				const state = this.timerEngine.getState();
+				if (state.isRunning === false || state.currentTaskId === null) return;
+				this.eventBus.emit<TaskSkipPayload>(TaskEvents.Skip, { taskId: state.currentTaskId });
 			},
 		});
 
@@ -216,24 +253,31 @@ export default class VaultWelcomePlugin extends Plugin {
 		}, 60_000);
 	}
 
+	/** Registers a module renderer if not already present. */
 	registerModule(renderer: ModuleRenderer): void {
-		if (this.externalModules.some((m) => m.id === renderer.id)) return;
-		this.externalModules.push(renderer);
+		if (this.moduleRegistry.has(renderer.id)) return;
+		this.moduleRegistry.register(renderer);
 		this.refreshWelcomeViews();
 	}
 
+	/** Unregisters a module by id. */
 	unregisterModule(id: string): void {
-		this.externalModules = this.externalModules.filter((m) => m.id !== id);
+		this.moduleRegistry.unregister(id);
 		this.refreshWelcomeViews();
 	}
 
-	getExternalModules(): ModuleRenderer[] {
-		return this.externalModules;
+	/**
+	 * Returns the module registry for external module registration.
+	 * @returns ModuleRegistry instance
+	 */
+	getModuleRegistry(): ModuleRegistry {
+		return this.moduleRegistry;
 	}
 
 	async onunload(): Promise<void> {
 		this.timerEngine.destroy();
 		this.audioService.destroy();
+		this.eventBus.destroy();
 		destroyTooltip();
 		if (this.saveTimeout !== null) {
 			window.clearTimeout(this.saveTimeout);
@@ -319,6 +363,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		}
 	}
 
+	/** Re-renders all open Welcome dashboard views. */
 	refreshWelcomeViews(): void {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_WELCOME);
 		for (const leaf of leaves) {
@@ -377,6 +422,7 @@ export default class VaultWelcomePlugin extends Plugin {
 			if (saved.settings?.pomodoroLongBreakInterval !== undefined) mergedSettings.pomodoroLongBreakInterval = saved.settings.pomodoroLongBreakInterval;
 			if (saved.settings?.hasSeenOnboarding !== undefined) mergedSettings.hasSeenOnboarding = saved.settings.hasSeenOnboarding;
 			if (saved.settings?.moduleOrder) mergedSettings.moduleOrder = saved.settings.moduleOrder;
+			if (saved.settings?.reportSources) mergedSettings.reportSources = saved.settings.reportSources;
 
 			this.data = {
 				settings: mergedSettings,
@@ -384,6 +430,7 @@ export default class VaultWelcomePlugin extends Plugin {
 				archivedTasks: saved.archivedTasks ?? [],
 				timerState: { ...DEFAULT_DATA.timerState, ...saved.timerState },
 				lastDashboardOpenedAt: saved.lastDashboardOpenedAt ?? 0,
+				dispatchHistory: saved.dispatchHistory ?? [],
 			};
 		}
 	}
@@ -392,6 +439,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		this.data.timerState = this.timerEngine.getState();
 		this.data.tasks = this.taskManager.toJSON();
 		this.data.archivedTasks = this.taskManager.getArchivedTasksRef();
+		this.data.dispatchHistory = AIDispatcher.toJSON();
 		await this.saveData(this.data);
 	}
 }

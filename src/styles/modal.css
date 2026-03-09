@@ -306,8 +306,87 @@
 	height: 12px;
 }
 
-.vw-modal-docs-create-input {
+.vw-modal-docs-create-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	margin-top: 8px;
+	padding: 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+}
+
+.vw-create-doc-content {
+	min-height: 120px;
+	max-height: 400px;
+	resize: vertical;
+	font-family: var(--font-monospace);
+	font-size: 12px;
+	line-height: 1.5;
+}
+
+.vw-create-doc-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+/* -- Drop Zone (shared by images + documents) ----------------------------- */
+
+.vw-drop-zone {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
 	margin-top: 6px;
+	padding: 10px 12px;
+	border: 1.5px dashed var(--background-modifier-border);
+	border-radius: 6px;
+	color: var(--text-faint);
+	font-size: 11px;
+	cursor: default;
+	transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.vw-drop-zone:hover {
+	border-color: var(--text-muted);
+	color: var(--text-muted);
+}
+
+.vw-drop-zone-active {
+	border-color: var(--interactive-accent);
+	background: rgba(var(--interactive-accent-rgb, 72, 138, 255), 0.06);
+	color: var(--interactive-accent);
+}
+
+.vw-drop-zone-flash {
+	border-color: var(--interactive-accent);
+	background: rgba(var(--interactive-accent-rgb, 72, 138, 255), 0.1);
+	color: var(--interactive-accent);
+	animation: vw-drop-flash 0.6s ease forwards;
+}
+
+@keyframes vw-drop-flash {
+	0% { background: rgba(var(--interactive-accent-rgb, 72, 138, 255), 0.15); }
+	100% { background: transparent; }
+}
+
+.vw-drop-zone-icon {
+	display: flex;
+	align-items: center;
+	flex-shrink: 0;
+}
+
+.vw-drop-zone-icon svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-drop-zone-label {
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .vw-edit-hint {
@@ -395,4 +474,24 @@
 	display: flex;
 	justify-content: flex-end;
 	gap: 8px;
+}
+
+/* -- Plan Approval Modal ------------------------------------------------- */
+
+.vw-plan-modal h3 {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-plan-modal-body {
+	max-height: 400px;
+	overflow-y: auto;
+	padding: 12px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+	margin-bottom: 16px;
+	font-size: 13px;
+	line-height: 1.6;
 }

@@ -223,6 +223,16 @@
 	user-select: none;
 }
 
+.vw-delegation-badge--failed {
+	background: rgba(224, 82, 82, 0.15);
+	color: var(--text-error, #e05252);
+	cursor: pointer;
+}
+
+.vw-delegation-badge--failed:hover {
+	background: rgba(224, 82, 82, 0.25);
+}
+
 .vw-delegation-badge-icon svg {
 	width: 11px;
 	height: 11px;

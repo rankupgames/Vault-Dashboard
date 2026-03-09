@@ -8,13 +8,23 @@
  */
 
 import { PluginSettings } from './types';
+import { EventBus } from './EventBus';
+import { AudioEvents } from './events';
 
+/** Web Audio API tone generator for timer completion and warning sounds. */
 export class AudioService {
 	private ctx: AudioContext | null = null;
 	private settings: PluginSettings;
+	private unsubscribers: (() => void)[] = [];
 
-	constructor(settings: PluginSettings) {
+	constructor(settings: PluginSettings, bus?: EventBus) {
 		this.settings = settings;
+		if (bus) {
+			this.unsubscribers.push(
+				bus.on(AudioEvents.PlayComplete, () => this.playComplete()),
+				bus.on(AudioEvents.PlayWarning, () => this.playWarning()),
+			);
+		}
 	}
 
 	private ensureContext(): AudioContext {
@@ -24,6 +34,7 @@ export class AudioService {
 		return this.ctx;
 	}
 
+	/** Plays the completion tone (if enabled in settings). */
 	playComplete(): void {
 		if (this.settings.audioEnabled === false || this.settings.audioOnComplete === false) return;
 		const ctx = this.ensureContext();
@@ -31,6 +42,7 @@ export class AudioService {
 		this.playTone(ctx, 659.25, 0.15, 0.15);
 	}
 
+	/** Plays the warning tone when timer goes negative (if enabled). */
 	playWarning(): void {
 		if (this.settings.audioEnabled === false || this.settings.audioOnNegative === false) return;
 		const ctx = this.ensureContext();
@@ -54,7 +66,10 @@ export class AudioService {
 		osc.stop(startTime + duration);
 	}
 
+	/** Unsubscribes from events and closes the audio context. */
 	destroy(): void {
+		for (const unsub of this.unsubscribers) unsub();
+		this.unsubscribers = [];
 		if (this.ctx) {
 			this.ctx.close();
 			this.ctx = null;

@@ -65,6 +65,11 @@ const hslToHex = (h: number, s: number, l: number): string => {
 	return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 };
 
+/**
+ * Converts a hex color to HSL.
+ * @param hex - Color in hex format (e.g. #39d353)
+ * @returns [h, s, l] with h 0-360, s and l 0-100
+ */
 export const hexToHsl = (hex: string): [number, number, number] => {
 	const [r, g, b] = hexToRgb(hex);
 	return rgbToHsl(r, g, b);
@@ -73,6 +78,8 @@ export const hexToHsl = (hex: string): [number, number, number] => {
 /**
  * Generates 4 intensity levels for a heatmap from a single base color.
  * Level 1 is the dimmest, level 4 is closest to the picked color.
+ * @param hex - Base color in hex format
+ * @returns Tuple of 4 hex colors
  */
 export const generateHeatmapShades = (hex: string): [string, string, string, string] => {
 	const [h, s] = hexToHsl(hex);
@@ -87,6 +94,8 @@ export const generateHeatmapShades = (hex: string): [string, string, string, str
 /**
  * Generates 4 depth shades for the task tree from a single base color.
  * Depth 0 is the brightest (picked color), deeper levels get progressively dimmer.
+ * @param hex - Base color in hex format
+ * @returns Tuple of 4 hex colors
  */
 export const generateBranchShades = (hex: string): [string, string, string, string] => {
 	const [h, s, l] = hexToHsl(hex);

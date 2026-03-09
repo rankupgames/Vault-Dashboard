@@ -8,17 +8,25 @@
  */
 
 import { setIcon } from 'obsidian';
-import { ModuleConfig } from '../types';
+import { ModuleConfig } from '../core/types';
 
+/** Contract for modules that render content inside a ModuleCard. */
 export interface ModuleRenderer {
+	/** Unique module identifier. */
 	readonly id: string;
+	/** Display name shown in the card header. */
 	readonly name: string;
+	/** When true, shows a refresh button in the header. */
 	readonly showRefresh?: boolean;
+	/** Renders the module body into the given element. */
 	renderContent(el: HTMLElement): void;
+	/** Optional. Renders custom header action buttons. */
 	renderHeaderActions?(actionsEl: HTMLElement): void;
+	/** Optional. Cleanup when the module is destroyed. */
 	destroy?(): void;
 }
 
+/** Card wrapper that provides header, collapse, drag-reorder, and refresh around a ModuleRenderer. */
 export class ModuleCard {
 	private renderer: ModuleRenderer;
 	private config: ModuleConfig;
@@ -31,30 +39,37 @@ export class ModuleCard {
 		this.config = config;
 	}
 
+	/** Unique identifier of the wrapped module. */
 	get id(): string {
 		return this.renderer.id;
 	}
 
+	/** Returns a shallow copy of the module config. */
 	getConfig(): ModuleConfig {
 		return { ...this.config };
 	}
 
+	/** Sets the collapsed state without triggering callbacks. */
 	setCollapsed(collapsed: boolean): void {
 		this.config.collapsed = collapsed;
 	}
 
+	/** Registers a callback invoked when the user toggles collapse. */
 	onCollapseChanged(cb: (id: string, collapsed: boolean) => void): void {
 		this.onCollapseChange = cb;
 	}
 
+	/** Registers a callback invoked when the user drag-reorders this card. */
 	onDragReordered(cb: (fromId: string, toId: string, before: boolean) => void): void {
 		this.onDragReorder = cb;
 	}
 
+	/** Returns the root DOM element of the card, or null if not yet rendered. */
 	getContainer(): HTMLElement | null {
 		return this.container;
 	}
 
+	/** Renders the card into the parent element. */
 	render(parent: HTMLElement): void {
 		this.container = parent.createDiv({ cls: 'vw-module-card' });
 		this.container.dataset.moduleId = this.renderer.id;
@@ -103,6 +118,7 @@ export class ModuleCard {
 		this.renderer.renderContent(body);
 	}
 
+	/** Re-renders the module body content. */
 	refresh(): void {
 		if (this.container === null) return;
 		const body = this.container.querySelector('.vw-module-body') as HTMLElement | null;
@@ -111,6 +127,7 @@ export class ModuleCard {
 		this.renderer.renderContent(body);
 	}
 
+	/** Destroys the card, calls renderer destroy, and removes DOM. */
 	destroy(): void {
 		this.renderer.destroy?.();
 		if (this.container) {
@@ -187,6 +204,7 @@ export class ModuleCard {
 		});
 	}
 
+	/** ID of the module currently being dragged, or null. */
 	static draggedModuleId: string | null = null;
 
 	private updateCollapseState(btn: HTMLElement): void {

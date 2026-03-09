@@ -9,25 +9,32 @@
 
 import { App, Modal, TFile, FuzzySuggestModal } from 'obsidian';
 import { TaskImporter, TaskImportItem } from '../services/TaskImporter';
-import { SubTask } from '../types';
+import { SubTask } from '../core/types';
 
+/** Single imported task result from the import modal. */
 export interface ImportResult {
 	title: string;
 	durationMinutes: number;
 	subtasks?: SubTask[];
 }
 
+/** Modal for importing checklist items from vault notes as dashboard tasks. */
 export class ImportModal extends Modal {
 	private onImport: (results: ImportResult[]) => void;
 	private items: TaskImportItem[] = [];
 	private defaultDuration = 30;
 	private listEl: HTMLElement | null = null;
 
+	/**
+	 * @param app - Obsidian app instance
+	 * @param onImport - Callback invoked with imported tasks when user confirms
+	 */
 	constructor(app: App, onImport: (results: ImportResult[]) => void) {
 		super(app);
 		this.onImport = onImport;
 	}
 
+	/** @override */
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.addClass('vw-task-edit-modal');
@@ -80,6 +87,7 @@ export class ImportModal extends Modal {
 		cancelBtn.addEventListener('click', () => this.close());
 	}
 
+	/** @override */
 	onClose(): void {
 		this.contentEl.empty();
 	}

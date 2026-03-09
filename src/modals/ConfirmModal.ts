@@ -9,12 +9,20 @@
 
 import { App, Modal } from 'obsidian';
 
+/** Generic confirmation modal for destructive actions. */
 export class ConfirmModal extends Modal {
 	private title: string;
 	private message: string;
 	private onConfirm: () => void;
 	private confirmText: string;
 
+	/**
+	 * @param app - Obsidian app instance
+	 * @param title - Modal title
+	 * @param message - Body text shown to user
+	 * @param onConfirm - Callback invoked when user confirms
+	 * @param confirmText - Label for confirm button (default: 'Confirm')
+	 */
 	constructor(app: App, title: string, message: string, onConfirm: () => void, confirmText = 'Confirm') {
 		super(app);
 		this.title = title;
@@ -23,6 +31,7 @@ export class ConfirmModal extends Modal {
 		this.confirmText = confirmText;
 	}
 
+	/** @override */
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
@@ -43,6 +52,7 @@ export class ConfirmModal extends Modal {
 		cancelBtn.addEventListener('click', () => this.close());
 	}
 
+	/** @override */
 	onClose(): void {
 		this.contentEl.empty();
 	}

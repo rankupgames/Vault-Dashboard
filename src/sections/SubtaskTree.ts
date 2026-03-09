@@ -1,27 +1,46 @@
 /*
  * Author: Miguel A. Lopez
+ * Edited By: Miguel A. Lopez
  * Company: Rank Up Games LLC
  * Project: Vault Dashboard Welcome
  * Description: Renders subtask branches in a git-style tree with toggle, rename, add, and remove
  * Created: 2026-03-07
- * Last Modified: 2026-03-07
+ * Last Modified: 2026-03-09
  */
 
 import { setIcon } from 'obsidian';
-import { SubTask } from '../types';
-import { attachOverflowTooltip } from '../Tooltip';
+import { SubTask } from '../core/types';
+import { attachOverflowTooltip } from '../ui/Tooltip';
 
-const collapsedSubtaskIds = new Set<string>();
+/** View state for subtask tree collapse state. */
+export interface SubtreeViewState {
+	/** Subtask IDs whose children are collapsed. */
+	collapsedSubtaskIds: Set<string>;
+}
 
+/** Creates initial subtask tree view state. */
+export function createSubtreeViewState(): SubtreeViewState {
+	return { collapsedSubtaskIds: new Set<string>() };
+}
+
+/** Renders subtask branches in a git-style tree with toggle, rename, add, and remove. */
 export class SubtaskTree {
 	private onBeforeChange: (() => void) | null;
 	private onChanged: (() => void) | null;
+	private vs: SubtreeViewState;
 
-	constructor(onChanged?: () => void, onBeforeChange?: () => void) {
+	constructor(vs: SubtreeViewState, onChanged?: () => void, onBeforeChange?: () => void) {
+		this.vs = vs;
 		this.onChanged = onChanged ?? null;
 		this.onBeforeChange = onBeforeChange ?? null;
 	}
 
+	/**
+	 * Renders a branch of subtasks into the parent.
+	 * @param parent - Container element
+	 * @param subtasks - Subtasks to render
+	 * @param depth - Nesting depth (1-based)
+	 */
 	renderBranch(
 		parent: HTMLElement,
 		subtasks: SubTask[],
@@ -42,13 +61,13 @@ export class SubtaskTree {
 			if (hasChildren) {
 				const toggle = wrapper.createDiv({ cls: 'vw-branch-collapse' });
 				toggle.style.left = `${-35.5 - (depth - 1) * 41.5}px`;
-				setIcon(toggle, collapsedSubtaskIds.has(sub.id) ? 'chevron-right' : 'chevron-down');
+				setIcon(toggle, this.vs.collapsedSubtaskIds.has(sub.id) ? 'chevron-right' : 'chevron-down');
 				toggle.addEventListener('click', (e) => {
 					e.stopPropagation();
-					if (collapsedSubtaskIds.has(sub.id)) {
-						collapsedSubtaskIds.delete(sub.id);
+					if (this.vs.collapsedSubtaskIds.has(sub.id)) {
+						this.vs.collapsedSubtaskIds.delete(sub.id);
 					} else {
-						collapsedSubtaskIds.add(sub.id);
+						this.vs.collapsedSubtaskIds.add(sub.id);
 					}
 					if (this.onChanged) this.onChanged();
 				});
@@ -69,7 +88,7 @@ export class SubtaskTree {
 			const textEl = subInfo.createSpan({ cls: 'vw-subtask-text', text: sub.title });
 			attachOverflowTooltip(textEl, sub.title);
 
-			if (hasChildren && collapsedSubtaskIds.has(sub.id) === false) {
+			if (hasChildren && this.vs.collapsedSubtaskIds.has(sub.id) === false) {
 				const children = wrapper.createDiv({ cls: 'vw-git-branch-children' });
 				this.renderBranch(children, sub.subtasks!, depth + 1);
 			}

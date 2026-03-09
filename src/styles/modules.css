@@ -105,3 +105,164 @@
 	padding: 8px 0;
 	text-align: center;
 }
+
+/* -- Dispatch module ------------------------------------------------------ */
+
+.vw-dispatch-list {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.vw-dispatch-item {
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.vw-dispatch-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 8px 10px;
+	transition: background 0.1s ease;
+}
+
+.vw-dispatch-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-dispatch-status-icon {
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
+
+.vw-dispatch-status-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+.vw-dispatch-spin svg {
+	animation: vw-spin 1.2s linear infinite;
+}
+
+@keyframes vw-spin {
+	from { transform: rotate(0deg); }
+	to { transform: rotate(360deg); }
+}
+
+.vw-dispatch-info {
+	flex: 1;
+	min-width: 0;
+}
+
+.vw-dispatch-title {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-dispatch-meta {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 2px;
+}
+
+.vw-dispatch-tool {
+	font-size: 11px;
+	font-weight: 500;
+	color: var(--text-faint);
+}
+
+.vw-dispatch-elapsed {
+	font-size: 10px;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+.vw-dispatch-pid {
+	font-size: 10px;
+	color: var(--text-faint);
+	opacity: 0.7;
+	font-variant-numeric: tabular-nums;
+}
+
+.vw-dispatch-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	flex-shrink: 0;
+}
+
+.vw-dispatch-action-btn {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: color 0.1s ease, background 0.1s ease;
+}
+
+.vw-dispatch-action-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-dispatch-action-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-dispatch-approve-btn:hover {
+	color: var(--color-green);
+}
+
+.vw-dispatch-reject-btn:hover {
+	color: var(--color-red);
+}
+
+.vw-dispatch-complete-btn:hover {
+	color: var(--interactive-accent);
+}
+
+/* -- Status colors -------------------------------------------------------- */
+
+.vw-dispatch-running .vw-dispatch-status-icon { color: var(--interactive-accent); }
+.vw-dispatch-completed .vw-dispatch-status-icon { color: var(--color-green); }
+.vw-dispatch-failed .vw-dispatch-status-icon { color: var(--color-red); }
+.vw-dispatch-plan-pending .vw-dispatch-status-icon { color: var(--interactive-accent); }
+.vw-dispatch-plan-ready .vw-dispatch-status-icon { color: var(--color-yellow); }
+.vw-dispatch-plan-rejected .vw-dispatch-status-icon { color: var(--text-faint); }
+
+/* -- Output panel --------------------------------------------------------- */
+
+.vw-dispatch-output {
+	border-top: 1px solid var(--background-modifier-border);
+	background: var(--background-primary);
+	padding: 8px 10px;
+	max-height: 200px;
+	overflow-y: auto;
+}
+
+.vw-dispatch-output-pre {
+	margin: 0;
+	padding: 0;
+	font-family: var(--font-monospace);
+	font-size: 11px;
+	line-height: 1.5;
+	color: var(--text-muted);
+	white-space: pre-wrap;
+	word-break: break-word;
+}

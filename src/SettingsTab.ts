@@ -4,20 +4,28 @@
  * Project: Vault Dashboard Welcome
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
- * Last Modified: 2026-03-08
+ * Edited By: Miguel A. Lopez
+ * Last Modified: 2026-03-09
  */
 
 import { App, PluginSettingTab, Setting } from 'obsidian';
 import type VaultWelcomePlugin from './main';
+import { DEFAULT_SETTINGS } from './core/types';
 
+/** Plugin settings tab for Obsidian Settings panel. */
 export class SettingsTab extends PluginSettingTab {
 	private plugin: VaultWelcomePlugin;
 
+	/**
+	 * @param app - Obsidian app instance
+	 * @param plugin - VaultWelcomePlugin instance
+	 */
 	constructor(app: App, plugin: VaultWelcomePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
+	/** @override */
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
@@ -57,6 +65,19 @@ export class SettingsTab extends PluginSettingTab {
 					settings.autoPinTab = val;
 					await this.save();
 				}),
+			);
+
+		new Setting(el)
+			.setName('Output folder')
+			.setDesc('Base folder for all plugin-generated files (AI prompts, attachments, pasted documents). Subfolders are created per task.')
+			.addText((text) =>
+				text
+					.setPlaceholder(DEFAULT_SETTINGS.outputFolder)
+					.setValue(settings.outputFolder)
+					.onChange(async (val) => {
+						settings.outputFolder = val.trim() || DEFAULT_SETTINGS.outputFolder;
+						await this.save();
+					}),
 			);
 	}
 
@@ -232,6 +253,29 @@ export class SettingsTab extends PluginSettingTab {
 				);
 
 			new Setting(el)
+				.setName('Working directory')
+				.setDesc('Directory where AI CLI commands execute. Leave blank to use the vault root.')
+				.addText((text) =>
+					text
+						.setPlaceholder('/path/to/project')
+						.setValue(settings.aiWorkingDirectory)
+						.onChange(async (val) => {
+							settings.aiWorkingDirectory = val.trim();
+							await this.save();
+						}),
+				);
+
+			new Setting(el)
+				.setName('Skip permission prompts')
+				.setDesc('Run AI CLI in non-interactive mode, bypassing confirmation dialogs.')
+				.addToggle((toggle) =>
+					toggle.setValue(settings.aiSkipPermissions).onChange(async (val) => {
+						settings.aiSkipPermissions = val;
+						await this.save();
+					}),
+				);
+
+			new Setting(el)
 				.setName('AI auto-organize')
 				.setDesc('Show AI organize button in task modal to suggest tags and position.')
 				.addToggle((toggle) =>
@@ -269,6 +313,20 @@ export class SettingsTab extends PluginSettingTab {
 						settings.aiDelegation = val;
 						await this.save();
 					}),
+				);
+
+			new Setting(el)
+				.setName('Terminal app')
+				.setDesc('Terminal to open when taking over a dispatch.')
+				.addDropdown((dd) =>
+					dd
+						.addOption('ghostty', 'Ghostty')
+						.addOption('terminal', 'Terminal.app')
+						.setValue(settings.terminalApp)
+						.onChange(async (val) => {
+							settings.terminalApp = val as 'ghostty' | 'terminal';
+							await this.save();
+						}),
 				);
 		}
 	}
@@ -397,6 +455,37 @@ export class SettingsTab extends PluginSettingTab {
 						settings.reportBasePath = val.trim() || 'WorkspaceVault/Personal/ClaudeCRON';
 						await this.save();
 					}),
+			);
+
+		el.createEl('h3', { text: 'Report Sources' });
+
+		for (const src of settings.reportSources) {
+			new Setting(el)
+				.setName(src.label)
+				.setDesc(`${src.frequency} -- ${src.folder}`)
+				.addToggle((toggle) =>
+					toggle.setValue(src.enabled).onChange(async (val) => {
+						src.enabled = val;
+						await this.save();
+					}),
+				);
+		}
+
+		new Setting(el)
+			.setName('Add report source')
+			.addButton((btn) =>
+				btn.setButtonText('Add').onClick(async () => {
+					settings.reportSources.push({
+						id: `custom-${Date.now()}`,
+						label: 'New Source',
+						folder: 'FolderName',
+						patternStr: '^(.+)\\.(md|html)$',
+						frequency: 'daily',
+						enabled: true,
+					});
+					await this.save();
+					this.display();
+				}),
 			);
 	}
 

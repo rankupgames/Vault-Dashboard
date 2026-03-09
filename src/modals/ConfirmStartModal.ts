@@ -9,13 +9,21 @@
 
 import { App, Modal } from 'obsidian';
 
+/** User choice when starting a task while another is active. */
 export type ConfirmStartChoice = 'start-now' | 'queue-next' | 'cancel';
 
+/** Confirmation modal when starting a task while another is active. */
 export class ConfirmStartModal extends Modal {
 	private activeTaskTitle: string;
 	private newTaskTitle: string;
 	private onChoice: (choice: ConfirmStartChoice) => void;
 
+	/**
+	 * @param app - Obsidian app instance
+	 * @param activeTaskTitle - Title of the currently running task
+	 * @param newTaskTitle - Title of the task user wants to start
+	 * @param onChoice - Callback invoked with user's choice
+	 */
 	constructor(app: App, activeTaskTitle: string, newTaskTitle: string, onChoice: (choice: ConfirmStartChoice) => void) {
 		super(app);
 		this.activeTaskTitle = activeTaskTitle;
@@ -23,6 +31,7 @@ export class ConfirmStartModal extends Modal {
 		this.onChoice = onChoice;
 	}
 
+	/** @override */
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
@@ -57,6 +66,7 @@ export class ConfirmStartModal extends Modal {
 		});
 	}
 
+	/** @override */
 	onClose(): void {
 		this.contentEl.empty();
 	}

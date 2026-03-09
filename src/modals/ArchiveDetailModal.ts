@@ -8,16 +8,24 @@
  */
 
 import { App, Modal, setIcon } from 'obsidian';
-import { Task, PluginSettings } from '../types';
+import { Task, PluginSettings } from '../core/types';
 import { ConfirmModal } from './ConfirmModal';
-import { renderTagPills } from '../Tooltip';
+import { renderTagPills } from '../ui/Tooltip';
 
+/** Detail modal for archived tasks with restore and delete actions. */
 export class ArchiveDetailModal extends Modal {
 	private task: Task;
 	private settings: PluginSettings;
 	private onRestore: () => void;
 	private onDelete: () => void;
 
+	/**
+	 * @param app - Obsidian app instance
+	 * @param task - Archived task to display
+	 * @param settings - Plugin settings (tag colors, etc.)
+	 * @param onRestore - Callback invoked when user restores the task
+	 * @param onDelete - Callback invoked when user confirms delete
+	 */
 	constructor(app: App, task: Task, settings: PluginSettings, onRestore: () => void, onDelete: () => void) {
 		super(app);
 		this.task = task;
@@ -26,6 +34,7 @@ export class ArchiveDetailModal extends Modal {
 		this.onDelete = onDelete;
 	}
 
+	/** @override */
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
@@ -89,6 +98,7 @@ export class ArchiveDetailModal extends Modal {
 		cancelBtn.addEventListener('click', () => this.close());
 	}
 
+	/** @override */
 	onClose(): void {
 		this.contentEl.empty();
 	}

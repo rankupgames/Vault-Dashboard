@@ -8,9 +8,10 @@
  */
 
 import { App, FuzzySuggestModal, TFile, setIcon } from 'obsidian';
-import { ModuleConfig } from '../types';
-import { ModuleRenderer } from '../components/ModuleCard';
-import { DocumentTracker } from '../DocumentTracker';
+import { ConfirmModal } from '../modals/ConfirmModal';
+import { ModuleConfig } from '../core/types';
+import { ModuleRenderer } from './ModuleCard';
+import { DocumentTracker } from '../services/DocumentTracker';
 
 const DOC_OPEN_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>`;
 
@@ -36,6 +37,7 @@ class FileSuggestModal extends FuzzySuggestModal<TFile> {
 	}
 }
 
+/** Module that displays recently opened documents. */
 export class LastOpenedModule implements ModuleRenderer {
 	readonly id = 'last-opened';
 	readonly name = 'Last Opened Documents';
@@ -48,6 +50,7 @@ export class LastOpenedModule implements ModuleRenderer {
 		this.tracker = new DocumentTracker(app);
 	}
 
+	/** Renders the last-opened document list into the given element. */
 	renderContent(el: HTMLElement): void {
 		const docs = this.tracker.getLastOpened(12);
 		if (docs.length === 0) {
@@ -69,6 +72,7 @@ export class LastOpenedModule implements ModuleRenderer {
 	}
 }
 
+/** Module that displays pinned quick-access documents with add/remove controls. */
 export class QuickAccessModule implements ModuleRenderer {
 	readonly id = 'quick-access';
 	readonly name = 'Quick Access Documents';
@@ -85,10 +89,12 @@ export class QuickAccessModule implements ModuleRenderer {
 		this.paths = paths;
 	}
 
+	/** Registers a callback invoked when pinned paths change. */
 	onPathsChanged(cb: (paths: string[]) => void): void {
 		this.onPathsChange = cb;
 	}
 
+	/** Adds a file path to the quick-access list. */
 	addPath(path: string): void {
 		if (this.paths.includes(path)) return;
 		this.paths.push(path);
@@ -96,6 +102,7 @@ export class QuickAccessModule implements ModuleRenderer {
 		this.refreshBody();
 	}
 
+	/** Renders the add-file button in the header. */
 	renderHeaderActions(actionsEl: HTMLElement): void {
 		const addBtn = actionsEl.createDiv({ cls: 'vw-module-refresh' });
 		setIcon(addBtn, 'plus');
@@ -109,6 +116,7 @@ export class QuickAccessModule implements ModuleRenderer {
 		});
 	}
 
+	/** Renders the quick-access document list into the given element. */
 	renderContent(el: HTMLElement): void {
 		this.bodyEl = el;
 
@@ -138,9 +146,11 @@ export class QuickAccessModule implements ModuleRenderer {
 			setIcon(removeBtn, 'x');
 			removeBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				this.paths = this.paths.filter((p) => p !== doc.path);
-				if (this.onPathsChange) this.onPathsChange(this.paths);
-				this.refreshBody();
+				new ConfirmModal(this.app, 'Remove Document', `Remove "${doc.name}" from quick access?`, () => {
+					this.paths = this.paths.filter((p) => p !== doc.path);
+					if (this.onPathsChange) this.onPathsChange(this.paths);
+					this.refreshBody();
+				}).open();
 			});
 		}
 	}

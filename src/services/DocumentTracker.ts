@@ -9,12 +9,17 @@
 
 import { App, TFile } from 'obsidian';
 
+/** A document reference with path, display name, and existence flag. */
 export interface DocumentEntry {
+	/** File path. */
 	path: string;
+	/** Display name (basename without extension). */
 	name: string;
+	/** True if the file exists in the vault. */
 	exists: boolean;
 }
 
+/** Tracks recently opened files and quick access pinned documents. */
 export class DocumentTracker {
 	private app: App;
 
@@ -22,6 +27,7 @@ export class DocumentTracker {
 		this.app = app;
 	}
 
+	/** Returns the most recently opened documents, up to limit. */
 	getLastOpened(limit: number = 15): DocumentEntry[] {
 		const recentFiles: string[] = (this.app.workspace as Record<string, unknown>)['recentFiles'] as string[] ?? [];
 
@@ -35,10 +41,12 @@ export class DocumentTracker {
 			.map((path) => this.toEntry(path));
 	}
 
+	/** Returns DocumentEntry for each path, with existence checked. */
 	getQuickAccess(paths: string[]): DocumentEntry[] {
 		return paths.map((p) => this.toEntry(p));
 	}
 
+	/** Opens the file in a new tab if it exists. */
 	openFile(path: string): void {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		if (file instanceof TFile) {

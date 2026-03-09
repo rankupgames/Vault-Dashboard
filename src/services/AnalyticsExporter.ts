@@ -8,9 +8,11 @@
  */
 
 import { App, TFile } from 'obsidian';
-import { Task } from '../types';
+import { Task } from '../core/types';
 
+/** Exports task analytics to CSV or appends to daily note. */
 export class AnalyticsExporter {
+	/** Returns CSV string for tasks and archived tasks. */
 	static exportToCSV(tasks: Task[], archivedTasks: Task[]): string {
 		const all = [...tasks, ...archivedTasks];
 		const header = 'Title,Tags,Estimated (min),Actual (min),Status,Started,Completed';
@@ -25,6 +27,7 @@ export class AnalyticsExporter {
 		return [header, ...rows].join('\n');
 	}
 
+	/** Appends completed task summary to today's daily note. */
 	static async exportToDailyNote(app: App, tasks: Task[], dailyNotesFolder = '_DailyNotes'): Promise<void> {
 		const today = new Date();
 		const dateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -61,6 +64,7 @@ export class AnalyticsExporter {
 		}
 	}
 
+	/** Triggers browser download of the CSV with the given filename. */
 	static downloadCSV(csv: string, filename: string): void {
 		const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 		const url = URL.createObjectURL(blob);

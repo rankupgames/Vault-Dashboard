@@ -4,46 +4,81 @@
  * Project: Vault Dashboard Welcome
  * Description: Task list with git-style tree, duration display, actions, and subtask rendering
  * Created: 2026-03-07
- * Last Modified: 2026-03-07
+ * Edited By: Miguel A. Lopez
+ * Last Modified: 2026-03-09
  */
 
 import { App, setIcon, TFile, Notice } from 'obsidian';
-import { Task, SubTask, PluginSettings } from '../types';
-import { TimerEngine } from '../TimerEngine';
-import { TaskManager } from '../TaskManager';
-import { SubtaskTree } from './SubtaskTree';
+import { Task, SubTask, PluginSettings } from '../core/types';
+import { TimerEngine } from '../core/TimerEngine';
+import { TaskManager } from '../core/TaskManager';
+import { SubtaskTree, SubtreeViewState } from './SubtaskTree';
 import { TaskModal } from '../modals/TaskModal';
 import { ImportModal } from '../modals/ImportModal';
 import { TimerSection } from './TimerSection';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
 import { AIDispatcher } from '../services/AIDispatcher';
+import { PlanApprovalModal } from '../modals/PlanApprovalModal';
 import { AnalyticsExporter } from '../services/AnalyticsExporter';
-import { attachOverflowTooltip, renderTagPills } from '../Tooltip';
+import { attachOverflowTooltip, renderTagPills } from '../ui/Tooltip';
+import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
+/** View state for the task timeline (collapse, archive, filters). */
+export interface TimelineViewState {
+	/** Task IDs whose subtask branches are collapsed. */
+	collapsedTaskIds: Set<string>;
+	/** Whether all expandable tasks are collapsed. */
+	allCollapsed: boolean;
+	/** Whether the archive section is visible. */
+	showArchive: boolean;
+	/** Tags used to filter the task list. */
+	activeTagFilters: string[];
+}
+
+/**
+ * Creates initial timeline view state.
+ * @returns New TimelineViewState with default values
+ */
+export function createTimelineViewState(): TimelineViewState {
+	return {
+		collapsedTaskIds: new Set<string>(),
+		allCollapsed: false,
+		showArchive: false,
+		activeTagFilters: [],
+	};
+}
+
+/** Dependencies for the task timeline. */
 export interface TaskTimelineDeps {
 	app: App;
 	timerEngine: TimerEngine;
 	taskManager: TaskManager;
 	timerSection: TimerSection;
+	/** Invoked when the full dashboard should re-render. */
 	onRenderAll: () => void;
+	/** Invoked to persist plugin state. */
 	saveCallback: () => void;
 	settings: PluginSettings;
+	viewState: TimelineViewState;
+	subtreeViewState: SubtreeViewState;
 }
 
-const collapsedTaskIds = new Set<string>();
-let allCollapsed = false;
-let showArchive = false;
-let activeTagFilters: string[] = [];
-
-export class TaskTimeline {
+/** Task list with git-style tree, duration display, actions, and subtask rendering. */
+export class TaskTimeline implements SectionRenderer {
+	readonly id = 'task-timeline';
+	readonly zone: SectionZone = 'right-col';
+	readonly order = 0;
 	private deps: TaskTimelineDeps;
+	private vs: TimelineViewState;
 	private subtaskTree: SubtaskTree;
 	private draggedTaskId: string | null = null;
 
 	constructor(deps: TaskTimelineDeps) {
 		this.deps = deps;
+		this.vs = deps.viewState;
 		this.subtaskTree = new SubtaskTree(
+			deps.subtreeViewState,
 			() => {
 				this.deps.saveCallback();
 				this.deps.onRenderAll();
@@ -54,6 +89,10 @@ export class TaskTimeline {
 		);
 	}
 
+	/**
+	 * Renders the task timeline into the given parent.
+	 * @param parent - Container element
+	 */
 	render(parent: HTMLElement): void {
 		const section = parent.createDiv({ cls: 'vw-tasks-timeline' });
 
@@ -65,18 +104,18 @@ export class TaskTimeline {
 
 		if (hasExpandable) {
 			const toggleBtn = headerLeft.createDiv({ cls: 'vw-tasks-collapse-toggle' });
-			setIcon(toggleBtn, allCollapsed ? 'unfold-vertical' : 'fold-vertical');
-			toggleBtn.setAttribute('aria-label', allCollapsed ? 'Expand all' : 'Collapse all');
+			setIcon(toggleBtn, this.vs.allCollapsed ? 'unfold-vertical' : 'fold-vertical');
+			toggleBtn.setAttribute('aria-label', this.vs.allCollapsed ? 'Expand all' : 'Collapse all');
 			toggleBtn.setAttribute('tabindex', '0');
 			toggleBtn.addEventListener('click', () => {
-				if (allCollapsed) {
-					collapsedTaskIds.clear();
-					allCollapsed = false;
+				if (this.vs.allCollapsed) {
+					this.vs.collapsedTaskIds.clear();
+					this.vs.allCollapsed = false;
 				} else {
 					for (const t of tasks) {
-						if (t.subtasks && t.subtasks.length > 0) collapsedTaskIds.add(t.id);
+						if (t.subtasks && t.subtasks.length > 0) this.vs.collapsedTaskIds.add(t.id);
 					}
-					allCollapsed = true;
+					this.vs.allCollapsed = true;
 				}
 				this.deps.onRenderAll();
 			});
@@ -136,7 +175,7 @@ export class TaskTimeline {
 				aiOrderBtn.addEventListener('click', async () => {
 					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
 					const prompt = AIDispatcher.composePrompt('order', ctx);
-					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, prompt);
+					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, 'order', prompt);
 				});
 			}
 
@@ -148,7 +187,7 @@ export class TaskTimeline {
 				aiScheduleBtn.addEventListener('click', async () => {
 					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
 					const prompt = AIDispatcher.composePrompt('schedule', ctx);
-					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, prompt);
+					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, 'schedule', prompt);
 				});
 			}
 		}
@@ -207,11 +246,11 @@ export class TaskTimeline {
 
 		const archived = this.deps.taskManager.getArchivedTasks();
 		const toggleArchive = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
-		setIcon(toggleArchive, showArchive ? 'eye-off' : 'eye');
-		toggleArchive.setAttribute('aria-label', showArchive ? 'Hide archive' : 'Show archive');
+		setIcon(toggleArchive, this.vs.showArchive ? 'eye-off' : 'eye');
+		toggleArchive.setAttribute('aria-label', this.vs.showArchive ? 'Hide archive' : 'Show archive');
 		toggleArchive.setAttribute('tabindex', '0');
 		toggleArchive.addEventListener('click', () => {
-			showArchive = showArchive === false;
+			this.vs.showArchive = this.vs.showArchive === false;
 			this.deps.onRenderAll();
 		});
 
@@ -219,7 +258,7 @@ export class TaskTimeline {
 		const tasksPane = body.createDiv({ cls: 'vw-tasks-pane' });
 		this.renderTaskList(tasksPane);
 
-		if (showArchive && archived.length > 0) {
+		if (this.vs.showArchive && archived.length > 0) {
 			this.renderArchiveSection(tasksPane, archived);
 		}
 	}
@@ -268,11 +307,11 @@ export class TaskTimeline {
 		const trigger = wrapper.createDiv({ cls: 'vw-tag-dropdown-trigger' });
 		const iconEl = trigger.createSpan({ cls: 'vw-tag-dropdown-icon' });
 		setIcon(iconEl, 'tag');
-		const label = activeTagFilters.length === 0
+		const label = this.vs.activeTagFilters.length === 0
 			? 'All Tags'
-			: activeTagFilters.length === 1
-				? activeTagFilters[0]
-				: `${activeTagFilters.length} tags`;
+			: this.vs.activeTagFilters.length === 1
+				? this.vs.activeTagFilters[0]
+				: `${this.vs.activeTagFilters.length} tags`;
 		trigger.createSpan({ cls: 'vw-tag-dropdown-label', text: label });
 		const chevron = trigger.createSpan({ cls: 'vw-tag-dropdown-chevron' });
 		setIcon(chevron, 'chevron-down');
@@ -290,17 +329,17 @@ export class TaskTimeline {
 			menu.style.zIndex = '10000';
 
 			const allItem = menu.createDiv({ cls: 'vw-tag-dropdown-item' });
-			if (activeTagFilters.length === 0) allItem.addClass('vw-tag-dropdown-item-active');
+			if (this.vs.activeTagFilters.length === 0) allItem.addClass('vw-tag-dropdown-item-active');
 			allItem.createSpan({ text: 'All Tags' });
 			allItem.addEventListener('click', () => {
-				activeTagFilters = [];
+				this.vs.activeTagFilters = [];
 				menu.remove();
 				this.deps.onRenderAll();
 			});
 
 			for (const tag of allTags) {
 				const item = menu.createDiv({ cls: 'vw-tag-dropdown-item' });
-				const isSelected = activeTagFilters.includes(tag);
+				const isSelected = this.vs.activeTagFilters.includes(tag);
 
 				const checkbox = item.createSpan({ cls: 'vw-tag-dropdown-check' });
 				if (isSelected) {
@@ -316,9 +355,9 @@ export class TaskTimeline {
 				item.addEventListener('click', (e) => {
 					e.stopPropagation();
 					if (isSelected) {
-						activeTagFilters = activeTagFilters.filter((t) => t !== tag);
+						this.vs.activeTagFilters = this.vs.activeTagFilters.filter((t) => t !== tag);
 					} else {
-						activeTagFilters = [...activeTagFilters, tag];
+						this.vs.activeTagFilters = [...this.vs.activeTagFilters, tag];
 					}
 					this.deps.onRenderAll();
 				});
@@ -385,8 +424,8 @@ export class TaskTimeline {
 
 	private renderTaskList(section: HTMLElement): void {
 		let tasks = this.deps.taskManager.getTasks();
-		if (activeTagFilters.length > 0) {
-			tasks = tasks.filter((t) => t.tags?.some((tag) => activeTagFilters.includes(tag)));
+		if (this.vs.activeTagFilters.length > 0) {
+			tasks = tasks.filter((t) => t.tags?.some((tag) => this.vs.activeTagFilters.includes(tag)));
 		}
 		const state = this.deps.timerEngine.getState();
 
@@ -396,7 +435,7 @@ export class TaskTimeline {
 		for (const task of tasks) {
 			const node = tree.createDiv({ cls: 'vw-git-node' });
 			const hasSubtasks = task.subtasks && task.subtasks.length > 0;
-			const isCollapsed = collapsedTaskIds.has(task.id);
+			const isCollapsed = this.vs.collapsedTaskIds.has(task.id);
 
 			const leftControls = node.createDiv({ cls: 'vw-task-left-controls' });
 
@@ -495,12 +534,12 @@ export class TaskTimeline {
 				setIcon(leftControls, isCollapsed ? 'chevron-right' : 'chevron-down');
 				leftControls.addEventListener('click', (e) => {
 					e.stopPropagation();
-					if (collapsedTaskIds.has(task.id)) {
-						collapsedTaskIds.delete(task.id);
+					if (this.vs.collapsedTaskIds.has(task.id)) {
+						this.vs.collapsedTaskIds.delete(task.id);
 					} else {
-						collapsedTaskIds.add(task.id);
+						this.vs.collapsedTaskIds.add(task.id);
 					}
-					allCollapsed = false;
+					this.vs.allCollapsed = false;
 					this.deps.onRenderAll();
 				});
 
@@ -578,19 +617,76 @@ export class TaskTimeline {
 					e.stopPropagation();
 					this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' } as Partial<Task>);
 					this.deps.onRenderAll();
-					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
-					const prompt = AIDispatcher.composePrompt('delegate', ctx, task);
-					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, prompt);
+					try {
+						const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
+						const planId = await AIDispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
+						if (planId === '') return;
+
+						const unsub = AIDispatcher.onDispatchChange(() => {
+							const rec = AIDispatcher.getRecord(planId);
+							if (rec === undefined) return;
+							if (rec.status === 'plan-ready') {
+								unsub();
+								new PlanApprovalModal(
+									this.deps.app,
+									rec,
+									async () => {
+										try {
+											await AIDispatcher.dispatchExecute(this.deps.app, this.deps.settings, planId);
+											this.deps.taskManager.updateTask(task.id, { delegationStatus: 'completed' } as Partial<Task>);
+										} catch (execErr: unknown) {
+											const execMsg = execErr instanceof Error ? execErr.message : String(execErr);
+											this.deps.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: execMsg } as Partial<Task>);
+										}
+										this.deps.onRenderAll();
+									},
+									() => {
+										AIDispatcher.rejectPlan(planId);
+										this.deps.taskManager.updateTask(task.id, { delegationStatus: undefined } as unknown as Partial<Task>);
+										this.deps.onRenderAll();
+									},
+								).open();
+							} else if (rec.status === 'failed') {
+								unsub();
+								const failMsg = rec.error ?? 'Plan generation failed';
+								this.deps.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: failMsg } as Partial<Task>);
+								this.deps.onRenderAll();
+							}
+						});
+					} catch (err: unknown) {
+						const msg = err instanceof Error ? err.message : String(err);
+						this.deps.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: msg } as Partial<Task>);
+						this.deps.onRenderAll();
+					}
 				});
 			}
 
 			if (task.delegationStatus) {
-				const badge = actions.createDiv({ cls: 'vw-delegation-badge' });
+				const isFailed = task.delegationStatus === 'failed';
+				const badge = actions.createDiv({ cls: `vw-delegation-badge${isFailed ? ' vw-delegation-badge--failed' : ''}` });
 				const badgeIcon = badge.createSpan({ cls: 'vw-delegation-badge-icon' });
 				const iconName = task.delegationStatus === 'dispatched' ? 'loader' : task.delegationStatus === 'completed' ? 'check-circle' : 'alert-circle';
 				setIcon(badgeIcon, iconName);
-				badge.createSpan({ cls: 'vw-delegation-badge-label', text: task.delegationStatus });
+				badge.createSpan({ cls: 'vw-delegation-badge-label', text: task.delegationStatus.toUpperCase() });
+
+				if (isFailed && task.delegationFeedback) {
+					badge.setAttribute('aria-label', task.delegationFeedback);
+					badge.style.cursor = 'pointer';
+					badge.tabIndex = 0;
+					badge.addEventListener('click', (e) => {
+						e.stopPropagation();
+						navigator.clipboard.writeText(task.delegationFeedback!).then(() => new Notice('Error copied to clipboard'));
+					});
+					badge.addEventListener('keydown', (e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.stopPropagation();
+							e.preventDefault();
+							navigator.clipboard.writeText(task.delegationFeedback!).then(() => new Notice('Error copied to clipboard'));
+						}
+					});
+			} else if (task.delegationStatus !== 'completed') {
 				badge.setAttribute('aria-label', `Delegation: ${task.delegationStatus}`);
+			}
 			}
 
 			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
@@ -624,14 +720,21 @@ export class TaskTimeline {
 			});
 		} else if (isCompleted) {
 			const restartBtn = this.createIconBtn(actions, 'rotate-ccw', 'Reset task');
-			restartBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleRestartCompleted(task); });
+			restartBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				new ConfirmModal(this.deps.app, 'Reset Task', `Reset "${task.title}" back to pending?`, () => {
+					this.deps.timerSection.handleRestartCompleted(task);
+				}).open();
+			});
 
 			const requeueBtn = this.createIconBtn(actions, 'list-start', 'Requeue to front');
 			requeueBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				this.deps.taskManager.resetToPending(task.id);
-				this.deps.taskManager.moveToFront(task.id);
-				this.deps.onRenderAll();
+				new ConfirmModal(this.deps.app, 'Requeue Task', `Move "${task.title}" back to pending at the front?`, () => {
+					this.deps.taskManager.resetToPending(task.id);
+					this.deps.taskManager.moveToFront(task.id);
+					this.deps.onRenderAll();
+				}).open();
 			});
 
 			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
@@ -643,8 +746,10 @@ export class TaskTimeline {
 			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
 			removeBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				this.deps.taskManager.removeTask(task.id);
-				this.deps.onRenderAll();
+				new ConfirmModal(this.deps.app, 'Remove Task', `Remove "${task.title}"?`, () => {
+					this.deps.taskManager.removeTask(task.id);
+					this.deps.onRenderAll();
+				}).open();
 			});
 		}
 	}
@@ -707,11 +812,32 @@ export class TaskTimeline {
 		const lines: string[] = [];
 		for (const task of tasks) {
 			const check = task.status === 'completed' ? 'x' : task.status === 'skipped' ? '-' : ' ';
-			const dur = this.formatDuration(task.durationMinutes);
+			const planned = this.formatDuration(task.durationMinutes);
 			const tags = task.tags?.length ? ` [${task.tags.join(', ')}]` : '';
-			lines.push(`- [${check}] ${task.title} (${dur})${tags}`);
+			const actual = task.actualDurationMinutes != null
+				? ` | actual: ${this.formatDuration(task.actualDurationMinutes)}`
+				: '';
+			lines.push(`- [${check}] ${task.title} (${planned}${actual})${tags}`);
 			if (task.description) {
 				lines.push(`  ${task.description}`);
+			}
+			if (task.startedAt) {
+				lines.push(`  Started: ${new Date(task.startedAt).toLocaleString()}`);
+			}
+			if (task.completedAt) {
+				lines.push(`  Completed: ${new Date(task.completedAt).toLocaleString()}`);
+			}
+			if (task.linkedDocs?.length) {
+				lines.push(`  Linked: ${task.linkedDocs.join(', ')}`);
+			}
+			if (task.images?.length) {
+				lines.push(`  Images: ${task.images.join(', ')}`);
+			}
+			if (task.delegationStatus) {
+				lines.push(`  Delegation: ${task.delegationStatus}`);
+			}
+			if (task.delegationFeedback) {
+				lines.push(`  Feedback: ${task.delegationFeedback}`);
 			}
 			if (task.subtasks?.length) {
 				this.formatSubtasksForCopy(task.subtasks, lines, 1);

@@ -7,37 +7,51 @@
  * Last Modified: 2026-03-07
  */
 
-import { Task, SubTask, TaskTemplate, PluginSettings } from './types';
+import { Task, SubTask, TaskTemplate, PluginSettings, DispatchHistoryEntry } from './types';
 import { UndoManager } from './UndoManager';
+import { EventBus } from './EventBus';
+import { TaskEvents } from './events';
+
+interface TaskUndoSnapshot {
+	tasks: Task[];
+	archivedTasks: Task[];
+}
 
 const MAX_SUBTASK_DEPTH = 4;
 
+/** Task CRUD operations, subtask management, ordering, and state transitions. */
 export class TaskManager {
 	private tasks: Task[];
 	private archivedTasks: Task[];
 	private settings: PluginSettings;
 	private onChangeCallback: (() => void) | null = null;
-	private undoManager: UndoManager;
+	private undoManager: UndoManager<TaskUndoSnapshot>;
+	private bus: EventBus;
 
-	constructor(tasks: Task[], archivedTasks: Task[] = [], settings: PluginSettings) {
+	constructor(tasks: Task[], archivedTasks: Task[] = [], settings: PluginSettings, bus?: EventBus) {
 		this.tasks = tasks;
 		this.archivedTasks = archivedTasks;
 		this.settings = settings;
-		this.undoManager = new UndoManager();
+		this.undoManager = new UndoManager<TaskUndoSnapshot>();
+		this.bus = bus ?? new EventBus();
 	}
 
-	getUndoManager(): UndoManager {
+	/** Returns the undo manager for task snapshots. */
+	getUndoManager(): UndoManager<TaskUndoSnapshot> {
 		return this.undoManager;
 	}
 
+	/** Registers a callback invoked when tasks change. */
 	onChange(cb: () => void): void {
 		this.onChangeCallback = cb;
 	}
 
+	/** Returns tasks sorted by order. */
 	getTasks(): Task[] {
 		return [...this.tasks].sort((a, b) => a.order - b.order);
 	}
 
+	/** Returns a task by ID, or undefined. */
 	getTask(id: string): Task | undefined {
 		return this.tasks.find((t) => t.id === id);
 	}
@@ -46,6 +60,7 @@ export class TaskManager {
 		return this.getTasks().filter((t) => t.status === 'active');
 	}
 
+	/** Returns tasks with status 'pending'. */
 	getPendingTasks(): Task[] {
 		return this.getTasks().filter((t) => t.status === 'pending');
 	}
@@ -54,6 +69,7 @@ export class TaskManager {
 		return this.getPendingTasks()[0];
 	}
 
+	/** Reverts to the previous snapshot. Returns true if undo was applied. */
 	undo(): boolean {
 		const snapshot = this.undoManager.undo({ tasks: this.toJSON(), archivedTasks: [...this.archivedTasks] });
 		if (snapshot === undefined) return false;
@@ -63,6 +79,7 @@ export class TaskManager {
 		return true;
 	}
 
+	/** Re-applies the next snapshot. Returns true if redo was applied. */
 	redo(): boolean {
 		const snapshot = this.undoManager.redo({ tasks: this.toJSON(), archivedTasks: [...this.archivedTasks] });
 		if (snapshot === undefined) return false;
@@ -72,6 +89,7 @@ export class TaskManager {
 		return true;
 	}
 
+	/** Pushes current state onto the undo stack without modifying tasks. */
 	saveUndoSnapshot(): void {
 		this.pushUndo();
 	}
@@ -97,7 +115,8 @@ export class TaskManager {
 		return task;
 	}
 
-	updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'description' | 'durationMinutes' | 'tags' | 'linkedDocs' | 'images' | 'delegationStatus' | 'delegationFeedback'>>): void {
+	/** Updates a task's editable fields. */
+	updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'description' | 'durationMinutes' | 'tags' | 'linkedDocs' | 'images' | 'delegationStatus' | 'delegationFeedback' | 'dispatchRecords'>>): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
 		this.pushUndo();
@@ -105,6 +124,31 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Attaches a dispatch record to a task. Skips duplicates by record id. */
+	attachDispatchRecord(taskId: string, record: DispatchHistoryEntry): void {
+		const task = this.getTask(taskId);
+		if (task === undefined) return;
+		if (task.dispatchRecords === undefined) task.dispatchRecords = [];
+		if (task.dispatchRecords.some((r) => r.id === record.id)) return;
+		task.dispatchRecords.push(record);
+		this.emitChange();
+	}
+
+	/** Attaches multiple dispatch records to a task. Skips duplicates. */
+	attachDispatchRecords(taskId: string, records: DispatchHistoryEntry[]): void {
+		const task = this.getTask(taskId);
+		if (task === undefined) return;
+		if (task.dispatchRecords === undefined) task.dispatchRecords = [];
+		let added = false;
+		for (const rec of records) {
+			if (task.dispatchRecords.some((r) => r.id === rec.id)) continue;
+			task.dispatchRecords.push(rec);
+			added = true;
+		}
+		if (added) this.emitChange();
+	}
+
+	/** Adds a linked document path to a task. */
 	addLinkedDoc(taskId: string, path: string): void {
 		const task = this.getTask(taskId);
 		if (task === undefined) return;
@@ -115,6 +159,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Removes a linked document path from a task. */
 	removeLinkedDoc(taskId: string, path: string): void {
 		const task = this.getTask(taskId);
 		if (task === undefined || task.linkedDocs === undefined) return;
@@ -124,6 +169,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Removes a task by ID. */
 	removeTask(id: string): void {
 		const idx = this.tasks.findIndex((t) => t.id === id);
 		if (idx === -1) return;
@@ -132,6 +178,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Marks a task as active and records rollover applied. */
 	startTask(id: string, rolloverApplied: number): void {
 		const task = this.getTask(id);
 		if (task === undefined || task.status !== 'pending') return;
@@ -141,6 +188,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Marks a task as completed and computes actual duration. */
 	completeTask(id: string, actualEndTime?: number): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
@@ -158,6 +206,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Reverts a completed or skipped task to pending. */
 	uncompleteTask(id: string): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
@@ -172,6 +221,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Marks a task as skipped. */
 	skipTask(id: string): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
@@ -181,6 +231,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Resets a task to pending, clearing timing data. */
 	resetToPending(id: string): void {
 		const task = this.getTask(id);
 		if (task === undefined || task.status === 'pending') return;
@@ -195,6 +246,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Moves a task to the front of the order. */
 	moveToFront(id: string): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
@@ -203,6 +255,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Reorders a task up or down in the list. */
 	reorder(id: string, direction: 'up' | 'down'): void {
 		const sorted = this.getTasks();
 		const idx = sorted.findIndex((t) => t.id === id);
@@ -219,6 +272,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Moves a task relative to another (before or after). */
 	moveTask(sourceId: string, targetId: string, before: boolean): void {
 		const sorted = this.getTasks();
 		const sourceIdx = sorted.findIndex((t) => t.id === sourceId);
@@ -235,6 +289,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Resets all tasks to pending. */
 	resetAll(): void {
 		this.pushUndo();
 		for (const task of this.tasks) {
@@ -248,12 +303,14 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Removes completed and skipped tasks (no undo). */
 	clearCompleted(): void {
 		this.tasks = this.tasks.filter((t) => t.status !== 'completed' && t.status !== 'skipped');
 		this.reindex();
 		this.emitChange();
 	}
 
+	/** Moves completed and skipped tasks to the archive. */
 	archiveCompleted(): void {
 		this.pushUndo();
 		const completed = this.tasks.filter((t) => t.status === 'completed' || t.status === 'skipped');
@@ -263,10 +320,12 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Returns a copy of archived tasks. */
 	getArchivedTasks(): Task[] {
 		return [...this.archivedTasks];
 	}
 
+	/** Permanently removes an archived task. */
 	deleteArchivedTask(id: string): void {
 		const idx = this.archivedTasks.findIndex((t) => t.id === id);
 		if (idx === -1) return;
@@ -275,6 +334,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Clears all archived tasks. */
 	clearArchive(): void {
 		if (this.archivedTasks.length === 0) return;
 		this.pushUndo();
@@ -282,6 +342,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Archives completed/skipped tasks older than the given days. */
 	autoArchiveStale(days: number): void {
 		if (days <= 0) return;
 		const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
@@ -297,6 +358,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Restores an archived task to the active list. */
 	restoreFromArchive(id: string): void {
 		const idx = this.archivedTasks.findIndex((t) => t.id === id);
 		if (idx === -1) return;
@@ -315,10 +377,12 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Returns tasks that have the given tag. */
 	getTaggedTasks(tag: string): Task[] {
 		return this.getTasks().filter((t) => t.tags?.includes(tag));
 	}
 
+	/** Returns all unique tags from active and archived tasks. */
 	getAllTags(): string[] {
 		const tags = new Set<string>();
 		for (const task of this.tasks) {
@@ -330,6 +394,7 @@ export class TaskManager {
 		return Array.from(tags).sort();
 	}
 
+	/** Returns average estimated vs actual duration and accuracy percent. */
 	getAverageAccuracy(): { avgEstimated: number; avgActual: number; accuracyPercent: number } {
 		const completed = [...this.tasks, ...this.archivedTasks].filter(
 			(t) => t.status === 'completed' && t.actualDurationMinutes !== undefined,
@@ -345,6 +410,7 @@ export class TaskManager {
 		return { avgEstimated: Math.round(avgEst), avgActual: Math.round(avgAct), accuracyPercent: accuracy };
 	}
 
+	/** Saves a task as a template and returns it. */
 	saveAsTemplate(taskId: string): TaskTemplate | undefined {
 		const task = this.getTask(taskId);
 		if (task === undefined) return undefined;
@@ -360,19 +426,23 @@ export class TaskManager {
 		return template;
 	}
 
+	/** Returns all saved templates. */
 	getTemplates(): TaskTemplate[] {
 		return this.settings.templates;
 	}
 
+	/** Removes a template by ID. */
 	removeTemplate(id: string): void {
 		this.settings.templates = this.settings.templates.filter((t) => t.id !== id);
 		this.emitChange();
 	}
 
+	/** Returns the archived tasks array by reference (for direct mutation). */
 	getArchivedTasksRef(): Task[] {
 		return this.archivedTasks;
 	}
 
+	/** Replaces the archived tasks array. */
 	setArchivedTasks(tasks: Task[]): void {
 		this.archivedTasks = tasks;
 	}
@@ -385,6 +455,7 @@ export class TaskManager {
 		}));
 	}
 
+	/** Adds a subtask under a parent path. Returns undefined if depth limit exceeded. */
 	addSubTask(taskId: string, title: string, parentPath: string[] = []): SubTask | undefined {
 		const task = this.getTask(taskId);
 		if (task === undefined) return undefined;
@@ -409,6 +480,7 @@ export class TaskManager {
 		return newSub;
 	}
 
+	/** Toggles a subtask's status between pending and completed. */
 	toggleSubTask(taskId: string, subTaskPath: string[]): void {
 		const task = this.getTask(taskId);
 		if (task === undefined || subTaskPath.length === 0) return;
@@ -420,6 +492,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Renames a subtask. */
 	renameSubTask(taskId: string, subTaskPath: string[], newTitle: string): void {
 		const task = this.getTask(taskId);
 		if (task === undefined || subTaskPath.length === 0) return;
@@ -429,6 +502,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Replaces all subtasks for a task. */
 	replaceSubtasks(taskId: string, subtasks: SubTask[] | undefined): void {
 		const task = this.getTask(taskId);
 		if (task === undefined) return;
@@ -436,6 +510,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Removes a subtask by path. */
 	removeSubTask(taskId: string, subTaskPath: string[]): void {
 		const task = this.getTask(taskId);
 		if (task === undefined || subTaskPath.length === 0) return;
@@ -488,6 +563,7 @@ export class TaskManager {
 		return parent.subtasks.find((s) => s.id === targetId);
 	}
 
+	/** Returns a shallow copy of tasks for serialization. */
 	toJSON(): Task[] {
 		return this.tasks.map((t) => ({ ...t }));
 	}
@@ -507,5 +583,6 @@ export class TaskManager {
 		if (this.onChangeCallback) {
 			this.onChangeCallback();
 		}
+		this.bus.emit(TaskEvents.Changed, {});
 	}
 }

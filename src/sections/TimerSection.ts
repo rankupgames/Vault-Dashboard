@@ -8,37 +8,68 @@
  */
 
 import { App, setIcon } from 'obsidian';
-import { Task, PluginSettings } from '../types';
-import { TimerEngine } from '../TimerEngine';
-import { TaskManager } from '../TaskManager';
+import { ConfirmModal } from '../modals/ConfirmModal';
+import { Task, PluginSettings } from '../core/types';
+import { TimerEngine } from '../core/TimerEngine';
+import { TaskManager } from '../core/TaskManager';
+import { EventBus } from '../core/EventBus';
+import { TaskEvents, TaskStartPayload, TaskSkipPayload } from '../core/events';
 import { ConfirmStartModal } from '../modals/ConfirmStartModal';
+import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
 export interface TimerSectionDeps {
 	app: App;
 	timerEngine: TimerEngine;
 	taskManager: TaskManager;
+	eventBus: EventBus;
 	onRenderAll: () => void;
 	saveCallback: () => void;
 	settings: PluginSettings;
 }
 
-export class TimerSection {
+export class TimerSection implements SectionRenderer {
+	readonly id = 'timer';
+	readonly zone: SectionZone = 'top-bar';
+	readonly order = 0;
 	private deps: TimerSectionDeps;
 	private displayEl: HTMLElement | null = null;
 	private ringEl: SVGCircleElement | null = null;
+	private unsubscribers: (() => void)[] = [];
 
 	constructor(deps: TimerSectionDeps) {
 		this.deps = deps;
+		this.unsubscribers.push(
+			deps.eventBus.on<TaskStartPayload>(TaskEvents.Start, (p) => this.handleStartTask(p.task)),
+			deps.eventBus.on<TaskSkipPayload>(TaskEvents.Skip, () => this.handleSkipActive()),
+		);
 	}
 
+	/** Unsubscribes from events and clears state. */
+	destroy(): void {
+		for (const unsub of this.unsubscribers) unsub();
+		this.unsubscribers = [];
+	}
+
+	/**
+	 * Returns the element showing the remaining time.
+	 * @returns The display element, or null if not rendered
+	 */
 	getDisplayEl(): HTMLElement | null {
 		return this.displayEl;
 	}
 
+	/**
+	 * Returns the SVG circle used for the progress ring.
+	 * @returns The ring element, or null if not rendered
+	 */
 	getRingEl(): SVGCircleElement | null {
 		return this.ringEl;
 	}
 
+	/**
+	 * Renders the timer section into the given parent.
+	 * @param parent - Container element
+	 */
 	render(parent: HTMLElement): void {
 		const section = parent.createDiv({ cls: 'vw-timer-section' });
 
@@ -137,8 +168,10 @@ export class TimerSection {
 			rolloverEl.setAttribute('aria-label', 'Click to reset rollover');
 			rolloverEl.setAttribute('tabindex', '0');
 			rolloverEl.addEventListener('click', () => {
-				this.deps.timerEngine.resetRollover();
-				this.deps.onRenderAll();
+				new ConfirmModal(this.deps.app, 'Reset Rollover', 'Reset the rollover time to zero?', () => {
+					this.deps.timerEngine.resetRollover();
+					this.deps.onRenderAll();
+				}).open();
 			});
 		}
 
@@ -193,7 +226,12 @@ export class TimerSection {
 				restartBtn.setAttribute('aria-label', 'Restart');
 				restartBtn.setAttribute('tabindex', '0');
 				restartBtn.addEventListener('click', () => {
-					this.handleRestartActive();
+					const state = this.deps.timerEngine.getState();
+					const task = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : undefined;
+					const label = task ? `"${task.title}"` : 'the active task';
+					new ConfirmModal(this.deps.app, 'Restart Task', `Restart ${label} from the beginning?`, () => {
+						this.handleRestartActive();
+					}).open();
 				});
 
 				const skipBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
@@ -201,7 +239,12 @@ export class TimerSection {
 				skipBtn.setAttribute('aria-label', 'Skip');
 				skipBtn.setAttribute('tabindex', '0');
 				skipBtn.addEventListener('click', () => {
-					this.handleSkipActive();
+					const state = this.deps.timerEngine.getState();
+					const task = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : undefined;
+					const label = task ? `"${task.title}"` : 'the active task';
+					new ConfirmModal(this.deps.app, 'Skip Task', `Skip ${label} and move to the next?`, () => {
+						this.handleSkipActive();
+					}).open();
 				});
 			}
 		}
@@ -209,6 +252,7 @@ export class TimerSection {
 		this.updateDisplay();
 	}
 
+	/** Restarts the currently active task from the beginning. */
 	handleRestartActive(): void {
 		const state = this.deps.timerEngine.getState();
 		if (state.isRunning === false || state.currentTaskId === null) return;
@@ -223,6 +267,7 @@ export class TimerSection {
 		this.deps.onRenderAll();
 	}
 
+	/** Skips the currently active task and advances to the next. */
 	handleSkipActive(): void {
 		const state = this.deps.timerEngine.getState();
 		if (state.isRunning === false || state.currentTaskId === null) return;
@@ -233,12 +278,20 @@ export class TimerSection {
 		this.deps.onRenderAll();
 	}
 
+	/**
+	 * Resets a completed task back to pending.
+	 * @param task - Completed task to reset
+	 */
 	handleRestartCompleted(task: Task): void {
 		this.deps.taskManager.resetToPending(task.id);
 		this.deps.saveCallback();
 		this.deps.onRenderAll();
 	}
 
+	/**
+	 * Starts or queues the given task; shows confirmation if another task is active.
+	 * @param task - Task to start
+	 */
 	handleStartTask(task: Task): void {
 		const state = this.deps.timerEngine.getState();
 
@@ -284,6 +337,7 @@ export class TimerSection {
 		this.deps.onRenderAll();
 	}
 
+	/** Refreshes the displayed time and ring progress. */
 	updateDisplay(): void {
 		if (this.displayEl) {
 			const text = this.deps.timerEngine.formatRemaining();

@@ -7,7 +7,7 @@
  * Last Modified: 2026-03-08
  */
 
-import { PluginSettings } from '../types';
+import { PluginSettings } from '../core/types';
 
 interface OnboardingStep {
 	title: string;
@@ -48,14 +48,23 @@ export class OnboardingOverlay {
 	private currentStep = 0;
 	private container: HTMLElement | null = null;
 
+	/** @param deps - Settings and dismiss callback */
 	constructor(deps: OnboardingOverlayDeps) {
 		this.deps = deps;
 	}
 
+	/**
+	 * Returns true if onboarding has not been seen yet.
+	 * @returns Whether to show the overlay
+	 */
 	shouldShow(): boolean {
 		return this.deps.settings.hasSeenOnboarding === false;
 	}
 
+	/**
+	 * Renders the overlay into the parent if shouldShow is true.
+	 * @param parent - Container element to append overlay to
+	 */
 	render(parent: HTMLElement): void {
 		if (this.shouldShow() === false) return;
 

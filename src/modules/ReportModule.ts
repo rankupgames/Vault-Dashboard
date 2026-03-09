@@ -3,60 +3,25 @@
  * Edited By: Miguel A. Lopez
  * Company: Rank Up Games LLC
  * Project: Vault Dashboard Welcome
- * Description: Daily and weekly report modules with sectioned grouped output and new-report indicators
+ * Description: Daily and weekly report modules driven by user-configurable report source settings
  * Created: 2026-03-07
- * Last Modified: 2026-03-08
+ * Last Modified: 2026-03-09
  */
 
 import { App } from 'obsidian';
-import { ModuleConfig, ReportSource } from '../types';
-import { ModuleRenderer } from '../components/ModuleCard';
-import { ReportScanner, ReportEntry } from '../ReportScanner';
+import { ModuleConfig, ReportSource, ReportSourceConfig } from '../core/types';
+import { ModuleRenderer } from './ModuleCard';
+import { ReportScanner, ReportEntry } from '../services/ReportScanner';
 
-const buildReportSources = (basePath: string): ReportSource[] => [
-	{
-		id: 'interview-prep',
-		label: 'Interview Prep',
-		folder: `${basePath}/Daily Interview Prep`,
-		pattern: /^(.+)\.(md|html)$/,
-		frequency: 'daily',
-	},
-	{
-		id: 'daily-trends',
-		label: 'Daily Trends',
-		folder: `${basePath}/Review Daily Trends`,
-		pattern: /^Daily_Trends_Report_(\d{4}-\d{2}-\d{2})\.(md|html)$/,
-		frequency: 'daily',
-	},
-	{
-		id: 'local-leads',
-		label: 'Local Leads',
-		folder: `${basePath}/Daily Local Leads`,
-		pattern: /^(.+)\.(md|html)$/,
-		frequency: 'daily',
-	},
-	{
-		id: 'app-store-intel',
-		label: 'App Store Intel',
-		folder: `${basePath}/Daily App Store Intel`,
-		pattern: /^(.+)\.(md|html)$/,
-		frequency: 'daily',
-	},
-	{
-		id: 'weekly-jobs',
-		label: 'Jobs Report',
-		folder: `${basePath}/Weekly Jobs Reports`,
-		pattern: /^(.+)\.(md|html)$/,
-		frequency: 'weekly',
-	},
-	{
-		id: 'competitor-watch',
-		label: 'Competitor Watch',
-		folder: `${basePath}/Weekly Competitor Watch`,
-		pattern: /^(.+)\.(md|html)$/,
-		frequency: 'weekly',
-	},
-];
+function configToSource(cfg: ReportSourceConfig, basePath: string): ReportSource {
+	return {
+		id: cfg.id,
+		label: cfg.label,
+		folder: `${basePath}/${cfg.folder}`,
+		pattern: new RegExp(cfg.patternStr),
+		frequency: cfg.frequency,
+	};
+}
 
 const renderReportRow = (list: HTMLElement, report: ReportEntry, scanner: ReportScanner): void => {
 	const rowCls = report.isNew ? 'vw-report-row vw-report-new' : 'vw-report-row';
@@ -100,6 +65,7 @@ const renderSection = (el: HTMLElement, source: ReportSource, scanner: ReportSca
 	}
 };
 
+/** Module that displays daily reports from configured report sources. */
 export class DailyReportModule implements ModuleRenderer {
 	readonly id = 'daily-reports';
 	readonly name = 'Daily Reports';
@@ -108,11 +74,14 @@ export class DailyReportModule implements ModuleRenderer {
 	private scanner: ReportScanner;
 	private sources: ReportSource[];
 
-	constructor(_app: App, _config: ModuleConfig, scanner: ReportScanner, reportBasePath: string) {
+	constructor(_app: App, _config: ModuleConfig, scanner: ReportScanner, reportBasePath: string, reportConfigs: ReportSourceConfig[]) {
 		this.scanner = scanner;
-		this.sources = buildReportSources(reportBasePath).filter((s) => s.frequency === 'daily');
+		this.sources = reportConfigs
+			.filter((c) => c.frequency === 'daily' && c.enabled)
+			.map((c) => configToSource(c, reportBasePath));
 	}
 
+	/** Renders daily report sections into the given element. */
 	renderContent(el: HTMLElement): void {
 		let totalReports = 0;
 		for (const source of this.sources) {
@@ -130,6 +99,7 @@ export class DailyReportModule implements ModuleRenderer {
 	}
 }
 
+/** Module that displays weekly reports from configured report sources. */
 export class WeeklyReportModule implements ModuleRenderer {
 	readonly id = 'weekly-reports';
 	readonly name = 'Weekly Reports';
@@ -138,11 +108,14 @@ export class WeeklyReportModule implements ModuleRenderer {
 	private scanner: ReportScanner;
 	private sources: ReportSource[];
 
-	constructor(_app: App, _config: ModuleConfig, scanner: ReportScanner, reportBasePath: string) {
+	constructor(_app: App, _config: ModuleConfig, scanner: ReportScanner, reportBasePath: string, reportConfigs: ReportSourceConfig[]) {
 		this.scanner = scanner;
-		this.sources = buildReportSources(reportBasePath).filter((s) => s.frequency === 'weekly');
+		this.sources = reportConfigs
+			.filter((c) => c.frequency === 'weekly' && c.enabled)
+			.map((c) => configToSource(c, reportBasePath));
 	}
 
+	/** Renders weekly report sections into the given element. */
 	renderContent(el: HTMLElement): void {
 		let totalReports = 0;
 		for (const source of this.sources) {

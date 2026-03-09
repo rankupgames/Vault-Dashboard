@@ -9,7 +9,7 @@
  */
 
 import { App, TFile, TFolder } from 'obsidian';
-import { ReportSource } from './types';
+import { ReportSource } from '../core/types';
 
 export interface ReportEntry {
 	file: TFile;
@@ -18,6 +18,7 @@ export interface ReportEntry {
 	isNew: boolean;
 }
 
+/** Scans vault folders for cron report files with new-report detection. */
 export class ReportScanner {
 	private app: App;
 	private lastOpenedAt: number;
@@ -28,10 +29,12 @@ export class ReportScanner {
 		this.lastOpenedAt = lastOpenedAt;
 	}
 
+	/** Sets the timestamp used to determine "new" reports. */
 	setLastOpenedAt(timestamp: number): void {
 		this.lastOpenedAt = timestamp;
 	}
 
+	/** Returns report entries from the source folder, sorted by date descending. */
 	getReports(source: ReportSource): ReportEntry[] {
 		const folder = this.app.vault.getAbstractFileByPath(source.folder);
 		if (folder === null || !(folder instanceof TFolder)) return [];
@@ -62,10 +65,12 @@ export class ReportScanner {
 		return entries.sort((a, b) => b.date.localeCompare(a.date));
 	}
 
+	/** Marks a report path as viewed (no longer "new"). */
 	markViewed(path: string): void {
 		this.viewedPaths.add(path);
 	}
 
+	/** Opens the report in a new tab and marks it viewed. */
 	openReport(file: TFile): void {
 		this.markViewed(file.path);
 		const leaf = this.app.workspace.getLeaf('tab');

@@ -7,9 +7,10 @@
  * Last Modified: 2026-03-07
  */
 
-import { ModuleConfig } from './types';
-import { ModuleCard, ModuleRenderer } from './components/ModuleCard';
+import { ModuleConfig } from '../core/types';
+import { ModuleCard, ModuleRenderer } from './ModuleCard';
 
+/** Manages a grid of ModuleCards with config-driven order, collapse, and drag-reorder. */
 export class ModuleContainer {
 	private container: HTMLElement;
 	private cards: ModuleCard[] = [];
@@ -41,6 +42,7 @@ export class ModuleContainer {
 		this.cards.push(new ModuleCard(renderer, config));
 	}
 
+	/** Renders all enabled modules in order into the container. */
 	render(): void {
 		this.container.empty();
 		this.container.addClass('vw-module-container');
@@ -78,6 +80,7 @@ export class ModuleContainer {
 		this.render();
 	}
 
+	/** Refreshes all enabled module cards. */
 	refreshAll(): void {
 		for (const card of this.cards) {
 			if (card.getConfig().enabled) {
@@ -86,6 +89,7 @@ export class ModuleContainer {
 		}
 	}
 
+	/** Destroys all module cards and clears the container. */
 	destroy(): void {
 		for (const card of this.cards) {
 			card.destroy();
@@ -93,6 +97,7 @@ export class ModuleContainer {
 		this.cards = [];
 	}
 
+	/** Returns config snapshots for all registered modules. */
 	getConfigs(): ModuleConfig[] {
 		return this.cards.map((c) => c.getConfig());
 	}

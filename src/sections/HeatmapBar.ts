@@ -8,8 +8,10 @@
  */
 
 import { App, TFile, TFolder, CachedMetadata, setIcon } from 'obsidian';
-import { Task } from '../types';
+import { Task } from '../core/types';
+import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
+/** Dependencies for the heatmap bar. */
 export interface HeatmapBarDeps {
 	app: App;
 	tasks: Task[];
@@ -19,7 +21,11 @@ export interface HeatmapBarDeps {
 	skipAutoScroll?: boolean;
 }
 
-export class HeatmapBar {
+/** Heatmap contribution grid displayed in the top bar alongside the timer. */
+export class HeatmapBar implements SectionRenderer {
+	readonly id = 'heatmap';
+	readonly zone: SectionZone = 'top-bar';
+	readonly order = 1;
 	private deps: HeatmapBarDeps;
 	private container: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
@@ -28,10 +34,18 @@ export class HeatmapBar {
 		this.deps = deps;
 	}
 
+	/**
+	 * Updates the task list used for contribution counts.
+	 * @param tasks - Tasks to use for heatmap data
+	 */
 	updateTasks(tasks: Task[]): void {
 		this.deps.tasks = tasks;
 	}
 
+	/**
+	 * Renders the heatmap grid into the given parent.
+	 * @param parent - Container element
+	 */
 	render(parent: HTMLElement): void {
 		this.container = parent.createDiv({ cls: 'vw-heatmap-bar' });
 		this.renderGrid(this.container);
@@ -204,11 +218,9 @@ export class HeatmapBar {
 		const footer = wrapper.createDiv({ cls: 'vw-heatmap-footer' });
 
 		const statsRow = footer.createDiv({ cls: 'vw-heatmap-stats-row' });
-		const weeklyStats = this.computeWeeklyStats();
+		const weeklyCompleted = this.countWeeklyCompleted();
 
-		this.renderStatChip(statsRow, 'check-circle', String(weeklyStats.completed), 'Completed this week');
-		this.renderStatChip(statsRow, 'clock', this.formatMinutes(weeklyStats.totalMinutes), 'Time this week');
-		this.renderStatChip(statsRow, 'gauge', this.formatMinutes(weeklyStats.avgMinutes), 'Avg session this week');
+		this.renderStatChip(statsRow, 'check-circle', String(weeklyCompleted), 'Completed this week');
 
 		const isNewRecord = streaks.current > 0 && streaks.current >= streaks.longest;
 		this.renderStatChip(statsRow, 'flame', `${streaks.current}d`, 'Current streak', isNewRecord ? 'vw-heatmap-stat-highlight' : undefined);
@@ -236,29 +248,16 @@ export class HeatmapBar {
 		chip.createSpan({ cls: 'vw-heatmap-stat-val', text: value });
 	}
 
-	private computeWeeklyStats(): { completed: number; totalMinutes: number; avgMinutes: number } {
+	private countWeeklyCompleted(): number {
 		const now = new Date();
 		const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 		const dayOfWeek = startOfDay.getDay();
 		const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
 		const cutoff = startOfDay.getTime() - mondayOffset * 86400000;
 
-		const completed = this.deps.tasks.filter((t) =>
+		return this.deps.tasks.filter((t) =>
 			t.status === 'completed' && t.completedAt !== undefined && t.completedAt >= cutoff,
-		);
-
-		const totalMin = completed.reduce((s, t) => s + (t.actualDurationMinutes ?? t.durationMinutes), 0);
-		const avgMin = completed.length > 0 ? Math.round(totalMin / completed.length) : 0;
-
-		return { completed: completed.length, totalMinutes: totalMin, avgMinutes: avgMin };
-	}
-
-	private formatMinutes(min: number): string {
-		if (min === 0) return '0m';
-		const h = Math.floor(min / 60);
-		const m = min % 60;
-		if (h === 0) return `${m}m`;
-		return m > 0 ? `${h}h ${m}m` : `${h}h`;
+		).length;
 	}
 
 	private computeStreaks(merged: Map<string, number>): { current: number; longest: number } {

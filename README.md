@@ -1,5 +1,9 @@
 # Vault Welcome Dashboard
 
+![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
+![Obsidian: 1.0+](https://img.shields.io/badge/Obsidian-1.0%2B-7c3aed)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
+
 **A productivity-first home screen for [Obsidian](https://obsidian.md).** Replaces the default empty tab with an interactive dashboard built around a clock-aligned rollover timer, chunked task management with git-tree subtask visualization, and a modular widget system -- all theme-aware and responsive.
 
 ## Why This Exists
@@ -139,6 +143,26 @@ interface ModuleRenderer {
 - **Theme-aware** -- All colors use Obsidian CSS variables, adapts to any theme
 - **Responsive layout** -- 2-column desktop grid collapses to single-column on mobile (<800px)
 
+## Technical Highlights
+
+- **Typed Event Bus** -- Decoupled pub/sub for cross-system communication. Commands, services, and UI sections interact through events, not direct method calls.
+- **Interface-Based Registries** -- `SectionRenderer` and `ModuleRenderer` interfaces enable composable UI. Dashboard layout is data-driven, not hardcoded.
+- **Pure-Logic Core Layer** -- `core/` has zero Obsidian imports. TimerEngine, TaskManager, UndoManager, and AudioService are testable with plain Node.
+- **Generic Undo/Redo** -- `UndoManager<T>` provides snapshot-based undo for any state type. TaskManager uses it for task + archive snapshots.
+- **Data-Driven Report Sources** -- Report modules read from user-configurable `ReportSourceConfig[]` in settings. Add, remove, or toggle sources from the settings panel.
+- **AI Context Assembly** -- AIDispatcher gathers task metadata, linked documents, and images into a structured prompt, then dispatches to Cursor CLI or Claude Code CLI.
+- **Encapsulated View State** -- No file-scope globals. All mutable UI state (collapsed IDs, filters, archive visibility) lives in typed `ViewState` objects owned by the view.
+
+## Design Philosophy
+
+The architecture applies composition-first principles inspired by Unity's component model: single responsibility per class, composition over inheritance, and decoupled event-driven communication. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full layer diagram, data flow, and design rationale.
+
+## Extending the Plugin
+
+**Custom modules**: Implement `ModuleRenderer` and call `plugin.registerModule()`. See [docs/API.md](docs/API.md) for the full interface, event list, and code examples.
+
+**Custom sections**: Implement `SectionRenderer` with zone/order targeting. See [CONTRIBUTING.md](CONTRIBUTING.md) for step-by-step guides.
+
 ## Timer Mechanics
 
 ### Clock-Aligned Snapping
@@ -160,66 +184,49 @@ Start at 6:12, 30 min task, snap = 30 min:
 - Go past 7:00 by 5 min: `-5 min` debt
 - Next task: 30 min base - 5 debt = 25 min effective, snapped to boundary
 
-## Architecture
+## Project Structure
 
 ```
 src/
-  main.ts                  -- Plugin lifecycle, commands, ribbon, pinned tab, deep link, module API
-  types.ts                 -- Shared interfaces and defaults
-  WelcomeView.ts           -- Main ItemView rendering the dashboard layout
-  TimerEngine.ts           -- Clock-aligned countdown with rollover + pomodoro mode
-  TaskManager.ts           -- Task CRUD, ordering, archiving, tags, templates, undo/redo
-  UndoManager.ts           -- Snapshot-based undo/redo stack for task mutations
-  AudioService.ts          -- Web Audio API tone generator for notifications
-  ModuleContainer.ts       -- Widget registry, grid renderer, drag-and-drop reorder
-  SettingsTab.ts           -- Plugin settings UI (general, timer, audio, heatmap, AI, modules)
-  ColorUtils.ts            -- Hex/HSL conversion, heatmap and branch shade generators
-  Tooltip.ts               -- Custom tooltip, overflow detection, shared tag pill renderer
-  ReportScanner.ts         -- Scans report folders, detects new reports since last open
-  DocumentTracker.ts       -- Recent files and quick-access path resolution
-  components/
-    TimerSection.ts        -- Timer circle UI, SVG ring, controls, pomodoro dots
-    HeatmapBar.ts          -- Contribution heatmap with streak counter and summary stats
-    TaskTimeline.ts        -- Task list with git-tree, tag filter, archive, export, undo/redo
-    SubtaskTree.ts         -- Subtask branch rendering with collapse and completion
-    ModuleCard.ts          -- Card wrapper for module renderers with drag handle
-    OnboardingOverlay.ts   -- 4-step inline walkthrough for first-run
-  modals/
-    TaskModal.ts           -- Add/edit task modal with tags, templates, subtasks, linked docs
-    ImportModal.ts         -- Note checklist scanner with preview and selective import
-    FileSuggestModal.ts    -- Fuzzy vault file picker for document and image linking
-    ArchiveDetailModal.ts  -- Archived task detail view with restore and delete actions
-    ConfirmModal.ts        -- Reusable confirmation modal for destructive actions
-    ConfirmStartModal.ts   -- Start-while-active prompt (Start Now / Queue Next / Cancel)
-  modules/
-    ReportModule.ts        -- Sectioned report listing with six configurable sources
-    DocumentModule.ts      -- Last opened and quick access document panels
-  services/
-    AnalyticsExporter.ts   -- CSV and daily note export
-    TaskImporter.ts        -- Scan note checklists for importable tasks
-    AIDispatcher.ts        -- AI context assembler and CLI dispatcher (Cursor / Claude Code)
-  styles/
-    root.css               -- CSS variables, grid layout, column structure
-    timer.css              -- Timer circle, ring, display, controls
-    heatmap.css            -- Heatmap grid, cells, legend, color scales, streaks, stats
-    tasks.css              -- Task rows, actions, tags, archive grid, export, linked docs
-    git-tree.css           -- Trunk, nodes, dots, branches, depth colors
-    subtasks.css           -- Subtask rows, inline forms, editable text
-    modules.css            -- Module card, header, collapse, refresh
-    reports.css            -- Report sections, lists, new-report indicators
-    documents.css          -- Document list, links, quick access toolbar
-    modal.css              -- Task modal, confirmation dialogs, archive detail
-    drag-drop.css          -- Drag handles, indicators, dragging state
-    tooltip.css            -- Custom tooltip layout
-    responsive.css         -- Media queries for mobile (<800px)
+  main.ts              -- Plugin entry, commands, ribbon, view registration
+  WelcomeView.ts       -- Orchestrator composing sections + modules
+  SettingsTab.ts       -- Plugin settings panel
+
+  core/                -- Zero Obsidian imports. Pure logic. Unit-testable.
+    types.ts, EventBus.ts, events.ts, TimerEngine.ts,
+    TaskManager.ts, UndoManager.ts, AudioService.ts, ColorUtils.ts
+
+  interfaces/          -- Contracts only (SectionRenderer, ModuleRenderer)
+
+  sections/            -- SectionRenderer implementations (right column)
+    TimerSection.ts, HeatmapBar.ts, TaskTimeline.ts, SubtaskTree.ts
+
+  modules/             -- ModuleRenderer implementations (left column widgets)
+    ModuleCard.ts, ModuleContainer.ts, ModuleRegistry.ts,
+    ReportModule.ts, DocumentModule.ts
+
+  services/            -- Obsidian-coupled vault/file operations
+    AIDispatcher.ts, ReportScanner.ts, DocumentTracker.ts,
+    AnalyticsExporter.ts, TaskImporter.ts
+
+  ui/                  -- Shared DOM utilities (Tooltip, OnboardingOverlay)
+  modals/              -- Obsidian modal dialogs (6 files)
+  styles/              -- CSS (13 files, theme-aware)
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full layer diagram and dependency graph.
 
 ### Data Flow
 
 ```
-TimerEngine <--> data.json <--> TaskManager
-                    ^
-WelcomeView --------+-------> ModuleContainer --> [modules]
+Commands --> EventBus --> TimerSection / TaskManager / AudioService
+                              |
+TaskManager --> UndoManager --> EventBus("task:changed") --> data.json
+                                                              |
+WelcomeView <-- EventBus <-- TimerEngine("timer:tick") ------+
+     |
+     +--> SectionRenderer[] (by zone + order)
+     +--> ModuleRegistry --> ModuleContainer --> [modules]
 ```
 
 ## Data Storage
