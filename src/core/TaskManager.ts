@@ -28,6 +28,7 @@ export class TaskManager {
 	private undoManager: UndoManager<TaskUndoSnapshot>;
 	private bus: EventBus;
 
+	/** Initializes the manager with tasks, archived tasks, settings, and optionally an EventBus. */
 	constructor(tasks: Task[], archivedTasks: Task[] = [], settings: PluginSettings, bus?: EventBus) {
 		this.tasks = tasks;
 		this.archivedTasks = archivedTasks;
@@ -56,6 +57,7 @@ export class TaskManager {
 		return this.tasks.find((t) => t.id === id);
 	}
 
+	/** Returns tasks with status 'active'. */
 	getActiveTasks(): Task[] {
 		return this.getTasks().filter((t) => t.status === 'active');
 	}
@@ -65,6 +67,7 @@ export class TaskManager {
 		return this.getTasks().filter((t) => t.status === 'pending');
 	}
 
+	/** Returns the first pending task, or undefined if none. */
 	getNextPendingTask(): Task | undefined {
 		return this.getPendingTasks()[0];
 	}
@@ -98,6 +101,7 @@ export class TaskManager {
 		this.undoManager.push({ tasks: this.toJSON(), archivedTasks: [...this.archivedTasks] });
 	}
 
+	/** Adds a new pending task and pushes an undo snapshot. */
 	addTask(title: string, durationMinutes: number, tags?: string[]): Task {
 		this.pushUndo();
 		const maxOrder = this.tasks.reduce((max, t) => Math.max(max, t.order), -1);

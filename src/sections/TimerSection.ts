@@ -17,6 +17,7 @@ import { TaskEvents, TaskStartPayload, TaskSkipPayload } from '../core/events';
 import { ConfirmStartModal } from '../modals/ConfirmStartModal';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
+/** Dependencies for the timer section (app, timer engine, task manager, event bus, callbacks, settings). */
 export interface TimerSectionDeps {
 	app: App;
 	timerEngine: TimerEngine;

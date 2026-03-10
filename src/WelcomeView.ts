@@ -4,14 +4,13 @@
  * Project: Vault Dashboard Welcome
  * Description: Slim orchestrator view composing TimerSection, HeatmapBar, TaskTimeline, and modules
  * Created: 2026-03-07
- * Edited By: Miguel A. Lopez
  * Last Modified: 2026-03-09
  */
 
 import { ItemView, WorkspaceLeaf } from 'obsidian';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { PlanApprovalModal } from './modals/PlanApprovalModal';
-import { VIEW_TYPE_WELCOME, PluginData, Task } from './core/types';
+import { VIEW_TYPE_WELCOME, PluginData, Task, ModuleConfig } from './core/types';
 import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { EventBus } from './core/EventBus';
@@ -28,7 +27,7 @@ import { LastOpenedModule, QuickAccessModule } from './modules/DocumentModule';
 import { DispatchModule } from './modules/DispatchModule';
 import { AIDispatcher, type DispatchRecord } from './services/AIDispatcher';
 import { AudioService } from './core/AudioService';
-import { ModuleCard, ModuleRenderer } from './modules/ModuleCard';
+import { ModuleCard } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { generateHeatmapShades, generateBranchShades } from './core/ColorUtils';
 import type { SectionRenderer, SectionZone } from './interfaces/SectionRenderer';
@@ -122,6 +121,7 @@ export class WelcomeView extends ItemView {
 		return this.quickAccessModule;
 	}
 
+	/** Opens the view, wires timer/task callbacks, and renders the dashboard. */
 	async onOpen(): Promise<void> {
 		const previousOpenedAt = this.data.lastDashboardOpenedAt ?? 0;
 		this.data.lastDashboardOpenedAt = Date.now();
@@ -150,6 +150,7 @@ export class WelcomeView extends ItemView {
 		this.renderAll();
 	}
 
+	/** Closes the view and destroys the module container. */
 	async onClose(): Promise<void> {
 		if (this.moduleContainer) {
 			this.moduleContainer.destroy();
@@ -299,7 +300,7 @@ export class WelcomeView extends ItemView {
 	}
 
 	private registerBuiltinModules(): void {
-		const cfgFor = (id: string) => {
+		const cfgFor = (id: string): ModuleConfig => {
 			return this.data.settings.modules.find((m) => m.id === id) ?? {
 				id, name: id, enabled: true, order: 99, collapsed: false,
 			};

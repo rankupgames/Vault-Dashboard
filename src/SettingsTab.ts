@@ -4,7 +4,6 @@
  * Project: Vault Dashboard Welcome
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
- * Edited By: Miguel A. Lopez
  * Last Modified: 2026-03-09
  */
 

@@ -1,6 +1,5 @@
 /*
  * Author: Miguel A. Lopez
- * Edited By: Miguel A. Lopez
  * Company: Rank Up Games LLC
  * Project: Vault Dashboard Welcome
  * Description: Renders subtask branches in a git-style tree with toggle, rename, add, and remove
@@ -29,6 +28,7 @@ export class SubtaskTree {
 	private onChanged: (() => void) | null;
 	private vs: SubtreeViewState;
 
+	/** Creates the subtask tree with view state and optional change callbacks. */
 	constructor(vs: SubtreeViewState, onChanged?: () => void, onBeforeChange?: () => void) {
 		this.vs = vs;
 		this.onChanged = onChanged ?? null;

@@ -50,6 +50,7 @@ export class DropZone {
 	private pasteHandler: ((e: ClipboardEvent) => void) | null = null;
 	private dragCounter = 0;
 
+	/** Creates a drop zone bound to the parent with the given config. */
 	constructor(parent: HTMLElement, config: DropZoneConfig) {
 		this.config = config;
 		this.zoneEl = this.buildZone(parent);

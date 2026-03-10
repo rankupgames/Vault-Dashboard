@@ -18,19 +18,23 @@ export class ModuleContainer {
 	private onReorder: ((configs: ModuleConfig[]) => void) | null = null;
 	private onCollapse: (() => void) | null = null;
 
+	/** Creates the module container with a DOM element and module configs. */
 	constructor(container: HTMLElement, configs: ModuleConfig[]) {
 		this.container = container;
 		this.configs = configs;
 	}
 
+	/** Sets the callback invoked when modules are drag-reordered. */
 	onReorderCallback(cb: (configs: ModuleConfig[]) => void): void {
 		this.onReorder = cb;
 	}
 
+	/** Sets the callback invoked when a module's collapse state changes. */
 	onCollapseCallback(cb: () => void): void {
 		this.onCollapse = cb;
 	}
 
+	/** Registers a module renderer and creates its ModuleCard. */
 	registerModule(renderer: ModuleRenderer): void {
 		const config = this.configs.find((c) => c.id === renderer.id) ?? {
 			id: renderer.id,

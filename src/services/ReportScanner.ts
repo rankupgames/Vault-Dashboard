@@ -1,6 +1,5 @@
 /*
  * Author: Miguel A. Lopez
- * Edited By: Miguel A. Lopez
  * Company: Rank Up Games LLC
  * Project: Vault Dashboard Welcome
  * Description: Scans vault folders for cron report files with new-report detection
@@ -11,6 +10,7 @@
 import { App, TFile, TFolder } from 'obsidian';
 import { ReportSource } from '../core/types';
 
+/** Parsed report item from a vault folder, with file, title, date, and new flag. */
 export interface ReportEntry {
 	file: TFile;
 	title: string;

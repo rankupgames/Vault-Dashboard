@@ -4,7 +4,6 @@
  * Project: Vault Dashboard Welcome
  * Description: AI context assembler and terminal dispatcher for Cursor/Claude Code CLI
  * Created: 2026-03-08
- * Edited By: Miguel A. Lopez
  * Last Modified: 2026-03-09
  */
 
@@ -371,7 +370,7 @@ export class AIDispatcher {
 
 		const { exec } = require('child_process') as typeof import('child_process');
 		return new Promise<void>((resolve, reject) => {
-			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, stderr: string) => {
+			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, _stderr: string) => {
 				if (error) {
 					record.status = 'failed';
 					record.endTime = Date.now();
@@ -384,16 +383,12 @@ export class AIDispatcher {
 					reject(error);
 					return;
 				}
-				if (stderr) {
-					console.warn('[AIDispatcher] stderr:', stderr);
-				}
-				record.status = 'completed';
+			record.status = 'completed';
 				record.endTime = Date.now();
 				record.output = stdout || undefined;
 				this.notifyListeners();
 				this.notifyFinish(record);
 				new Notice(`${actionLabel} complete.`);
-				if (stdout) console.log('[AIDispatcher] stdout:', stdout);
 				resolve();
 			});
 			record.pid = child.pid;
@@ -470,8 +465,6 @@ export class AIDispatcher {
 				console.error('[AIDispatcher] plan phase error', error);
 				return;
 			}
-			if (stderr) console.warn('[AIDispatcher] plan stderr:', stderr);
-
 			const trimmedOutput = (stdout || '').trim();
 			if (trimmedOutput.length === 0) {
 				record.status = 'failed';
@@ -556,7 +549,7 @@ export class AIDispatcher {
 
 		const { exec } = require('child_process') as typeof import('child_process');
 		return new Promise<void>((resolve, reject) => {
-			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, stderr: string) => {
+			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, _stderr: string) => {
 				if (error) {
 					record.status = 'failed';
 					record.endTime = Date.now();
@@ -569,7 +562,6 @@ export class AIDispatcher {
 					reject(error);
 					return;
 				}
-				if (stderr) console.warn('[AIDispatcher] execute stderr:', stderr);
 				record.status = 'completed';
 				record.endTime = Date.now();
 				record.output = stdout || undefined;

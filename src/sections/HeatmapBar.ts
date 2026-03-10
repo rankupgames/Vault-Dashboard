@@ -51,6 +51,7 @@ export class HeatmapBar implements SectionRenderer {
 		this.renderGrid(this.container);
 	}
 
+	/** Removes the tooltip and container element. */
 	destroy(): void {
 		this.removeTooltip();
 		if (this.container) {
@@ -263,8 +264,6 @@ export class HeatmapBar implements SectionRenderer {
 	private computeStreaks(merged: Map<string, number>): { current: number; longest: number } {
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
-		let current = 0;
-		let longest = 0;
 		let streak = 0;
 
 		const cursor = new Date(today);
@@ -282,8 +281,8 @@ export class HeatmapBar implements SectionRenderer {
 			streak++;
 			cursor.setDate(cursor.getDate() - 1);
 		}
-		current = streak;
-		longest = streak;
+		const current = streak;
+		let longest = streak;
 
 		const entries = Array.from(merged.entries())
 			.filter(([, v]) => v > 0)

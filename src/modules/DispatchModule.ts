@@ -41,11 +41,13 @@ export class DispatchModule implements ModuleRenderer {
 	private bodyEl: HTMLElement | null = null;
 	private expandedIds = new Set<string>();
 
+	/** Creates the dispatch module with settings and a data provider. */
 	constructor(settings: PluginSettings, provider: DispatchProvider) {
 		this.settings = settings;
 		this.provider = provider;
 	}
 
+	/** Renders the dispatch list into the element and subscribes to provider changes. */
 	renderContent(el: HTMLElement): void {
 		this.bodyEl = el;
 		this.unsubscribe?.();
@@ -54,6 +56,7 @@ export class DispatchModule implements ModuleRenderer {
 		this.rebuildList();
 	}
 
+	/** Renders clear-all, clear-finished, and refresh buttons into the actions container. */
 	renderHeaderActions(actionsEl: HTMLElement): void {
 		const clearAllBtn = actionsEl.createDiv({ cls: 'vw-module-refresh' });
 		setIcon(clearAllBtn, 'x-circle');

@@ -4,7 +4,6 @@
  * Project: Vault Dashboard Welcome
  * Description: Task list with git-style tree, duration display, actions, and subtask rendering
  * Created: 2026-03-07
- * Edited By: Miguel A. Lopez
  * Last Modified: 2026-03-09
  */
 
@@ -74,6 +73,7 @@ export class TaskTimeline implements SectionRenderer {
 	private subtaskTree: SubtaskTree;
 	private draggedTaskId: string | null = null;
 
+	/** Creates the task timeline with deps and initializes the subtask tree. */
 	constructor(deps: TaskTimelineDeps) {
 		this.deps = deps;
 		this.vs = deps.viewState;
@@ -814,7 +814,7 @@ export class TaskTimeline implements SectionRenderer {
 			const check = task.status === 'completed' ? 'x' : task.status === 'skipped' ? '-' : ' ';
 			const planned = this.formatDuration(task.durationMinutes);
 			const tags = task.tags?.length ? ` [${task.tags.join(', ')}]` : '';
-			const actual = task.actualDurationMinutes != null
+			const actual = task.actualDurationMinutes !== null && task.actualDurationMinutes !== undefined
 				? ` | actual: ${this.formatDuration(task.actualDurationMinutes)}`
 				: '';
 			lines.push(`- [${check}] ${task.title} (${planned}${actual})${tags}`);

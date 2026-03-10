@@ -18,6 +18,7 @@ const ensureTooltip = (): HTMLDivElement => {
 	return tooltipEl;
 };
 
+/** Shows a tooltip above the anchor element with the given text. */
 export const showTooltip = (anchor: HTMLElement, text: string): void => {
 	const tip = ensureTooltip();
 	tip.textContent = text;
@@ -42,12 +43,14 @@ export const showTooltip = (anchor: HTMLElement, text: string): void => {
 	});
 };
 
+/** Hides the currently visible tooltip. */
 export const hideTooltip = (): void => {
 	if (tooltipEl) {
 		tooltipEl.classList.remove('vw-tooltip-visible');
 	}
 };
 
+/** Attaches a tooltip to an element that shows when its content overflows. */
 export const attachOverflowTooltip = (el: HTMLElement, text: string): void => {
 	el.addEventListener('mouseenter', () => {
 		if (el.scrollWidth > el.clientWidth) {
@@ -57,6 +60,7 @@ export const attachOverflowTooltip = (el: HTMLElement, text: string): void => {
 	el.addEventListener('mouseleave', hideTooltip);
 };
 
+/** Removes the tooltip element from the DOM. */
 export const destroyTooltip = (): void => {
 	if (tooltipEl) {
 		tooltipEl.remove();
@@ -64,6 +68,7 @@ export const destroyTooltip = (): void => {
 	}
 };
 
+/** Renders tag pills into the container, showing up to maxVisible with overflow count. */
 export const renderTagPills = (
 	container: HTMLElement,
 	tags: string[],

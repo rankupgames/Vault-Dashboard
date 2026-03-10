@@ -6,7 +6,9 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
-		"preview": "node esbuild.dev.mjs"
+		"lint": "eslint src/",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"keywords": [
 		"obsidian",
@@ -18,10 +20,15 @@
 	"author": "Miguel A. Lopez",
 	"license": "MIT",
 	"devDependencies": {
+		"@eslint/js": "^10.0.1",
+		"@types/eslint__js": "^8.42.3",
 		"@types/node": "^22.0.0",
 		"builtin-modules": "^4.0.0",
 		"esbuild": "^0.24.0",
+		"eslint": "^10.0.3",
 		"obsidian": "latest",
-		"typescript": "^5.6.0"
+		"typescript": "^5.6.0",
+		"typescript-eslint": "^8.57.0",
+		"vitest": "^4.0.18"
 	}
 }

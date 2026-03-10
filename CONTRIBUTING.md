@@ -3,8 +3,8 @@
 ## Project Setup
 
 ```bash
-git clone https://github.com/dudetru25/vault-welcome.git
-cd vault-welcome
+git clone https://github.com/rankupgames/Vault-Dashboard.git
+cd Vault-Dashboard
 npm install
 npm run dev    # Watch mode -- rebuilds on save
 ```
@@ -12,10 +12,20 @@ npm run dev    # Watch mode -- rebuilds on save
 Symlink the repo into your vault's plugins folder:
 
 ```bash
-ln -s /path/to/vault-welcome "/path/to/vault/.obsidian/plugins/vault-welcome"
+ln -s /path/to/Vault-Dashboard "/path/to/vault/.obsidian/plugins/vault-welcome"
 ```
 
 Reload Obsidian with `Cmd+R` / `Ctrl+R` after changes.
+
+### Verification
+
+Before submitting a PR, verify all three gates pass:
+
+```bash
+npm run lint   # ESLint with TypeScript rules
+npm test       # Vitest -- core layer unit tests
+npm run build  # esbuild production build
+```
 
 ## Folder Structure
 
@@ -50,6 +60,7 @@ src/
     ModuleRegistry.ts  -- Central register/unregister for all modules
     ReportModule.ts    -- Daily and weekly report modules
     DocumentModule.ts  -- Last opened and quick access panels
+    DispatchModule.ts  -- AI dispatch widget panel
 
   services/            -- Obsidian-coupled vault/file operations
     AIDispatcher.ts    -- AI context assembly and CLI dispatch
@@ -58,15 +69,22 @@ src/
     AnalyticsExporter.ts -- CSV and daily note export
     TaskImporter.ts    -- Note checklist scanner
 
+  modals/              -- Obsidian modal dialogs
+    TaskModal.ts, ImportModal.ts, FileSuggestModal.ts,
+    ConfirmModal.ts, ConfirmStartModal.ts,
+    ArchiveDetailModal.ts, PlanApprovalModal.ts
+
   ui/                  -- Shared DOM utilities
     Tooltip.ts         -- Custom tooltip and tag pill renderer
     OnboardingOverlay.ts -- First-run walkthrough
-
-  modals/              -- Obsidian modal dialogs
-    TaskModal.ts, ImportModal.ts, FileSuggestModal.ts,
-    ConfirmModal.ts, ConfirmStartModal.ts, ArchiveDetailModal.ts
+    DropZone.ts        -- Drag-and-drop file target
 
   styles/              -- CSS (13 files, theme-aware)
+
+tests/
+  core/                -- Vitest unit tests for the core layer
+    EventBus.test.ts, UndoManager.test.ts, TaskManager.test.ts,
+    ColorUtils.test.ts, TimerEngine.test.ts
 ```
 
 ## Coding Standards
@@ -110,9 +128,11 @@ TypeScript adaptation of the project's Unity C# standards:
 
 ## PR Expectations
 
-- Build must pass: `npm run build`
+- All gates pass: `npm run lint && npm test && npm run build`
 - TSDoc on all new exports
+- Tests for new core logic (anything in `core/`)
 - No file-scope mutable state
 - No `any` types
+- No `innerHTML` -- use Obsidian's `setIcon()` or DOM API
 - Event-based communication for cross-system interactions
 - One responsibility per file

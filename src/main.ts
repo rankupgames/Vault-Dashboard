@@ -46,6 +46,7 @@ export default class VaultWelcomePlugin extends Plugin {
 	private dayCheckInterval: number | null = null;
 	private hasGoneNegative = false;
 
+	/** Loads plugin data, initializes services, registers views/commands, and restores timer state. */
 	async onload(): Promise<void> {
 		await this.loadData_();
 
@@ -274,6 +275,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		return this.moduleRegistry;
 	}
 
+	/** Tears down services, saves data, clears intervals, and detaches welcome views. */
 	async onunload(): Promise<void> {
 		this.timerEngine.destroy();
 		this.audioService.destroy();

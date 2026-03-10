@@ -4,7 +4,6 @@
  * Project: Vault Dashboard Welcome
  * Description: Unified add/edit task modal with subtask bulk entry
  * Created: 2026-03-07
- * Edited By: Miguel A. Lopez
  * Last Modified: 2026-03-09
  */
 
@@ -112,7 +111,7 @@ export class TaskModal extends Modal {
 
 		const form = contentEl.createDiv({ cls: 'vw-edit-form' });
 
-		let titleInput: HTMLInputElement;
+		let titleInput: HTMLInputElement; // eslint-disable-line prefer-const -- assigned in if/else branches
 		let durHours: number;
 		let durMins: number;
 		const updateDurDisplayRef = { fn: (): void => {} };
@@ -824,7 +823,7 @@ export class TaskModal extends Modal {
 		requestAnimationFrame(() => titleInput.focus());
 	}
 
-	private showChildInput(parent: HTMLElement, sub: SubTask, depth: number): void {
+	private showChildInput(parent: HTMLElement, sub: SubTask, _depth: number): void {
 		const existing = parent.querySelector('.vw-modal-subtask-child-input');
 		if (existing) { existing.remove(); return; }
 

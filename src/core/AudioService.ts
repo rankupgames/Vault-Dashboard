@@ -17,6 +17,7 @@ export class AudioService {
 	private settings: PluginSettings;
 	private unsubscribers: (() => void)[] = [];
 
+	/** Creates the service with settings and optionally subscribes to EventBus for completion and warning sounds. */
 	constructor(settings: PluginSettings, bus?: EventBus) {
 		this.settings = settings;
 		if (bus) {

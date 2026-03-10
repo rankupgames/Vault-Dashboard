@@ -29,7 +29,7 @@ export class DocumentTracker {
 
 	/** Returns the most recently opened documents, up to limit. */
 	getLastOpened(limit: number = 15): DocumentEntry[] {
-		const recentFiles: string[] = (this.app.workspace as Record<string, unknown>)['recentFiles'] as string[] ?? [];
+		const recentFiles: string[] = (this.app.workspace as unknown as Record<string, unknown>)['recentFiles'] as string[] ?? [];
 
 		if (recentFiles.length === 0) {
 			return this.fallbackLastOpened(limit);
@@ -55,6 +55,7 @@ export class DocumentTracker {
 		}
 	}
 
+	/** Returns true if the path resolves to an existing vault file. */
 	fileExists(path: string): boolean {
 		return this.app.vault.getAbstractFileByPath(path) instanceof TFile;
 	}

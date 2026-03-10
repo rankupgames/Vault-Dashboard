@@ -4,7 +4,6 @@
  * Project: Vault Dashboard Welcome
  * Description: Shared types, interfaces, and default data for the plugin
  * Created: 2026-03-07
- * Edited By: Miguel A. Lopez
  * Last Modified: 2026-03-09
  */
 
