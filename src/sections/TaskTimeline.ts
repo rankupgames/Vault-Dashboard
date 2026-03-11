@@ -629,47 +629,60 @@ export class TaskTimeline implements SectionRenderer {
 			if (isAIEnabled(this.deps.settings) && this.deps.settings.aiDelegation) {
 				const dispatcher = this.deps.aiDispatcher;
 				const delegateBtn = this.createIconBtn(actions, 'bot', 'Delegate to AI');
-				delegateBtn.addEventListener('click', async (e) => {
+				delegateBtn.addEventListener('click', (e) => {
 					e.stopPropagation();
-					this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' });
-					this.deps.onRenderAll();
-					const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
-					const planId = await dispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
-					if (planId === '') return;
+					const runDelegate = async (): Promise<void> => {
+						this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' });
+						this.deps.onRenderAll();
+						const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
+						const planId = await dispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
+						if (planId === '') return;
 
-					const unsub = dispatcher.onDispatchChange(() => {
-						const rec = dispatcher.getRecord(planId);
-						if (rec === undefined) return;
-						if (rec.status === 'plan-ready') {
-							unsub();
-							new PlanApprovalModal(
-								this.deps.app,
-								rec,
-								async () => {
-									await dispatcher.dispatchExecute(this.deps.app, this.deps.settings, planId, task);
-									const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
-									const succeeded = execRec?.status === 'completed';
-									this.deps.taskManager.updateTask(task.id, {
-										delegationStatus: succeeded ? 'completed' : 'failed',
-										delegationFeedback: succeeded ? undefined : execRec?.error,
-									});
-									this.deps.onRenderAll();
-								},
-								() => {
-									dispatcher.rejectPlan(planId);
-									this.deps.taskManager.updateTask(task.id, { delegationStatus: undefined, delegationFeedback: undefined });
-									this.deps.onRenderAll();
-								},
-							).open();
-						} else if (rec.status === 'failed') {
-							unsub();
-							this.deps.taskManager.updateTask(task.id, {
-								delegationStatus: 'failed',
-								delegationFeedback: rec.error ?? 'Plan generation failed',
-							});
-							this.deps.onRenderAll();
-						}
-					});
+						const unsub = dispatcher.onDispatchChange(() => {
+							const rec = dispatcher.getRecord(planId);
+							if (rec === undefined) return;
+							if (rec.status === 'plan-ready') {
+								unsub();
+								new PlanApprovalModal(
+									this.deps.app,
+									rec,
+									async () => {
+										await dispatcher.dispatchExecute(this.deps.app, this.deps.settings, planId, task);
+										const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
+										const succeeded = execRec?.status === 'completed';
+										this.deps.taskManager.updateTask(task.id, {
+											delegationStatus: succeeded ? 'completed' : 'failed',
+											delegationFeedback: succeeded ? undefined : execRec?.error,
+										});
+										this.deps.onRenderAll();
+									},
+									() => {
+										dispatcher.rejectPlan(planId);
+										this.deps.taskManager.updateTask(task.id, { delegationStatus: undefined, delegationFeedback: undefined });
+										this.deps.onRenderAll();
+									},
+								).open();
+							} else if (rec.status === 'failed') {
+								unsub();
+								this.deps.taskManager.updateTask(task.id, {
+									delegationStatus: 'failed',
+									delegationFeedback: rec.error ?? 'Plan generation failed',
+								});
+								this.deps.onRenderAll();
+							}
+						});
+					};
+					if (this.deps.settings.aiSkipPermissions) {
+						new ConfirmModal(
+							this.deps.app,
+							'Unrestricted Permissions',
+							'This dispatch will run with --dangerously-skip-permissions. The AI tool will have unrestricted filesystem and shell access. Continue?',
+							() => { runDelegate(); },
+							'Continue',
+						).open();
+					} else {
+						runDelegate();
+					}
 				});
 			}
 

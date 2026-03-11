@@ -10,6 +10,7 @@
 import { Plugin, WorkspaceLeaf, TFile } from 'obsidian';
 import {
 	PluginData,
+	PluginSettings,
 	ModuleConfig,
 	DEFAULT_DATA,
 	DEFAULT_SETTINGS,
@@ -21,7 +22,7 @@ import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { WelcomeView } from './WelcomeView';
 import { AudioService } from './core/AudioService';
-import { AIDispatcher, type IAIDispatcher } from './services/AIDispatcher';
+import { AIDispatcher, validateToolPath, type IAIDispatcher } from './services/AIDispatcher';
 import { ModuleRenderer } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
@@ -277,6 +278,7 @@ export default class VaultWelcomePlugin extends Plugin {
 
 	/** Tears down services, saves data, clears intervals, and detaches welcome views. */
 	async onunload(): Promise<void> {
+		this.aiDispatcher.killAll();
 		this.timerEngine.destroy();
 		this.audioService.destroy();
 		this.eventBus.destroy();
@@ -426,6 +428,8 @@ export default class VaultWelcomePlugin extends Plugin {
 			if (saved.settings?.moduleOrder) mergedSettings.moduleOrder = saved.settings.moduleOrder;
 			if (saved.settings?.reportSources) mergedSettings.reportSources = saved.settings.reportSources;
 
+			this.validateSettings(mergedSettings);
+
 			this.data = {
 				settings: mergedSettings,
 				tasks: saved.tasks ?? [],
@@ -435,6 +439,41 @@ export default class VaultWelcomePlugin extends Plugin {
 				dispatchHistory: saved.dispatchHistory ?? [],
 			};
 		}
+	}
+
+	/** Sanitizes loaded settings against expected types and ranges. */
+	private validateSettings(s: PluginSettings): void {
+		const validAITools: string[] = ['cursor', 'claude-code', 'none'];
+		if (validAITools.includes(s.aiTool) === false) s.aiTool = 'none';
+		if (validateToolPath(s.aiToolPath) === false) s.aiToolPath = '';
+
+		const validSnaps = [15, 30, 60];
+		if (validSnaps.includes(s.snapIntervalMinutes) === false) s.snapIntervalMinutes = 30;
+
+		const validTimerModes: string[] = ['clock-aligned', 'pomodoro'];
+		if (validTimerModes.includes(s.timerMode) === false) s.timerMode = 'clock-aligned';
+
+		s.pomodoroWorkMinutes = this.clamp(s.pomodoroWorkMinutes, 5, 90);
+		s.pomodoroBreakMinutes = this.clamp(s.pomodoroBreakMinutes, 1, 30);
+		s.pomodoroLongBreakMinutes = this.clamp(s.pomodoroLongBreakMinutes, 5, 60);
+		s.pomodoroLongBreakInterval = this.clamp(s.pomodoroLongBreakInterval, 2, 8);
+		s.autoArchiveDays = Math.max(0, Math.floor(s.autoArchiveDays || 0));
+
+		if (Array.isArray(s.reportSources)) {
+			for (const src of s.reportSources) {
+				if (typeof src.patternStr !== 'string' || src.patternStr.length === 0 || src.patternStr.length > 200) {
+					src.patternStr = '^(.+)\\.(md|html)$';
+				}
+			}
+		}
+
+		const validTerminals: string[] = ['ghostty', 'terminal'];
+		if (validTerminals.includes(s.terminalApp) === false) s.terminalApp = 'ghostty';
+	}
+
+	private clamp(val: unknown, min: number, max: number): number {
+		const n = typeof val === 'number' ? val : min;
+		return Math.max(min, Math.min(max, Math.floor(n)));
 	}
 
 	private async saveData_(): Promise<void> {

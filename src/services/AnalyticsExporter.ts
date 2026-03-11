@@ -10,6 +10,13 @@
 import { App, TFile } from 'obsidian';
 import { Task } from '../core/types';
 
+/** Escapes a string for safe CSV cell output (prevents formula injection). */
+const escapeCSV = (val: string): string => {
+	const escaped = val.replace(/"/g, '""');
+	const needsPrefix = /^[=+\-@\t\r]/.test(escaped);
+	return `"${needsPrefix ? '\'' : ''}${escaped}"`;
+};
+
 /** Exports task analytics to CSV or appends to daily note. */
 export class AnalyticsExporter {
 	/** Returns CSV string for tasks and archived tasks. */
@@ -22,7 +29,7 @@ export class AnalyticsExporter {
 			const act = t.actualDurationMinutes !== undefined ? String(t.actualDurationMinutes) : '';
 			const started = t.startedAt ? new Date(t.startedAt).toISOString() : '';
 			const completed = t.completedAt ? new Date(t.completedAt).toISOString() : '';
-			return `"${t.title.replace(/"/g, '""')}","${tags}",${est},${act},${t.status},${started},${completed}`;
+			return `${escapeCSV(t.title)},${escapeCSV(tags)},${est},${act},${t.status},${started},${completed}`;
 		});
 		return [header, ...rows].join('\n');
 	}

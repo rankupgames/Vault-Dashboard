@@ -4,7 +4,7 @@
  * Project: Vault Dashboard Welcome
  * Description: AI context assembler and terminal dispatcher for Cursor/Claude Code CLI
  * Created: 2026-03-08
- * Last Modified: 2026-03-10
+ * Last Modified: 2026-03-11
  */
 
 import { App, TFile, normalizePath, Notice } from 'obsidian';
@@ -67,6 +67,7 @@ export interface IAIDispatcher {
 	dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void>;
 	rejectPlan(planId: string): void;
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void;
+	killAll(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -228,20 +229,34 @@ const EXECUTE_PHASE_PREFIX = 'The user has reviewed and approved the following e
 const toSlug = (s: string): string =>
 	s.substring(0, 60).replace(/[\\/:*?"<>|#^[\]]/g, '-').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'untitled';
 
+/** Only allows safe filesystem path characters -- no shell metacharacters. */
+const SAFE_PATH_RE = /^[a-zA-Z0-9_/.\-~]+$/;
+
+/** Returns true if the AI tool path contains only safe filesystem characters. */
+export const validateToolPath = (path: string): boolean =>
+	path === '' || SAFE_PATH_RE.test(path);
+
+/** Allowlisted tool names that may be passed to `which` for path resolution. */
+const ALLOWED_TOOLS: readonly string[] = ['cursor', 'claude-code'];
+
 // ---------------------------------------------------------------------------
-// Concrete implementation (CLI-based dispatch via child_process)
+// Concrete implementation (spawn-based dispatch via child_process)
 // ---------------------------------------------------------------------------
 
 /**
  * CLI-based implementation of IAIDispatcher.
  * Writes prompts to vault files and executes them via Cursor or Claude Code CLI.
+ * Uses spawn() with explicit argv to prevent shell injection.
  */
 export class AIDispatcher implements IAIDispatcher {
+
+	private static readonly MAX_CONCURRENT = 3;
 
 	private dispatches = new Map<string, DispatchRecord>();
 	private listeners: DispatchListener[] = [];
 	private finishListeners: DispatchFinishListener[] = [];
 	private nextId = 1;
+	private activeProcesses = new Set<{ kill(signal?: NodeJS.Signals | number): boolean }>();
 
 	/**
 	 * Loads persisted dispatch entries back into the in-memory map.
@@ -330,11 +345,19 @@ export class AIDispatcher implements IAIDispatcher {
 
 	/**
 	 * Writes the prompt to a temp vault file and executes the configured AI CLI tool.
-	 * Tracks the running process so the DispatchModule can display it.
+	 * Uses spawn() with explicit argv to avoid shell injection.
 	 */
 	async dispatch(app: App, settings: PluginSettings, action: AIAction, prompt: string, task?: Task): Promise<string> {
 		if (settings.aiTool === 'none') {
 			new Notice('No AI tool configured. Set one in Settings > AI.');
+			return '';
+		}
+		if (validateToolPath(settings.aiToolPath) === false) {
+			new Notice('AI tool path contains invalid characters. Check Settings > AI > Custom CLI path.');
+			return '';
+		}
+		if (this.activeProcesses.size >= AIDispatcher.MAX_CONCURRENT) {
+			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
 			return '';
 		}
 
@@ -351,14 +374,13 @@ export class AIDispatcher implements IAIDispatcher {
 
 		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
 		const promptFile = `${vaultPath}/${tempPath}`;
-
 		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
 		const subcommand = settings.aiTool === 'cursor' ? 'agent' : '--print';
-		const skipFlag = this.permissionsFlag(settings);
-		const innerCmd = `${toolPath} ${subcommand}${skipFlag} "$(cat '${promptFile}')"`;
+		const skipFlags = this.permissionsFlags(settings);
 
-		const userShell = process.env.SHELL || '/bin/zsh';
-		const command = `${userShell} -lc ${this.shellQuote(innerCmd)}`;
+		const fs = require('fs') as typeof import('fs');
+		const promptContent = fs.readFileSync(promptFile, 'utf-8');
+		const args = [subcommand, ...skipFlags, promptContent];
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const actionLabel = ACTION_LABELS[action];
@@ -379,18 +401,40 @@ export class AIDispatcher implements IAIDispatcher {
 
 		new Notice(`${actionLabel}: running ${settings.aiTool}...`);
 
-		const { exec } = require('child_process') as typeof import('child_process');
+		const { spawn } = require('child_process') as typeof import('child_process');
 		return new Promise<string>((resolve) => {
-			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, _stderr: string) => {
-				if (error) {
+			const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
+			this.trackProcess(child);
+			record.pid = child.pid;
+			this.notifyListeners();
+
+			const stdoutChunks: Buffer[] = [];
+			child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+
+			child.on('error', (err: Error) => {
+				this.untrackProcess(child);
+				record.status = 'failed';
+				record.endTime = Date.now();
+				record.error = err.message;
+				this.notifyListeners();
+				this.notifyFinish(record);
+				new Notice(`${actionLabel} failed to start.`);
+				console.error('[AIDispatcher]', err);
+				resolve('');
+			});
+
+			child.on('close', (code: number | null) => {
+				this.untrackProcess(child);
+				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+				if (code !== 0) {
 					record.status = 'failed';
 					record.endTime = Date.now();
-					record.error = error.message;
+					record.error = `Process exited with code ${code}`;
 					record.output = stdout || undefined;
 					this.notifyListeners();
 					this.notifyFinish(record);
-					new Notice(`${actionLabel} error: ${error.message}`);
-					console.error('[AIDispatcher]', error);
+					new Notice(`${actionLabel} failed (exit ${code}).`);
+					console.error('[AIDispatcher] exit code', code);
 					resolve('');
 					return;
 				}
@@ -402,8 +446,6 @@ export class AIDispatcher implements IAIDispatcher {
 				new Notice(`${actionLabel} complete.`);
 				resolve(recordId);
 			});
-			record.pid = child.pid;
-			this.notifyListeners();
 		});
 	}
 
@@ -418,6 +460,14 @@ export class AIDispatcher implements IAIDispatcher {
 	async dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string> {
 		if (settings.aiTool === 'none') {
 			new Notice('No AI tool configured. Set one in Settings > AI.');
+			return '';
+		}
+		if (validateToolPath(settings.aiToolPath) === false) {
+			new Notice('AI tool path contains invalid characters. Check Settings > AI > Custom CLI path.');
+			return '';
+		}
+		if (this.activeProcesses.size >= AIDispatcher.MAX_CONCURRENT) {
+			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
 			return '';
 		}
 
@@ -436,14 +486,13 @@ export class AIDispatcher implements IAIDispatcher {
 
 		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
 		const promptFile = `${vaultPath}/${tempPath}`;
-
 		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
 		const subcommand = settings.aiTool === 'cursor' ? 'agent' : '--print';
-		const skipFlag = this.permissionsFlag(settings);
-		const innerCmd = `${toolPath} ${subcommand}${skipFlag} "$(cat '${promptFile}')"`;
+		const skipFlags = this.permissionsFlags(settings);
 
-		const userShell = process.env.SHELL || '/bin/zsh';
-		const command = `${userShell} -lc ${this.shellQuote(innerCmd)}`;
+		const fs = require('fs') as typeof import('fs');
+		const promptContent = fs.readFileSync(promptFile, 'utf-8');
+		const args = [subcommand, ...skipFlags, promptContent];
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const recordId = String(this.nextId++);
@@ -463,20 +512,46 @@ export class AIDispatcher implements IAIDispatcher {
 
 		new Notice(`AI Plan: generating plan via ${settings.aiTool}...`);
 
-		const { exec } = require('child_process') as typeof import('child_process');
-		exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, stderr: string) => {
-			if (error) {
+		const { spawn } = require('child_process') as typeof import('child_process');
+		const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
+		this.trackProcess(child);
+		record.pid = child.pid;
+		this.notifyListeners();
+
+		const stdoutChunks: Buffer[] = [];
+		const stderrChunks: Buffer[] = [];
+		child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+		child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+
+		child.on('error', (err: Error) => {
+			this.untrackProcess(child);
+			record.status = 'failed';
+			record.endTime = Date.now();
+			record.error = err.message;
+			this.notifyListeners();
+			this.notifyFinish(record);
+			new Notice('AI Plan failed to start.');
+			console.error('[AIDispatcher] plan phase error', err);
+		});
+
+		child.on('close', (code: number | null) => {
+			this.untrackProcess(child);
+			const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+			const stderr = Buffer.concat(stderrChunks).toString('utf-8');
+
+			if (code !== 0) {
 				record.status = 'failed';
 				record.endTime = Date.now();
-				record.error = error.message;
+				record.error = `Process exited with code ${code}`;
 				record.output = stdout || undefined;
 				this.notifyListeners();
 				this.notifyFinish(record);
-				new Notice(`AI Plan error: ${error.message}`);
-				console.error('[AIDispatcher] plan phase error', error);
+				new Notice(`AI Plan failed (exit ${code}).`);
+				console.error('[AIDispatcher] plan phase error, exit code', code);
 				return;
 			}
-			const trimmedOutput = (stdout || '').trim();
+
+			const trimmedOutput = stdout.trim();
 			if (trimmedOutput.length === 0) {
 				record.status = 'failed';
 				record.endTime = Date.now();
@@ -501,13 +576,21 @@ export class AIDispatcher implements IAIDispatcher {
 	}
 
 	/**
-	 * Phase 2: dispatches the approved plan for execution. Uses the
-	 * configured subcommand (interactive for Cursor, `--print` for Claude).
+	 * Phase 2: dispatches the approved plan for execution. Uses spawn()
+	 * with explicit argv to prevent shell injection.
 	 */
 	async dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void> {
 		const planRecord = this.dispatches.get(planId);
 		if (planRecord === undefined || planRecord.status !== 'plan-ready' || planRecord.planText === undefined) {
 			new Notice('No approved plan found.');
+			return;
+		}
+		if (validateToolPath(settings.aiToolPath) === false) {
+			new Notice('AI tool path contains invalid characters. Check Settings > AI > Custom CLI path.');
+			return;
+		}
+		if (this.activeProcesses.size >= AIDispatcher.MAX_CONCURRENT) {
+			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
 			return;
 		}
 
@@ -529,14 +612,13 @@ export class AIDispatcher implements IAIDispatcher {
 
 		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
 		const promptFile = `${vaultPath}/${tempPath}`;
-
 		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
 		const subcommand = settings.aiTool === 'cursor' ? 'agent' : '--print';
-		const skipFlag = this.permissionsFlag(settings);
-		const innerCmd = `${toolPath} ${subcommand}${skipFlag} "$(cat '${promptFile}')"`;
+		const skipFlags = this.permissionsFlags(settings);
 
-		const userShell = process.env.SHELL || '/bin/zsh';
-		const command = `${userShell} -lc ${this.shellQuote(innerCmd)}`;
+		const fs = require('fs') as typeof import('fs');
+		const promptContent = fs.readFileSync(promptFile, 'utf-8');
+		const args = [subcommand, ...skipFlags, promptContent];
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const recordId = String(this.nextId++);
@@ -558,18 +640,40 @@ export class AIDispatcher implements IAIDispatcher {
 
 		new Notice(`AI Execute: running ${settings.aiTool}...`);
 
-		const { exec } = require('child_process') as typeof import('child_process');
+		const { spawn } = require('child_process') as typeof import('child_process');
 		return new Promise<void>((resolve) => {
-			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, _stderr: string) => {
-				if (error) {
+			const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
+			this.trackProcess(child);
+			record.pid = child.pid;
+			this.notifyListeners();
+
+			const stdoutChunks: Buffer[] = [];
+			child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+
+			child.on('error', (err: Error) => {
+				this.untrackProcess(child);
+				record.status = 'failed';
+				record.endTime = Date.now();
+				record.error = err.message;
+				this.notifyListeners();
+				this.notifyFinish(record);
+				new Notice('AI Execute failed to start.');
+				console.error('[AIDispatcher] execute phase error', err);
+				resolve();
+			});
+
+			child.on('close', (code: number | null) => {
+				this.untrackProcess(child);
+				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+				if (code !== 0) {
 					record.status = 'failed';
 					record.endTime = Date.now();
-					record.error = error.message;
+					record.error = `Process exited with code ${code}`;
 					record.output = stdout || undefined;
 					this.notifyListeners();
 					this.notifyFinish(record);
-					new Notice(`AI Execute error: ${error.message}`);
-					console.error('[AIDispatcher] execute phase error', error);
+					new Notice(`AI Execute failed (exit ${code}).`);
+					console.error('[AIDispatcher] execute phase error, exit code', code);
 					resolve();
 					return;
 				}
@@ -581,8 +685,6 @@ export class AIDispatcher implements IAIDispatcher {
 				new Notice('AI Execute complete.');
 				resolve();
 			});
-			record.pid = child.pid;
-			this.notifyListeners();
 		});
 	}
 
@@ -602,15 +704,21 @@ export class AIDispatcher implements IAIDispatcher {
 	}
 
 	/**
-	 * Focuses the user's preferred terminal app, bringing an existing window
-	 * to front. Falls back to launching the app at vaultPath if not running.
+	 * Focuses the user's preferred terminal app via macOS `open -a`.
+	 * Uses spawn with argv to avoid shell/AppleScript injection.
 	 */
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void {
-		const { exec } = require('child_process') as typeof import('child_process');
+		const { spawn } = require('child_process') as typeof import('child_process');
 		const appName = terminalApp === 'ghostty' ? 'Ghostty' : 'Terminal';
-		exec(
-			`osascript -e 'if application "${appName}" is running then' -e 'tell application "${appName}" to activate' -e 'else' -e 'do shell script "open -a ${appName} \\"${vaultPath}\\""' -e 'end if'`,
-		);
+		spawn('open', ['-a', appName, vaultPath]);
+	}
+
+	/** Sends SIGTERM to all tracked child processes. */
+	killAll(): void {
+		for (const proc of this.activeProcesses) {
+			proc.kill('SIGTERM');
+		}
+		this.activeProcesses.clear();
 	}
 
 	/**
@@ -629,11 +737,15 @@ export class AIDispatcher implements IAIDispatcher {
 	 * Resolves the full path of a CLI tool via the user's login shell.
 	 * GUI apps like Obsidian don't inherit the terminal PATH, so a bare
 	 * command name will fail. Falls back to the tool name if resolution fails.
+	 * Only allowlisted tool names are passed to `which`.
 	 */
 	private resolveToolPath(tool: string): Promise<string> {
+		if (ALLOWED_TOOLS.includes(tool) === false) {
+			return Promise.resolve(tool);
+		}
 		const { spawnSync } = require('child_process') as typeof import('child_process');
 		const userShell = process.env.SHELL || '/bin/zsh';
-		const result = spawnSync(userShell, ['-lic', `which ${tool}`], {
+		const result = spawnSync(userShell, ['-lic', `which '${tool}'`], {
 			timeout: 5000,
 			encoding: 'utf-8',
 		});
@@ -646,15 +758,19 @@ export class AIDispatcher implements IAIDispatcher {
 		return task?.workingDirectory || vaultPath;
 	}
 
-	/** Returns the skip-permissions flag appropriate for the configured AI tool, or empty string. */
-	private permissionsFlag(settings: PluginSettings): string {
-		if (settings.aiSkipPermissions === false) return '';
-		if (settings.aiTool === 'claude-code') return ' --dangerously-skip-permissions';
-		if (settings.aiTool === 'cursor') return ' --yes';
-		return '';
+	/** Returns skip-permissions flags as an array for spawn argv. */
+	private permissionsFlags(settings: PluginSettings): string[] {
+		if (settings.aiSkipPermissions === false) return [];
+		if (settings.aiTool === 'claude-code') return ['--dangerously-skip-permissions'];
+		if (settings.aiTool === 'cursor') return ['--yes'];
+		return [];
 	}
 
-	private shellQuote(s: string): string {
-		return "'" + s.replace(/'/g, "'\\''") + "'";
+	private trackProcess(proc: { kill(signal?: NodeJS.Signals | number): boolean }): void {
+		this.activeProcesses.add(proc);
+	}
+
+	private untrackProcess(proc: { kill(signal?: NodeJS.Signals | number): boolean }): void {
+		this.activeProcesses.delete(proc);
 	}
 }

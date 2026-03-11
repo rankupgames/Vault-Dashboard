@@ -418,16 +418,21 @@ export class TaskModal extends Modal {
 				new Notice('Folder picker is only available on desktop');
 				return;
 			}
-			// eslint-disable-next-line @typescript-eslint/no-var-requires
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
 			const electron = require('electron');
-			const result = await electron.remote.dialog.showOpenDialog({
-				title: 'Select Working Directory',
-				properties: ['openDirectory'],
-				defaultPath: this.pendingWorkingDir || undefined,
-			});
-			if (result.canceled || result.filePaths.length === 0) return;
-			this.pendingWorkingDir = result.filePaths[0];
-			this.updateWdPathDisplay();
+			const remote = electron?.remote;
+			if (remote?.dialog?.showOpenDialog) {
+				const result = await remote.dialog.showOpenDialog({
+					title: 'Select Working Directory',
+					properties: ['openDirectory'],
+					defaultPath: this.pendingWorkingDir || undefined,
+				});
+				if (result.canceled || result.filePaths.length === 0) return;
+				this.pendingWorkingDir = result.filePaths[0];
+				this.updateWdPathDisplay();
+			} else {
+				this.showWorkingDirInput(actionsLeft);
+			}
 		});
 
 		if (isEdit) {
@@ -886,6 +891,35 @@ export class TaskModal extends Modal {
 				e.preventDefault();
 				form.remove();
 			}
+		});
+
+		requestAnimationFrame(() => input.focus());
+	}
+
+	/** Fallback text input for working directory when electron.remote is unavailable. */
+	private showWorkingDirInput(parent: HTMLElement): void {
+		const existing = parent.querySelector('.vw-wd-input-panel');
+		if (existing) { existing.remove(); return; }
+
+		const panel = parent.createDiv({ cls: 'vw-wd-input-panel' });
+		const input = panel.createEl('input', {
+			cls: 'vw-edit-input',
+			attr: { type: 'text', placeholder: '/absolute/path/to/directory', value: this.pendingWorkingDir },
+		});
+		const saveBtn = panel.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-sm', text: 'Set' });
+		const cancelBtn = panel.createEl('button', { cls: 'vw-timer-btn vw-timer-btn-sm', text: 'Cancel' });
+
+		saveBtn.addEventListener('click', (e) => {
+			e.preventDefault();
+			const val = input.value.trim();
+			if (val) this.pendingWorkingDir = val;
+			this.updateWdPathDisplay();
+			panel.remove();
+		});
+		cancelBtn.addEventListener('click', (e) => { e.preventDefault(); panel.remove(); });
+		input.addEventListener('keydown', (e: KeyboardEvent) => {
+			if (e.key === 'Escape') { e.preventDefault(); panel.remove(); }
+			if (e.key === 'Enter') { e.preventDefault(); saveBtn.click(); }
 		});
 
 		requestAnimationFrame(() => input.focus());
