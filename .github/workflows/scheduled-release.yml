@@ -5,6 +5,10 @@ on:
     - cron: "0 18 * * 5" # Every Friday at 18:00 UTC (12:00 CST)
   workflow_dispatch:
 
+concurrency:
+  group: weekly-release
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -14,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Check if release is needed
