@@ -358,6 +358,55 @@ describe('TaskManager', () => {
 		});
 	});
 
+	describe('workingDirectory', () => {
+		it('updateTask sets workingDirectory', () => {
+			const task = mgr.addTask('AI Task', 30);
+			mgr.updateTask(task.id, { workingDirectory: '/Users/dev/project' });
+
+			expect(mgr.getTask(task.id)?.workingDirectory).toBe('/Users/dev/project');
+		});
+
+		it('updateTask clears workingDirectory with undefined', () => {
+			const task = mgr.addTask('AI Task', 30);
+			mgr.updateTask(task.id, { workingDirectory: '/tmp' });
+			mgr.updateTask(task.id, { workingDirectory: undefined });
+
+			expect(mgr.getTask(task.id)?.workingDirectory).toBeUndefined();
+		});
+
+		it('workingDirectory survives archive and restore', () => {
+			const task = mgr.addTask('Archivable', 10);
+			mgr.updateTask(task.id, { workingDirectory: '/projects/my-app' });
+			mgr.completeTask(task.id);
+			mgr.archiveCompleted();
+
+			const archived = mgr.getArchivedTasks();
+			expect(archived).toHaveLength(1);
+			expect(archived[0].workingDirectory).toBe('/projects/my-app');
+
+			mgr.restoreFromArchive(task.id);
+			const restored = mgr.getTask(task.id);
+			expect(restored?.workingDirectory).toBe('/projects/my-app');
+		});
+
+		it('toJSON preserves workingDirectory', () => {
+			const task = mgr.addTask('Serialize WD', 10);
+			mgr.updateTask(task.id, { workingDirectory: '/some/path' });
+
+			const json = mgr.toJSON();
+			expect(json[0].workingDirectory).toBe('/some/path');
+		});
+
+		it('undo reverts workingDirectory change', () => {
+			const task = mgr.addTask('Undo WD', 10);
+			mgr.updateTask(task.id, { workingDirectory: '/changed' });
+			expect(mgr.getTask(task.id)?.workingDirectory).toBe('/changed');
+
+			mgr.undo();
+			expect(mgr.getTask(task.id)?.workingDirectory).toBeUndefined();
+		});
+	});
+
 	describe('onChange callback', () => {
 		it('fires on mutations', () => {
 			let callCount = 0;

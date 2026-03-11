@@ -4,7 +4,7 @@
  * Project: Vault Dashboard Welcome
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
- * Last Modified: 2026-03-09
+ * Last Modified: 2026-03-10
  */
 
 import { App, PluginSettingTab, Setting } from 'obsidian';
@@ -247,19 +247,6 @@ export class SettingsTab extends PluginSettingTab {
 						.setValue(settings.aiToolPath)
 						.onChange(async (val) => {
 							settings.aiToolPath = val.trim();
-							await this.save();
-						}),
-				);
-
-			new Setting(el)
-				.setName('Working directory')
-				.setDesc('Directory where AI CLI commands execute. Leave blank to use the vault root.')
-				.addText((text) =>
-					text
-						.setPlaceholder('/path/to/project')
-						.setValue(settings.aiWorkingDirectory)
-						.onChange(async (val) => {
-							settings.aiWorkingDirectory = val.trim();
 							await this.save();
 						}),
 				);

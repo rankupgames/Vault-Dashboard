@@ -21,7 +21,7 @@ import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { WelcomeView } from './WelcomeView';
 import { AudioService } from './core/AudioService';
-import { AIDispatcher } from './services/AIDispatcher';
+import { AIDispatcher, type IAIDispatcher } from './services/AIDispatcher';
 import { ModuleRenderer } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
@@ -41,6 +41,8 @@ export default class VaultWelcomePlugin extends Plugin {
 	audioService!: AudioService;
 	/** Registry of dashboard modules (quick access, reports, etc.). */
 	moduleRegistry!: ModuleRegistry;
+	/** AI dispatch service for CLI tool integration. */
+	aiDispatcher!: IAIDispatcher;
 	private saveTimeout: number | null = null;
 	private lastDateStr = '';
 	private dayCheckInterval: number | null = null;
@@ -61,14 +63,15 @@ export default class VaultWelcomePlugin extends Plugin {
 		this.audioService = new AudioService(this.data.settings, this.eventBus);
 		this.moduleRegistry = new ModuleRegistry();
 
+		this.aiDispatcher = new AIDispatcher();
 		if (this.data.dispatchHistory.length > 0) {
-			AIDispatcher.hydrate(this.data.dispatchHistory);
+			this.aiDispatcher.hydrate(this.data.dispatchHistory);
 		}
-		AIDispatcher.onDispatchChange(() => {
-			this.data.dispatchHistory = AIDispatcher.toJSON();
+		this.aiDispatcher.onDispatchChange(() => {
+			this.data.dispatchHistory = this.aiDispatcher.toJSON();
 			this.scheduleSave();
 		});
-		AIDispatcher.onDispatchFinish((record) => {
+		this.aiDispatcher.onDispatchFinish((record) => {
 			if (record.taskId) {
 				this.taskManager.attachDispatchRecord(record.taskId, {
 					id: record.id,
@@ -119,6 +122,7 @@ export default class VaultWelcomePlugin extends Plugin {
 				this.audioService,
 				this.eventBus,
 				this.moduleRegistry,
+				this.aiDispatcher,
 			);
 		});
 
@@ -235,11 +239,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		if (this.data.settings.autoPinTab) {
 			this.registerEvent(
 				this.app.workspace.on('layout-change', () => {
-					try {
-						this.enforceFirstPosition();
-					} catch (e) {
-						console.error('vault-welcome: enforceFirstPosition error', e);
-					}
+					this.enforceFirstPosition();
 				}),
 			);
 		}
@@ -441,7 +441,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		this.data.timerState = this.timerEngine.getState();
 		this.data.tasks = this.taskManager.toJSON();
 		this.data.archivedTasks = this.taskManager.getArchivedTasksRef();
-		this.data.dispatchHistory = AIDispatcher.toJSON();
+		this.data.dispatchHistory = this.aiDispatcher.toJSON();
 		await this.saveData(this.data);
 	}
 }

@@ -4,7 +4,7 @@
  * Project: Vault Dashboard Welcome
  * Description: Shared types, interfaces, and default data for the plugin
  * Created: 2026-03-07
- * Last Modified: 2026-03-09
+ * Last Modified: 2026-03-10
  */
 
 /** A subtask within a parent task, supporting nested hierarchy. */
@@ -51,6 +51,8 @@ export interface Task {
 	linkedDocs?: string[];
 	/** Image attachment paths. */
 	images?: string[];
+	/** Per-task working directory for AI CLI execution. */
+	workingDirectory?: string;
 	/** Actual duration when completed (minutes). */
 	actualDurationMinutes?: number;
 	/** AI delegation status if delegated. */
@@ -207,8 +209,6 @@ export interface PluginSettings {
 	aiAutoScheduler: boolean;
 	/** AI delegation feature. */
 	aiDelegation: boolean;
-	/** Custom working directory for AI CLI execution (blank = vault root). */
-	aiWorkingDirectory: string;
 	/** Skip interactive permission prompts when dispatching to AI CLI tools. */
 	aiSkipPermissions: boolean;
 	/** Preferred terminal app for dispatch take-over. */
@@ -329,7 +329,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	aiAutoOrder: false,
 	aiAutoScheduler: false,
 	aiDelegation: false,
-	aiWorkingDirectory: '',
 	aiSkipPermissions: false,
 	terminalApp: 'ghostty',
 	enableMultiTagFilter: true,
@@ -348,6 +347,13 @@ export const DEFAULT_DATA: PluginData = {
 	lastDashboardOpenedAt: 0,
 	dispatchHistory: [],
 };
+
+/** Supported image file extensions for task attachments. */
+export const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp'] as const;
+
+/** Returns true when a file extension (without dot) is an image type. */
+export const isImageExtension = (ext: string): boolean =>
+	(IMAGE_EXTENSIONS as readonly string[]).includes(ext.toLowerCase());
 
 /** Obsidian view type identifier for the welcome dashboard. */
 export const VIEW_TYPE_WELCOME = 'vault-welcome-view';

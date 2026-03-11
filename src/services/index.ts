@@ -1,5 +1,5 @@
-export { AIDispatcher } from './AIDispatcher';
-export type { AIAction } from './AIDispatcher';
+export { AIDispatcher, isAIEnabled, parseJsonArray, gatherContext, composePrompt } from './AIDispatcher';
+export type { IAIDispatcher, AIAction, AIContext } from './AIDispatcher';
 export { ReportScanner } from './ReportScanner';
 export type { ReportEntry } from './ReportScanner';
 export { DocumentTracker } from './DocumentTracker';
@@ -7,3 +7,4 @@ export type { DocumentEntry } from './DocumentTracker';
 export { AnalyticsExporter } from './AnalyticsExporter';
 export { TaskImporter } from './TaskImporter';
 export type { TaskImportItem } from './TaskImporter';
+export { ensureVaultFolder } from './VaultUtils';

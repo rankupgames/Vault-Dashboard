@@ -2,6 +2,10 @@
    modal.css -- Task add/edit modal, form inputs, duration stepper, actions
    ========================================================================== */
 
+.vw-task-edit-modal .modal-close-button {
+	display: none;
+}
+
 .vw-task-edit-modal h3 {
 	margin: 0 0 12px;
 	font-size: 16px;
@@ -11,7 +15,15 @@
 .vw-edit-form {
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 4px;
+}
+
+.vw-edit-form > .vw-edit-label {
+	margin-top: 8px;
+}
+
+.vw-edit-form > .vw-edit-label:first-child {
+	margin-top: 0;
 }
 
 .vw-edit-label {
@@ -56,9 +68,22 @@
 
 .vw-edit-actions {
 	display: flex;
-	justify-content: flex-end;
+	justify-content: space-between;
+	align-items: center;
 	gap: 8px;
-	margin-top: 8px;
+	margin-top: 12px;
+}
+
+.vw-edit-actions-left {
+	display: flex;
+	gap: 6px;
+	align-items: center;
+}
+
+.vw-edit-actions-right {
+	display: flex;
+	gap: 8px;
+	align-items: center;
 }
 
 .vw-duration-stepper {
@@ -124,7 +149,7 @@
 /* -- Modal Subtask List --------------------------------------------------- */
 
 .vw-modal-subtask-section {
-	margin-top: 4px;
+	margin-top: 10px;
 }
 
 .vw-modal-subtask-header {
@@ -145,12 +170,44 @@
 	overflow-y: auto;
 }
 
-.vw-modal-subtask-list > .vw-git-branch {
+/* -- Full-width subtask rows (flatten branch tree in modal) -------------- */
+
+.vw-modal-subtask-list .vw-git-branch,
+.vw-modal-subtask-list .vw-git-branch-wrap,
+.vw-modal-subtask-list .vw-git-branch-children {
 	margin-left: 0;
+	padding-left: 0;
+	border-left: none;
 }
 
 .vw-modal-subtask-list .vw-git-branch-wrap > .vw-git-branch-row::before {
-	width: calc(36px + var(--branch-dot) / 2);
+	display: none;
+}
+
+.vw-modal-subtask-list .vw-git-branch-row {
+	background: var(--background-secondary);
+	border-radius: 6px;
+	padding: 4px 8px;
+}
+
+.vw-modal-subtask-list .vw-git-depth-1 > .vw-git-branch-row {
+	padding-left: 24px;
+}
+.vw-modal-subtask-list .vw-git-depth-2 > .vw-git-branch-row {
+	padding-left: 40px;
+}
+.vw-modal-subtask-list .vw-git-depth-3 > .vw-git-branch-row {
+	padding-left: 56px;
+}
+
+.vw-modal-subtask-list .vw-git-depth-0 > .vw-modal-subtask-child-input {
+	padding-left: 24px;
+}
+.vw-modal-subtask-list .vw-git-depth-1 > .vw-modal-subtask-child-input {
+	padding-left: 40px;
+}
+.vw-modal-subtask-list .vw-git-depth-2 > .vw-modal-subtask-child-input {
+	padding-left: 56px;
 }
 
 /* -- Subtask actions (+ and x) ------------------------------------------- */
@@ -197,7 +254,7 @@
 /* -- Inline child input -------------------------------------------------- */
 
 .vw-modal-subtask-child-input {
-	padding: 4px 4px 4px 28px;
+	padding: 4px 4px 4px 8px;
 }
 
 .vw-modal-subtask-input-row {
@@ -221,18 +278,18 @@
 	outline: none;
 }
 
-/* -- Linked Documents Section -------------------------------------------- */
+/* -- Attachments Section ------------------------------------------------- */
 
 .vw-modal-docs-section {
-	margin-top: 4px;
+	margin-top: 10px;
 }
 
 .vw-modal-docs-list {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
-	margin-bottom: 6px;
-	max-height: 160px;
+	margin-bottom: 4px;
+	max-height: 400px;
 	overflow-y: auto;
 }
 
@@ -285,7 +342,9 @@
 
 .vw-modal-docs-actions {
 	display: flex;
+	flex-wrap: wrap;
 	gap: 6px;
+	margin-top: 4px;
 }
 
 .vw-timer-btn-sm {
@@ -332,15 +391,159 @@
 	gap: 6px;
 }
 
-/* -- Drop Zone (shared by images + documents) ----------------------------- */
+/* -- Attachment Chip Buttons ---------------------------------------------- */
+
+.vw-attach-chip {
+	font-size: 10px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	cursor: pointer;
+	white-space: nowrap;
+	line-height: 1.4;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.vw-attach-chip:hover {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.vw-attach-chip .vw-btn-icon svg {
+	width: 10px;
+	height: 10px;
+}
+
+/* -- Footer Icon Buttons (AI, Working Dir) ------------------------------- */
+
+.vw-icon-btn {
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 6px;
+	border: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: 0;
+	flex-shrink: 0;
+	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.vw-icon-btn:hover {
+	background: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.vw-icon-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-wd-path {
+	font-size: 11px;
+	color: var(--text-muted);
+	max-width: 140px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* -- Template Dropdown --------------------------------------------------- */
+
+.vw-tmpl-wrap {
+	position: relative;
+}
+
+.vw-tmpl-trigger {
+	width: auto;
+	padding: 0 8px;
+	gap: 4px;
+}
+
+.vw-tmpl-label {
+	font-size: 11px;
+	line-height: 1;
+}
+
+.vw-tmpl-dropdown {
+	display: none;
+	position: absolute;
+	bottom: calc(100% + 4px);
+	left: 0;
+	min-width: 180px;
+	max-height: 200px;
+	overflow-y: auto;
+	flex-direction: column;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.12);
+	z-index: 10;
+}
+
+.vw-tmpl-dropdown-open {
+	display: flex;
+}
+
+.vw-tmpl-option {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 10px;
+	font-size: 12px;
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: background 0.12s ease;
+}
+
+.vw-tmpl-option:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-tmpl-option:first-child {
+	border-radius: 5px 5px 0 0;
+}
+
+.vw-tmpl-option:last-child {
+	border-radius: 0 0 5px 5px;
+}
+
+.vw-tmpl-option:only-child {
+	border-radius: 5px;
+}
+
+.vw-tmpl-option-dur {
+	font-size: 10px;
+	color: var(--text-faint);
+	flex-shrink: 0;
+}
+
+.vw-tmpl-empty {
+	padding: 8px 10px;
+	font-size: 11px;
+	color: var(--text-faint);
+	font-style: italic;
+}
+
+/* -- Drop Zone ----------------------------------------------------------- */
 
 .vw-drop-zone {
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	gap: 6px;
-	margin-top: 6px;
-	padding: 10px 12px;
+	margin-top: 4px;
+	padding: 8px 10px;
 	border: 1.5px dashed var(--background-modifier-border);
 	border-radius: 6px;
 	color: var(--text-faint);
@@ -452,6 +655,16 @@
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
 	border-color: var(--interactive-accent);
+}
+
+.vw-tag-suggest-chip-active {
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	border-color: var(--interactive-accent);
+}
+
+.vw-tag-suggest-chip-active:hover {
+	opacity: 0.8;
 }
 
 /* -- Confirm Modal ------------------------------------------------------- */

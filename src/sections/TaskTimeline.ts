@@ -17,7 +17,7 @@ import { ImportModal } from '../modals/ImportModal';
 import { TimerSection } from './TimerSection';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
-import { AIDispatcher } from '../services/AIDispatcher';
+import { isAIEnabled, gatherContext, composePrompt, parseJsonArray, type IAIDispatcher } from '../services/AIDispatcher';
 import { PlanApprovalModal } from '../modals/PlanApprovalModal';
 import { AnalyticsExporter } from '../services/AnalyticsExporter';
 import { attachOverflowTooltip, renderTagPills } from '../ui/Tooltip';
@@ -61,6 +61,7 @@ export interface TaskTimelineDeps {
 	settings: PluginSettings;
 	viewState: TimelineViewState;
 	subtreeViewState: SubtreeViewState;
+	aiDispatcher: IAIDispatcher;
 }
 
 /** Task list with git-style tree, duration display, actions, and subtask rendering. */
@@ -137,15 +138,16 @@ export class TaskTimeline implements SectionRenderer {
 				if (result.subtasks) {
 					this.deps.taskManager.replaceSubtasks(newTask.id, result.subtasks);
 				}
-				const updates: Record<string, unknown> = {};
-				if (result.description) updates.description = result.description;
-				if (result.linkedDocs) updates.linkedDocs = result.linkedDocs;
-				if (result.images) updates.images = result.images;
-				if (Object.keys(updates).length > 0) {
-					this.deps.taskManager.updateTask(newTask.id, updates as Partial<Task>);
+				if (result.description || result.linkedDocs || result.images || result.workingDirectory) {
+					this.deps.taskManager.updateTask(newTask.id, {
+						description: result.description,
+						linkedDocs: result.linkedDocs,
+						images: result.images,
+						workingDirectory: result.workingDirectory,
+					});
 				}
 				this.deps.onRenderAll();
-			}, allTags, this.deps.taskManager).open();
+			}, allTags, this.deps.taskManager, this.deps.aiDispatcher).open();
 		});
 
 		const headerActions = header.createDiv({ cls: 'vw-tasks-header-actions' });
@@ -164,7 +166,7 @@ export class TaskTimeline implements SectionRenderer {
 			}).open();
 		});
 
-		if (AIDispatcher.isEnabled(this.deps.settings)) {
+		if (isAIEnabled(this.deps.settings)) {
 			headerActions.createDiv({ cls: 'vw-header-divider' });
 
 			if (this.deps.settings.aiAutoOrder) {
@@ -173,9 +175,20 @@ export class TaskTimeline implements SectionRenderer {
 				aiOrderBtn.setAttribute('aria-label', 'AI auto-order tasks');
 				aiOrderBtn.setAttribute('tabindex', '0');
 				aiOrderBtn.addEventListener('click', async () => {
-					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
-					const prompt = AIDispatcher.composePrompt('order', ctx);
-					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, 'order', prompt);
+					const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
+					const prompt = composePrompt('order', ctx);
+					const recordId = await this.deps.aiDispatcher.dispatch(this.deps.app, this.deps.settings, 'order', prompt);
+					if (recordId === '') return;
+					const rec = this.deps.aiDispatcher.getRecord(recordId);
+					if (rec?.output) {
+						const ids = parseJsonArray(rec.output);
+						if (ids && ids.length > 0) {
+							this.deps.taskManager.reorderByIds(ids);
+							this.deps.saveCallback();
+							this.deps.onRenderAll();
+							new Notice('Tasks reordered by AI');
+						}
+					}
 				});
 			}
 
@@ -185,9 +198,9 @@ export class TaskTimeline implements SectionRenderer {
 				aiScheduleBtn.setAttribute('aria-label', 'AI auto-schedule durations');
 				aiScheduleBtn.setAttribute('tabindex', '0');
 				aiScheduleBtn.addEventListener('click', async () => {
-					const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
-					const prompt = AIDispatcher.composePrompt('schedule', ctx);
-					await AIDispatcher.dispatch(this.deps.app, this.deps.settings, 'schedule', prompt);
+					const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
+					const prompt = composePrompt('schedule', ctx);
+					await this.deps.aiDispatcher.dispatch(this.deps.app, this.deps.settings, 'schedule', prompt);
 				});
 			}
 		}
@@ -233,9 +246,9 @@ export class TaskTimeline implements SectionRenderer {
 
 		headerActions.createDiv({ cls: 'vw-header-divider' });
 
-		const deleteCompletedBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn vw-tasks-clear-btn-danger' });
-		setIcon(deleteCompletedBtn, 'trash-2');
-		deleteCompletedBtn.setAttribute('aria-label', 'Delete all completed tasks (archive)');
+		const deleteCompletedBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
+		setIcon(deleteCompletedBtn, 'archive');
+		deleteCompletedBtn.setAttribute('aria-label', 'Archive all completed');
 		deleteCompletedBtn.setAttribute('tabindex', '0');
 		deleteCompletedBtn.addEventListener('click', () => {
 			new ConfirmModal(this.deps.app, 'Archive Completed', 'Archive all completed and skipped tasks?', () => {
@@ -256,10 +269,11 @@ export class TaskTimeline implements SectionRenderer {
 
 		const body = section.createDiv({ cls: 'vw-tasks-timeline-body' });
 		const tasksPane = body.createDiv({ cls: 'vw-tasks-pane' });
-		this.renderTaskList(tasksPane);
 
 		if (this.vs.showArchive && archived.length > 0) {
 			this.renderArchiveSection(tasksPane, archived);
+		} else {
+			this.renderTaskList(tasksPane);
 		}
 	}
 
@@ -484,10 +498,11 @@ export class TaskTimeline implements SectionRenderer {
 						tags: result.tags,
 						linkedDocs: result.linkedDocs,
 						images: result.images,
+						workingDirectory: result.workingDirectory,
 					});
 					this.deps.taskManager.replaceSubtasks(task.id, result.subtasks);
 					this.deps.onRenderAll();
-				}, knownTags, this.deps.taskManager).open();
+				}, knownTags, this.deps.taskManager, this.deps.aiDispatcher).open();
 			});
 
 			const durText = task.status === 'active' && state.isRunning
@@ -611,53 +626,50 @@ export class TaskTimeline implements SectionRenderer {
 			const startBtn = this.createIconBtn(actions, 'play', 'Start task');
 			startBtn.addEventListener('click', (e) => { e.stopPropagation(); this.deps.timerSection.handleStartTask(task); });
 
-			if (AIDispatcher.isEnabled(this.deps.settings) && this.deps.settings.aiDelegation) {
+			if (isAIEnabled(this.deps.settings) && this.deps.settings.aiDelegation) {
+				const dispatcher = this.deps.aiDispatcher;
 				const delegateBtn = this.createIconBtn(actions, 'bot', 'Delegate to AI');
 				delegateBtn.addEventListener('click', async (e) => {
 					e.stopPropagation();
-					this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' } as Partial<Task>);
+					this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' });
 					this.deps.onRenderAll();
-					try {
-						const ctx = await AIDispatcher.gatherContext(this.deps.taskManager, this.deps.app);
-						const planId = await AIDispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
-						if (planId === '') return;
+					const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
+					const planId = await dispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
+					if (planId === '') return;
 
-						const unsub = AIDispatcher.onDispatchChange(() => {
-							const rec = AIDispatcher.getRecord(planId);
-							if (rec === undefined) return;
-							if (rec.status === 'plan-ready') {
-								unsub();
-								new PlanApprovalModal(
-									this.deps.app,
-									rec,
-									async () => {
-										try {
-											await AIDispatcher.dispatchExecute(this.deps.app, this.deps.settings, planId);
-											this.deps.taskManager.updateTask(task.id, { delegationStatus: 'completed' } as Partial<Task>);
-										} catch (execErr: unknown) {
-											const execMsg = execErr instanceof Error ? execErr.message : String(execErr);
-											this.deps.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: execMsg } as Partial<Task>);
-										}
-										this.deps.onRenderAll();
-									},
-									() => {
-										AIDispatcher.rejectPlan(planId);
-										this.deps.taskManager.updateTask(task.id, { delegationStatus: undefined } as unknown as Partial<Task>);
-										this.deps.onRenderAll();
-									},
-								).open();
-							} else if (rec.status === 'failed') {
-								unsub();
-								const failMsg = rec.error ?? 'Plan generation failed';
-								this.deps.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: failMsg } as Partial<Task>);
-								this.deps.onRenderAll();
-							}
-						});
-					} catch (err: unknown) {
-						const msg = err instanceof Error ? err.message : String(err);
-						this.deps.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: msg } as Partial<Task>);
-						this.deps.onRenderAll();
-					}
+					const unsub = dispatcher.onDispatchChange(() => {
+						const rec = dispatcher.getRecord(planId);
+						if (rec === undefined) return;
+						if (rec.status === 'plan-ready') {
+							unsub();
+							new PlanApprovalModal(
+								this.deps.app,
+								rec,
+								async () => {
+									await dispatcher.dispatchExecute(this.deps.app, this.deps.settings, planId, task);
+									const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
+									const succeeded = execRec?.status === 'completed';
+									this.deps.taskManager.updateTask(task.id, {
+										delegationStatus: succeeded ? 'completed' : 'failed',
+										delegationFeedback: succeeded ? undefined : execRec?.error,
+									});
+									this.deps.onRenderAll();
+								},
+								() => {
+									dispatcher.rejectPlan(planId);
+									this.deps.taskManager.updateTask(task.id, { delegationStatus: undefined, delegationFeedback: undefined });
+									this.deps.onRenderAll();
+								},
+							).open();
+						} else if (rec.status === 'failed') {
+							unsub();
+							this.deps.taskManager.updateTask(task.id, {
+								delegationStatus: 'failed',
+								delegationFeedback: rec.error ?? 'Plan generation failed',
+							});
+							this.deps.onRenderAll();
+						}
+					});
 				});
 			}
 

@@ -4,12 +4,13 @@
  * Project: Vault Dashboard Welcome
  * Description: AI context assembler and terminal dispatcher for Cursor/Claude Code CLI
  * Created: 2026-03-08
- * Last Modified: 2026-03-09
+ * Last Modified: 2026-03-10
  */
 
 import { App, TFile, normalizePath, Notice } from 'obsidian';
 import { Task, PluginSettings, DispatchHistoryEntry, DispatchStatus } from '../core/types';
 import { TaskManager } from '../core/TaskManager';
+import { ensureVaultFolder } from './VaultUtils';
 
 /** Actions the AI dispatcher can perform on task context. */
 export type AIAction =
@@ -20,21 +21,12 @@ export type AIAction =
 	| 'delegate';
 
 /** Assembled context passed to the AI prompt composer. */
-interface AIContext {
+export interface AIContext {
 	tasks: Task[];
 	archivedTasks: Task[];
 	linkedDocContents: Map<string, string>;
 	imagePaths: string[];
 }
-
-/** Human-readable labels for each AI action. */
-const ACTION_LABELS: Record<AIAction, string> = {
-	organize: 'AI Organize',
-	order: 'AI Auto-Order',
-	'create-doc': 'AI Create Doc',
-	schedule: 'AI Auto-Schedule',
-	delegate: 'AI Delegate',
-};
 
 /** Snapshot of a running or completed dispatch. */
 export interface DispatchRecord {
@@ -57,6 +49,166 @@ export interface DispatchRecord {
 	parentPlanId?: string;
 }
 
+/** Contract for the stateful AI dispatch lifecycle. */
+export interface IAIDispatcher {
+	hydrate(entries: DispatchHistoryEntry[]): void;
+	toJSON(): DispatchHistoryEntry[];
+	clearAll(): void;
+
+	onDispatchChange(fn: () => void): () => void;
+	onDispatchFinish(fn: (record: DispatchRecord) => void): () => void;
+
+	getDispatches(): DispatchRecord[];
+	getRecord(id: string): DispatchRecord | undefined;
+	clearFinished(): void;
+
+	dispatch(app: App, settings: PluginSettings, action: AIAction, prompt: string, task?: Task): Promise<string>;
+	dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string>;
+	dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void>;
+	rejectPlan(planId: string): void;
+	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void;
+}
+
+// ---------------------------------------------------------------------------
+// Pure functions (stateless, independently testable)
+// ---------------------------------------------------------------------------
+
+/** Returns true if an AI tool is configured in settings. */
+export const isAIEnabled = (settings: PluginSettings): boolean =>
+	settings.aiTool !== 'none';
+
+/** Extracts a JSON array of strings from mixed AI output text via regex. */
+export const parseJsonArray = (output: string): string[] | null => {
+	const match = output.match(/\[[\s\S]*?\]/);
+	if (match === null) return null;
+	const items: string[] = [];
+	const itemRegex = /"((?:[^"\\]|\\.)*)"/g;
+	let m: RegExpExecArray | null;
+	while ((m = itemRegex.exec(match[0])) !== null) {
+		items.push(m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
+	}
+	return items.length > 0 ? items : null;
+};
+
+/**
+ * Reads all tasks, linked documents, and image paths into a single context object.
+ * @param taskManager - Source for active and archived tasks
+ * @param app - Obsidian app instance for vault file reads
+ */
+export const gatherContext = async (taskManager: TaskManager, app: App): Promise<AIContext> => {
+	const tasks = taskManager.toJSON();
+	const archivedTasks = taskManager.getArchivedTasks();
+
+	const linkedDocContents = new Map<string, string>();
+	const allTasks = [...tasks, ...archivedTasks];
+	const seenPaths = new Set<string>();
+
+	for (const task of allTasks) {
+		for (const docPath of task.linkedDocs ?? []) {
+			if (seenPaths.has(docPath)) continue;
+			seenPaths.add(docPath);
+			const file = app.vault.getAbstractFileByPath(docPath);
+			if (file instanceof TFile) {
+				const content = await app.vault.cachedRead(file);
+				linkedDocContents.set(docPath, content);
+			}
+		}
+	}
+
+	const imagePaths: string[] = [];
+	for (const task of allTasks) {
+		for (const imgPath of task.images ?? []) {
+			if (imagePaths.includes(imgPath) === false) {
+				imagePaths.push(imgPath);
+			}
+		}
+	}
+
+	return { tasks, archivedTasks, linkedDocContents, imagePaths };
+};
+
+/**
+ * Composes a markdown prompt from an action, context, and optional focus task.
+ * @param action - The AI action to perform
+ * @param context - Assembled task and document context
+ * @param focusTask - Optional task to highlight in the prompt
+ */
+export const composePrompt = (action: AIAction, context: AIContext, focusTask?: Task): string => {
+	const lines: string[] = [];
+	lines.push(`# AI Task Action: ${action}`);
+	lines.push('');
+	lines.push(ACTION_INSTRUCTIONS[action]);
+	lines.push('');
+
+	if (focusTask) {
+		lines.push('## Focus Task');
+		lines.push(`- **Title**: ${focusTask.title}`);
+		if (focusTask.description) {
+			lines.push(`- **Description**: ${focusTask.description}`);
+		}
+		lines.push(`- **Duration**: ${focusTask.durationMinutes}m`);
+		lines.push(`- **Status**: ${focusTask.status}`);
+		if (focusTask.tags && focusTask.tags.length > 0) {
+			lines.push(`- **Tags**: ${focusTask.tags.join(', ')}`);
+		}
+		if (focusTask.subtasks && focusTask.subtasks.length > 0) {
+			lines.push(`- **Subtasks**: ${focusTask.subtasks.map((s) => `${s.status === 'completed' ? '[x]' : '[ ]'} ${s.title}`).join('; ')}`);
+		}
+		lines.push('');
+	}
+
+	lines.push('## All Tasks');
+	for (const task of context.tasks) {
+		const marker = task.id === focusTask?.id ? ' **(FOCUS)**' : '';
+		lines.push(`- [${task.status}] ${task.title} (${task.durationMinutes}m)${marker}${task.tags?.length ? ` [${task.tags.join(', ')}]` : ''}`);
+		if (task.description) lines.push(`  Description: ${task.description}`);
+	}
+	lines.push('');
+
+	if (context.archivedTasks.length > 0) {
+		lines.push('## Archived Tasks');
+		for (const task of context.archivedTasks) {
+			lines.push(`- ${task.title} (${task.durationMinutes}m)${task.tags?.length ? ` [${task.tags.join(', ')}]` : ''}`);
+		}
+		lines.push('');
+	}
+
+	if (context.linkedDocContents.size > 0) {
+		lines.push('## Linked Document Contents');
+		for (const [path, content] of context.linkedDocContents) {
+			lines.push(`### ${path}`);
+			lines.push('```');
+			const truncated = content.length > 3000 ? content.substring(0, 3000) + '\n... (truncated)' : content;
+			lines.push(truncated);
+			lines.push('```');
+			lines.push('');
+		}
+	}
+
+	if (context.imagePaths.length > 0) {
+		lines.push('## Attached Images');
+		for (const imgPath of context.imagePaths) {
+			lines.push(`- ${imgPath}`);
+		}
+		lines.push('');
+	}
+
+	return lines.join('\n');
+};
+
+// ---------------------------------------------------------------------------
+// Module-level constants
+// ---------------------------------------------------------------------------
+
+/** Human-readable labels for each AI action. */
+const ACTION_LABELS: Record<AIAction, string> = {
+	organize: 'AI Organize',
+	order: 'AI Auto-Order',
+	'create-doc': 'AI Create Doc',
+	schedule: 'AI Auto-Schedule',
+	delegate: 'AI Delegate',
+};
+
 type DispatchListener = () => void;
 type DispatchFinishListener = (record: DispatchRecord) => void;
 
@@ -76,35 +228,27 @@ const EXECUTE_PHASE_PREFIX = 'The user has reviewed and approved the following e
 const toSlug = (s: string): string =>
 	s.substring(0, 60).replace(/[\\/:*?"<>|#^[\]]/g, '-').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'untitled';
 
-/** Creates nested vault folders if they don't exist. */
-const ensureFolder = async (app: App, folderPath: string): Promise<void> => {
-	const parts = folderPath.split('/').filter(Boolean);
-	let current = '';
-	for (const part of parts) {
-		current = current ? `${current}/${part}` : part;
-		if (app.vault.getAbstractFileByPath(current) === null) {
-			await app.vault.createFolder(current);
-		}
-	}
-};
+// ---------------------------------------------------------------------------
+// Concrete implementation (CLI-based dispatch via child_process)
+// ---------------------------------------------------------------------------
 
 /**
- * Assembles task context into a structured prompt and dispatches it
- * to an external AI CLI tool (Cursor or Claude Code).
+ * CLI-based implementation of IAIDispatcher.
+ * Writes prompts to vault files and executes them via Cursor or Claude Code CLI.
  */
-export class AIDispatcher {
+export class AIDispatcher implements IAIDispatcher {
 
-	private static dispatches = new Map<string, DispatchRecord>();
-	private static listeners: DispatchListener[] = [];
-	private static finishListeners: DispatchFinishListener[] = [];
-	private static nextId = 1;
+	private dispatches = new Map<string, DispatchRecord>();
+	private listeners: DispatchListener[] = [];
+	private finishListeners: DispatchFinishListener[] = [];
+	private nextId = 1;
 
 	/**
 	 * Loads persisted dispatch entries back into the in-memory map.
 	 * Running entries that weren't completed are marked as failed since
 	 * the process is gone after a restart.
 	 */
-	static hydrate(entries: DispatchHistoryEntry[]): void {
+	hydrate(entries: DispatchHistoryEntry[]): void {
 		for (const entry of entries) {
 			const rec: DispatchRecord = {
 				...entry,
@@ -126,7 +270,7 @@ export class AIDispatcher {
 	}
 
 	/** Serializes current dispatch records for disk persistence. */
-	static toJSON(): DispatchHistoryEntry[] {
+	toJSON(): DispatchHistoryEntry[] {
 		return [...this.dispatches.values()].map((rec) => ({
 			id: rec.id,
 			action: rec.action,
@@ -145,38 +289,38 @@ export class AIDispatcher {
 	}
 
 	/** Clears all dispatch records regardless of status. */
-	static clearAll(): void {
+	clearAll(): void {
 		this.dispatches.clear();
 		this.notifyListeners();
 	}
 
 	/** Subscribe to dispatch list changes. Returns an unsubscribe function. */
-	static onDispatchChange(fn: DispatchListener): () => void {
+	onDispatchChange(fn: DispatchListener): () => void {
 		this.listeners.push(fn);
 		return () => { this.listeners = this.listeners.filter((l) => l !== fn); };
 	}
 
 	/** Subscribe to dispatch finish events (completed or failed). Returns an unsubscribe function. */
-	static onDispatchFinish(fn: DispatchFinishListener): () => void {
+	onDispatchFinish(fn: DispatchFinishListener): () => void {
 		this.finishListeners.push(fn);
 		return () => { this.finishListeners = this.finishListeners.filter((l) => l !== fn); };
 	}
 
-	private static notifyFinish(record: DispatchRecord): void {
+	private notifyFinish(record: DispatchRecord): void {
 		for (const fn of this.finishListeners) fn(record);
 	}
 
-	private static notifyListeners(): void {
+	private notifyListeners(): void {
 		for (const fn of this.listeners) fn();
 	}
 
 	/** Returns all dispatch records, newest first. */
-	static getDispatches(): DispatchRecord[] {
+	getDispatches(): DispatchRecord[] {
 		return [...this.dispatches.values()].sort((a, b) => b.startTime - a.startTime);
 	}
 
 	/** Clears completed/failed records from the list. */
-	static clearFinished(): void {
+	clearFinished(): void {
 		const keepStatuses: DispatchStatus[] = ['running', 'plan-pending', 'plan-ready'];
 		for (const [id, rec] of this.dispatches) {
 			if (keepStatuses.includes(rec.status) === false) this.dispatches.delete(id);
@@ -185,151 +329,18 @@ export class AIDispatcher {
 	}
 
 	/**
-	 * Returns true if an AI tool is configured in settings.
-	 * @param settings - Plugin settings to check
-	 */
-	static isEnabled(settings: PluginSettings): boolean {
-		return settings.aiTool !== 'none';
-	}
-
-	/**
-	 * Reads all tasks, linked documents, and image paths into a single context object.
-	 * @param taskManager - Source for active and archived tasks
-	 * @param app - Obsidian app instance for vault file reads
-	 * @returns Assembled AI context
-	 */
-	static async gatherContext(taskManager: TaskManager, app: App): Promise<AIContext> {
-		const tasks = taskManager.toJSON();
-		const archivedTasks = taskManager.getArchivedTasks();
-
-		const linkedDocContents = new Map<string, string>();
-		const allTasks = [...tasks, ...archivedTasks];
-		const seenPaths = new Set<string>();
-
-		for (const task of allTasks) {
-			for (const docPath of task.linkedDocs ?? []) {
-				if (seenPaths.has(docPath)) continue;
-				seenPaths.add(docPath);
-				const file = app.vault.getAbstractFileByPath(docPath);
-				if (file instanceof TFile) {
-					const content = await app.vault.cachedRead(file);
-					linkedDocContents.set(docPath, content);
-				}
-			}
-		}
-
-		const imagePaths: string[] = [];
-		for (const task of allTasks) {
-			for (const imgPath of task.images ?? []) {
-				if (imagePaths.includes(imgPath) === false) {
-					imagePaths.push(imgPath);
-				}
-			}
-		}
-
-		return { tasks, archivedTasks, linkedDocContents, imagePaths };
-	}
-
-	/**
-	 * Composes a markdown prompt from an action, context, and optional focus task.
-	 * @param action - The AI action to perform
-	 * @param context - Assembled task and document context
-	 * @param focusTask - Optional task to highlight in the prompt
-	 * @returns Formatted markdown prompt string
-	 */
-	static composePrompt(action: AIAction, context: AIContext, focusTask?: Task): string {
-		const lines: string[] = [];
-		lines.push(`# AI Task Action: ${action}`);
-		lines.push('');
-		lines.push(ACTION_INSTRUCTIONS[action]);
-		lines.push('');
-
-		if (focusTask) {
-			lines.push('## Focus Task');
-			lines.push(`- **Title**: ${focusTask.title}`);
-			if (focusTask.description) {
-				lines.push(`- **Description**: ${focusTask.description}`);
-			}
-			lines.push(`- **Duration**: ${focusTask.durationMinutes}m`);
-			lines.push(`- **Status**: ${focusTask.status}`);
-			if (focusTask.tags && focusTask.tags.length > 0) {
-				lines.push(`- **Tags**: ${focusTask.tags.join(', ')}`);
-			}
-			if (focusTask.subtasks && focusTask.subtasks.length > 0) {
-				lines.push(`- **Subtasks**: ${focusTask.subtasks.map((s) => `${s.status === 'completed' ? '[x]' : '[ ]'} ${s.title}`).join('; ')}`);
-			}
-			lines.push('');
-		}
-
-		lines.push('## All Tasks');
-		for (const task of context.tasks) {
-			const marker = task.id === focusTask?.id ? ' **(FOCUS)**' : '';
-			lines.push(`- [${task.status}] ${task.title} (${task.durationMinutes}m)${marker}${task.tags?.length ? ` [${task.tags.join(', ')}]` : ''}`);
-			if (task.description) lines.push(`  Description: ${task.description}`);
-		}
-		lines.push('');
-
-		if (context.archivedTasks.length > 0) {
-			lines.push('## Archived Tasks');
-			for (const task of context.archivedTasks) {
-				lines.push(`- ${task.title} (${task.durationMinutes}m)${task.tags?.length ? ` [${task.tags.join(', ')}]` : ''}`);
-			}
-			lines.push('');
-		}
-
-		if (context.linkedDocContents.size > 0) {
-			lines.push('## Linked Document Contents');
-			for (const [path, content] of context.linkedDocContents) {
-				lines.push(`### ${path}`);
-				lines.push('```');
-				const truncated = content.length > 3000 ? content.substring(0, 3000) + '\n... (truncated)' : content;
-				lines.push(truncated);
-				lines.push('```');
-				lines.push('');
-			}
-		}
-
-		if (context.imagePaths.length > 0) {
-			lines.push('## Attached Images');
-			for (const imgPath of context.imagePaths) {
-				lines.push(`- ${imgPath}`);
-			}
-			lines.push('');
-		}
-
-		return lines.join('\n');
-	}
-
-	/**
-	 * Composes a plan-phase prompt that reuses the standard context layout
-	 * but swaps in the plan-generation instruction instead of the delegate one.
-	 */
-	private static composePlanPrompt(context: AIContext, focusTask: Task): string {
-		const saved = ACTION_INSTRUCTIONS['delegate'];
-		ACTION_INSTRUCTIONS['delegate'] = PLAN_PHASE_INSTRUCTION;
-		const prompt = this.composePrompt('delegate', context, focusTask);
-		ACTION_INSTRUCTIONS['delegate'] = saved;
-		return prompt;
-	}
-
-	/**
 	 * Writes the prompt to a temp vault file and executes the configured AI CLI tool.
 	 * Tracks the running process so the DispatchModule can display it.
-	 * @param app - Obsidian app instance
-	 * @param settings - Plugin settings with AI tool config
-	 * @param action - The AI action being performed
-	 * @param prompt - Composed prompt string to send
-	 * @param task - Optional task for context labeling in the dispatch list
 	 */
-	static async dispatch(app: App, settings: PluginSettings, action: AIAction, prompt: string, task?: Task): Promise<void> {
+	async dispatch(app: App, settings: PluginSettings, action: AIAction, prompt: string, task?: Task): Promise<string> {
 		if (settings.aiTool === 'none') {
 			new Notice('No AI tool configured. Set one in Settings > AI.');
-			return;
+			return '';
 		}
 
 		const slug = task ? toSlug(task.title) : '_general';
 		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
-		await ensureFolder(app, folder);
+		await ensureVaultFolder(app, folder);
 		const tempPath = normalizePath(`${folder}/prompt.md`);
 		const existing = app.vault.getAbstractFileByPath(tempPath);
 		if (existing instanceof TFile) {
@@ -348,7 +359,7 @@ export class AIDispatcher {
 
 		const userShell = process.env.SHELL || '/bin/zsh';
 		const command = `${userShell} -lc ${this.shellQuote(innerCmd)}`;
-		const execCwd = this.resolveWorkingDirectory(vaultPath, settings);
+		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const actionLabel = ACTION_LABELS[action];
 		const recordId = String(this.nextId++);
@@ -369,7 +380,7 @@ export class AIDispatcher {
 		new Notice(`${actionLabel}: running ${settings.aiTool}...`);
 
 		const { exec } = require('child_process') as typeof import('child_process');
-		return new Promise<void>((resolve, reject) => {
+		return new Promise<string>((resolve) => {
 			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, _stderr: string) => {
 				if (error) {
 					record.status = 'failed';
@@ -380,16 +391,16 @@ export class AIDispatcher {
 					this.notifyFinish(record);
 					new Notice(`${actionLabel} error: ${error.message}`);
 					console.error('[AIDispatcher]', error);
-					reject(error);
+					resolve('');
 					return;
 				}
-			record.status = 'completed';
+				record.status = 'completed';
 				record.endTime = Date.now();
 				record.output = stdout || undefined;
 				this.notifyListeners();
 				this.notifyFinish(record);
 				new Notice(`${actionLabel} complete.`);
-				resolve();
+				resolve(recordId);
 			});
 			record.pid = child.pid;
 			this.notifyListeners();
@@ -404,7 +415,7 @@ export class AIDispatcher {
 	 *
 	 * Always uses `--print` / non-interactive mode so stdout is captured.
 	 */
-	static async dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string> {
+	async dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string> {
 		if (settings.aiTool === 'none') {
 			new Notice('No AI tool configured. Set one in Settings > AI.');
 			return '';
@@ -414,7 +425,7 @@ export class AIDispatcher {
 
 		const slug = toSlug(task.title);
 		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
-		await ensureFolder(app, folder);
+		await ensureVaultFolder(app, folder);
 		const tempPath = normalizePath(`${folder}/prompt.md`);
 		const existing = app.vault.getAbstractFileByPath(tempPath);
 		if (existing instanceof TFile) {
@@ -433,7 +444,7 @@ export class AIDispatcher {
 
 		const userShell = process.env.SHELL || '/bin/zsh';
 		const command = `${userShell} -lc ${this.shellQuote(innerCmd)}`;
-		const execCwd = this.resolveWorkingDirectory(vaultPath, settings);
+		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const recordId = String(this.nextId++);
 		const record: DispatchRecord = {
@@ -493,7 +504,7 @@ export class AIDispatcher {
 	 * Phase 2: dispatches the approved plan for execution. Uses the
 	 * configured subcommand (interactive for Cursor, `--print` for Claude).
 	 */
-	static async dispatchExecute(app: App, settings: PluginSettings, planId: string): Promise<void> {
+	async dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void> {
 		const planRecord = this.dispatches.get(planId);
 		if (planRecord === undefined || planRecord.status !== 'plan-ready' || planRecord.planText === undefined) {
 			new Notice('No approved plan found.');
@@ -507,7 +518,7 @@ export class AIDispatcher {
 
 		const slug = toSlug(planRecord.taskTitle);
 		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
-		await ensureFolder(app, folder);
+		await ensureVaultFolder(app, folder);
 		const tempPath = normalizePath(`${folder}/prompt.md`);
 		const existing = app.vault.getAbstractFileByPath(tempPath);
 		if (existing instanceof TFile) {
@@ -526,7 +537,7 @@ export class AIDispatcher {
 
 		const userShell = process.env.SHELL || '/bin/zsh';
 		const command = `${userShell} -lc ${this.shellQuote(innerCmd)}`;
-		const execCwd = this.resolveWorkingDirectory(vaultPath, settings);
+		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const recordId = String(this.nextId++);
 		const record: DispatchRecord = {
@@ -548,7 +559,7 @@ export class AIDispatcher {
 		new Notice(`AI Execute: running ${settings.aiTool}...`);
 
 		const { exec } = require('child_process') as typeof import('child_process');
-		return new Promise<void>((resolve, reject) => {
+		return new Promise<void>((resolve) => {
 			const child = exec(command, { cwd: execCwd, maxBuffer: 1024 * 1024 * 5 }, (error: Error | null, stdout: string, _stderr: string) => {
 				if (error) {
 					record.status = 'failed';
@@ -559,7 +570,7 @@ export class AIDispatcher {
 					this.notifyFinish(record);
 					new Notice(`AI Execute error: ${error.message}`);
 					console.error('[AIDispatcher] execute phase error', error);
-					reject(error);
+					resolve();
 					return;
 				}
 				record.status = 'completed';
@@ -576,7 +587,7 @@ export class AIDispatcher {
 	}
 
 	/** Marks a plan-ready record as rejected. */
-	static rejectPlan(planId: string): void {
+	rejectPlan(planId: string): void {
 		const rec = this.dispatches.get(planId);
 		if (rec === undefined || rec.status !== 'plan-ready') return;
 		rec.status = 'plan-rejected';
@@ -586,17 +597,15 @@ export class AIDispatcher {
 	}
 
 	/** Returns a specific dispatch record by ID. */
-	static getRecord(id: string): DispatchRecord | undefined {
+	getRecord(id: string): DispatchRecord | undefined {
 		return this.dispatches.get(id);
 	}
 
 	/**
 	 * Focuses the user's preferred terminal app, bringing an existing window
 	 * to front. Falls back to launching the app at vaultPath if not running.
-	 * @param vaultPath - Fallback directory when launching fresh
-	 * @param terminalApp - Terminal application preference
 	 */
-	static openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void {
+	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void {
 		const { exec } = require('child_process') as typeof import('child_process');
 		const appName = terminalApp === 'ghostty' ? 'Ghostty' : 'Terminal';
 		exec(
@@ -605,38 +614,47 @@ export class AIDispatcher {
 	}
 
 	/**
+	 * Composes a plan-phase prompt that reuses the standard context layout
+	 * but swaps in the plan-generation instruction instead of the delegate one.
+	 */
+	private composePlanPrompt(context: AIContext, focusTask: Task): string {
+		const saved = ACTION_INSTRUCTIONS['delegate'];
+		ACTION_INSTRUCTIONS['delegate'] = PLAN_PHASE_INSTRUCTION;
+		const prompt = composePrompt('delegate', context, focusTask);
+		ACTION_INSTRUCTIONS['delegate'] = saved;
+		return prompt;
+	}
+
+	/**
 	 * Resolves the full path of a CLI tool via the user's login shell.
 	 * GUI apps like Obsidian don't inherit the terminal PATH, so a bare
 	 * command name will fail. Falls back to the tool name if resolution fails.
 	 */
-	private static resolveToolPath(tool: string): Promise<string> {
-		const { execSync } = require('child_process') as typeof import('child_process');
+	private resolveToolPath(tool: string): Promise<string> {
+		const { spawnSync } = require('child_process') as typeof import('child_process');
 		const userShell = process.env.SHELL || '/bin/zsh';
-		try {
-			const resolved = execSync(`${userShell} -lic "which ${tool}"`, {
-				timeout: 5000,
-				encoding: 'utf-8',
-			}).trim();
-			return Promise.resolve(resolved || tool);
-		} catch {
-			return Promise.resolve(tool);
-		}
+		const result = spawnSync(userShell, ['-lic', `which ${tool}`], {
+			timeout: 5000,
+			encoding: 'utf-8',
+		});
+		const resolved = result.status === 0 ? (result.stdout as string).trim() : '';
+		return Promise.resolve(resolved || tool);
 	}
 
-	/** Resolves the effective working directory from settings, falling back to vault root. */
-	private static resolveWorkingDirectory(vaultPath: string, settings: PluginSettings): string {
-		return settings.aiWorkingDirectory || vaultPath;
+	/** Resolves the effective working directory from task or vault root. */
+	private resolveWorkingDirectory(vaultPath: string, task?: Task): string {
+		return task?.workingDirectory || vaultPath;
 	}
 
 	/** Returns the skip-permissions flag appropriate for the configured AI tool, or empty string. */
-	private static permissionsFlag(settings: PluginSettings): string {
+	private permissionsFlag(settings: PluginSettings): string {
 		if (settings.aiSkipPermissions === false) return '';
 		if (settings.aiTool === 'claude-code') return ' --dangerously-skip-permissions';
 		if (settings.aiTool === 'cursor') return ' --yes';
 		return '';
 	}
 
-	private static shellQuote(s: string): string {
+	private shellQuote(s: string): string {
 		return "'" + s.replace(/'/g, "'\\''") + "'";
 	}
 }

@@ -120,7 +120,7 @@ export class TaskManager {
 	}
 
 	/** Updates a task's editable fields. */
-	updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'description' | 'durationMinutes' | 'tags' | 'linkedDocs' | 'images' | 'delegationStatus' | 'delegationFeedback' | 'dispatchRecords'>>): void {
+	updateTask(id: string, updates: Partial<Pick<Task, 'title' | 'description' | 'durationMinutes' | 'tags' | 'linkedDocs' | 'images' | 'workingDirectory' | 'delegationStatus' | 'delegationFeedback' | 'dispatchRecords'>>): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
 		this.pushUndo();
@@ -273,6 +273,24 @@ export class TaskManager {
 		sorted[idx].order = sorted[swapIdx].order;
 		sorted[swapIdx].order = tempOrder;
 
+		this.emitChange();
+	}
+
+	/** Reorders tasks to match the given ordered list of IDs. Tasks not in the list keep their relative order at the end. */
+	reorderByIds(orderedIds: string[]): void {
+		this.pushUndo();
+		const idToTask = new Map(this.tasks.map((t) => [t.id, t]));
+		let order = 0;
+		for (const id of orderedIds) {
+			const task = idToTask.get(id);
+			if (task) {
+				task.order = order++;
+				idToTask.delete(id);
+			}
+		}
+		for (const task of idToTask.values()) {
+			task.order = order++;
+		}
 		this.emitChange();
 	}
 

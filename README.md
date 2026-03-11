@@ -4,33 +4,38 @@
 ![Obsidian: 1.0+](https://img.shields.io/badge/Obsidian-1.0%2B-7c3aed)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)
 
-**A productivity-first home screen for [Obsidian](https://obsidian.md).** Replaces the default empty tab with an interactive dashboard built around a clock-aligned rollover timer, chunked task management with git-tree subtask visualization, and a modular widget system -- all theme-aware and responsive.
+**A productivity-first home screen for [Obsidian](https://obsidian.md).** Replaces the default empty tab with an interactive dashboard: clock-aligned rollover timer, chunked task management with git-tree subtasks, and a modular widget system. Theme-aware and responsive out of the box.
 
 ## Why This Exists
 
-Most task timers treat time as a raw countdown: start 30 minutes, finish whenever. That approach ignores the fact that real schedules are built around clock boundaries -- meetings start on the hour, focus blocks end at :30. **Vault Welcome** snaps every timer to the next clean time boundary so your day stays structured without manual math. Finish early and the leftover minutes bank forward; go over and the debt rolls into the next task. The result is a self-correcting schedule that keeps you on track across an entire work session.
+Most task timers treat time as a raw countdown: start 30 minutes, finish whenever. Real schedules don't work that way. Meetings start on the hour, focus blocks end at :30. **Vault Welcome** snaps every timer to the next clean time boundary so your day stays structured without manual math. Finish early and the leftover minutes bank forward; go over and the debt rolls into the next task. It's a self-correcting schedule that keeps you on track across an entire work session.
 
-The dashboard is designed to be the first thing you see when you open your vault: your tasks, your timer, your recent documents, and your productivity history -- all in one view.
+Opens as the first thing you see in your vault: tasks, timer, recent documents, and productivity history in one view.
 
 ## Screenshots
 
-> Coming soon -- the plugin adapts to any Obsidian theme (light, dark, or custom).
+![Vault Welcome Dashboard](assets/dashboard-screenshot.png)
+
+Adapts to any Obsidian theme (light, dark, or custom).
 
 ## Features
 
 ### Clock-Aligned Rollover Timer
+
 - Start a task and the timer snaps to the next clean time boundary (configurable: 15/30/60 min intervals)
-- Example: Start a 30-min task at 6:12 -- timer ends at 7:00, not 6:42
+- Example: start a 30-min task at 6:12, timer ends at 7:00 (not 6:42)
 - **Positive rollover (time banking)**: Finish early and the remaining time carries to the next task
 - **Negative rollover (time debt)**: Go over and the debt is subtracted from the next task's allotment
 - Timer persists across Obsidian restarts
 
 ### Pomodoro Mode
+
 - Toggle between clock-aligned and classic Pomodoro (work/break intervals)
 - Configurable work, short break, and long break durations
 - Session counter dots and auto-cycling between work and break phases
 
 ### Chunked Task Management
+
 - Add tasks with title, description, and duration
 - Each task is started individually with its own clock-aligned timer
 - Drag-and-drop reordering with git-tree visual layout
@@ -38,38 +43,54 @@ The dashboard is designed to be the first thing you see when you open your vault
 - Task state stored locally in `data.json`
 
 ### Sub-Task Tree (Git-Tree View)
+
 - Nest subtasks up to 4 levels deep under any parent task
 - Visual branch and connector layout with depth-colored lines (customizable branch color)
 - Collapsible branches, inline completion toggling, and drag-to-reorder
 
 ### Task Tags and Templates
+
 - Freeform color-coded labels for filtering and grouping (e.g. "deep work", "standup")
 - **Multi-tag filter**: Select multiple tags to narrow the task list at once (toggle in settings)
 - Save and reuse task templates (title, duration, subtasks, tags) for recurring work
 
-### Linked Documents and Image Attachments
-- Attach vault documents to any task for context, notes, or specs
-- **Link existing**: Fuzzy-search file picker to attach any markdown file in your vault
-- **Create new**: Type a path (e.g. `Notes/Sprint 4/Design Doc`) to create and link a file in one step -- folders are auto-created
+### Unified Attachments
+
+- Single "Attachments" section in the task modal combining documents and images
+- **Link existing**: Fuzzy-search file picker to attach any vault file
+- **Create new**: Type a path (e.g. `Notes/Sprint 4/Design Doc`) to create and link a file in one step. Folders are auto-created.
+- **Attach image**: Dedicated image picker filtered to supported formats (png, jpg, gif, svg, webp)
+- **Drop zone**: Drag-and-drop or paste files; documents and images are auto-routed by extension
+- Attachments display with type-specific icons (`file-text` for docs, `image` for images)
 - Linked docs show as a badge with count on the task row; click to open a popover with direct links
-- **Image attachments**: Attach images to tasks via a filtered file picker (toggle in settings)
+
+### Per-Task Working Directory
+
+- Each task can specify a working directory used as the execution context for AI CLI dispatches
+- Browse vault folders via a fuzzy picker, or type an absolute path manually
+- Replaces the previous global `aiWorkingDirectory` setting with a per-task model
+- Falls back to the vault root when no directory is set
 
 ### Task Import from Notes
+
 - Scan any note's checklists and selectively import items as dashboard tasks
 - File picker with preview and selective import modal
 
 ### Archive and Auto-Archive
+
 - Completed and skipped tasks move to the archive
 - **Archive detail modal**: Click any archived task to view full details, then restore or permanently delete
 - **Auto-archive**: Automatically archive stale tasks after a configurable number of days (0 = disabled)
 - Archive displayed as a card grid with tag pills and timestamps
 
 ### Confirmation Dialogs
+
 - Destructive actions (reset all, delete archived, remove task, start over active timer) prompt a confirmation modal
 - **Start confirmation**: Starting a task while another is running offers Start Now, Queue Next, or Cancel
 - Dialogs can be globally disabled in settings
 
 ### AI Integration
+
 - Optional integration with **Cursor CLI** or **Claude Code CLI** for AI-assisted task management
 - **AI auto-organize**: Suggest tags and position when creating a task
 - **AI auto-order**: Reorder pending tasks by priority from the timeline header
@@ -79,44 +100,49 @@ The dashboard is designed to be the first thing you see when you open your vault
 - All AI features are individually toggleable; set to `none` to disable entirely
 
 ### Heatmap Tracker
+
 - GitHub-style contribution grid built from completed tasks and daily note task tags
 - Current and longest streak counters
 - Weekly/monthly/all-time summary stats (tasks completed, total time, avg session)
 - Configurable color schemes (green, red, blue, purple)
 
 ### Modular Widget System
+
 The left column is a container of independent widget panels:
 
-| Module | Description |
-|--------|-------------|
-| **Interview Prep** | Daily interview prep reports |
-| **Daily Trends** | Daily trend reports |
-| **Local Leads** | Daily local lead reports |
-| **App Store Intel** | Daily app store intelligence reports |
-| **Jobs Report** | Weekly job market reports |
-| **Competitor Watch** | Weekly competitor analysis reports |
-| **Last Opened Documents** | Shows recently opened vault files |
+| Module                     | Description                                                       |
+| -------------------------- | ----------------------------------------------------------------- |
+| **Interview Prep**         | Daily interview prep reports                                      |
+| **Daily Trends**           | Daily trend reports                                               |
+| **Local Leads**            | Daily local lead reports                                          |
+| **App Store Intel**        | Daily app store intelligence reports                              |
+| **Jobs Report**            | Weekly job market reports                                         |
+| **Competitor Watch**       | Weekly competitor analysis reports                                |
+| **Last Opened Documents**  | Shows recently opened vault files                                 |
 | **Quick Access Documents** | User-pinned file shortcuts (also available via file context menu) |
-| **Heatmap Tracker** | Contribution grid with streak and stat counters |
+| **Heatmap Tracker**        | Contribution grid with streak and stat counters                   |
 
 Report modules are powered by a configurable `reportBasePath` setting. Each module is collapsible, independently scrollable, and drag-to-reorderable.
 
 ### Custom Module API
+
 Other Obsidian plugins can register their own widget panels:
 
 ```typescript
-const vw = (this.app as any).plugins.plugins['vault-welcome'];
+const vw = (this.app as any).plugins.plugins["vault-welcome"];
 vw.registerModule({
-  id: 'my-widget',
-  name: 'My Widget',
+  id: "my-widget",
+  name: "My Widget",
   renderContent(el: HTMLElement) {
-    el.createDiv({ text: 'Hello from my widget!' });
+    el.createDiv({ text: "Hello from my widget!" });
   },
-  destroy() { /* cleanup */ },
+  destroy() {
+    /* cleanup */
+  },
 });
 
 // To remove:
-vw.unregisterModule('my-widget');
+vw.unregisterModule("my-widget");
 ```
 
 The `ModuleRenderer` interface:
@@ -133,25 +159,27 @@ interface ModuleRenderer {
 ```
 
 ### Additional UX
-- **Pinned first tab** -- Dashboard auto-pins as the leftmost tab and survives layout changes
-- **Audio notifications** -- Synthesized tones on timer completion and overtime
-- **Keyboard shortcuts** -- Obsidian commands for start, pause, complete, skip, and add-task
-- **Dashboard deep link** -- `obsidian://vault-welcome` protocol handler
-- **Undo/redo** -- Snapshot-based undo stack for task mutations
-- **Export analytics** -- CSV export or append summary to today's daily note
-- **Onboarding walkthrough** -- Inline 4-step guide on first launch
-- **Theme-aware** -- All colors use Obsidian CSS variables, adapts to any theme
-- **Responsive layout** -- 2-column desktop grid collapses to single-column on mobile (<800px)
+
+- **Pinned first tab**: auto-pins as the leftmost tab, survives layout changes
+- **Audio notifications**: synthesized tones on timer completion and overtime
+- **Keyboard shortcuts**: Obsidian commands for start, pause, complete, skip, and add-task
+- **Dashboard deep link**: `obsidian://vault-welcome` protocol handler
+- **Undo/redo**: snapshot-based undo stack for task mutations
+- **Export analytics**: CSV export or append summary to today's daily note
+- **Onboarding walkthrough**: inline 4-step guide on first launch
+- **Theme-aware**: all colors use Obsidian CSS variables, adapts to any theme
+- **Responsive layout**: 2-column desktop grid collapses to single-column on mobile (<800px)
 
 ## Technical Highlights
 
-- **Typed Event Bus** -- Decoupled pub/sub for cross-system communication. Commands, services, and UI sections interact through events, not direct method calls.
-- **Interface-Based Registries** -- `SectionRenderer` and `ModuleRenderer` interfaces enable composable UI. Dashboard layout is data-driven, not hardcoded.
-- **Pure-Logic Core Layer** -- `core/` has zero Obsidian imports. TimerEngine, TaskManager, UndoManager, and AudioService are testable with plain Node.
-- **Generic Undo/Redo** -- `UndoManager<T>` provides snapshot-based undo for any state type. TaskManager uses it for task + archive snapshots.
-- **Data-Driven Report Sources** -- Report modules read from user-configurable `ReportSourceConfig[]` in settings. Add, remove, or toggle sources from the settings panel.
-- **AI Context Assembly** -- AIDispatcher gathers task metadata, linked documents, and images into a structured prompt, then dispatches to Cursor CLI or Claude Code CLI.
-- **Encapsulated View State** -- No file-scope globals. All mutable UI state (collapsed IDs, filters, archive visibility) lives in typed `ViewState` objects owned by the view.
+- **Typed Event Bus**: decoupled pub/sub for cross-system communication. Commands, services, and UI sections interact through events, not direct method calls.
+- **Interface-Based Registries**: `SectionRenderer` and `ModuleRenderer` interfaces for composable UI. Dashboard layout is data-driven, not hardcoded.
+- **Pure-Logic Core Layer**: `core/` has zero Obsidian imports. TimerEngine, TaskManager, UndoManager, and AudioService are testable with plain Node.
+- **Generic Undo/Redo**: `UndoManager<T>` provides snapshot-based undo for any state type. TaskManager uses it for task + archive snapshots.
+- **Data-Driven Report Sources**: report modules read from user-configurable `ReportSourceConfig[]` in settings. Add, remove, or toggle sources from the settings panel.
+- **AI Context Assembly**: AIDispatcher gathers task metadata, linked documents, and images into a structured prompt, then dispatches to Cursor CLI or Claude Code CLI. Each task can specify its own working directory.
+- **Shared Vault Utilities**: common operations like `ensureVaultFolder` and `isImageExtension` extracted into reusable modules (`VaultUtils`, `types`) instead of duplicated across files.
+- **Encapsulated View State**: no file-scope globals. All mutable UI state (collapsed IDs, filters, archive visibility) lives in typed `ViewState` objects owned by the view.
 
 ## Design Philosophy
 
@@ -173,6 +201,7 @@ effectiveDuration = baseDuration + rolloverBalance
 ```
 
 Start at 6:12, 30 min task, snap = 30 min:
+
 - Raw end: 6:42
 - Aligned to next :00/:30 boundary: 7:00
 - Actual countdown: 48 minutes
@@ -207,10 +236,10 @@ src/
 
   services/            -- Obsidian-coupled vault/file operations
     AIDispatcher.ts, ReportScanner.ts, DocumentTracker.ts,
-    AnalyticsExporter.ts, TaskImporter.ts
+    AnalyticsExporter.ts, TaskImporter.ts, VaultUtils.ts
 
   ui/                  -- Shared DOM utilities (Tooltip, OnboardingOverlay)
-  modals/              -- Obsidian modal dialogs (6 files)
+  modals/              -- Obsidian modal dialogs (7 files, incl. FolderSuggestModal)
   styles/              -- CSS (13 files, theme-aware)
 ```
 
@@ -233,36 +262,36 @@ WelcomeView <-- EventBus <-- TimerEngine("timer:tick") ------+
 
 All persistent state lives in `data.json` (managed by Obsidian's plugin data API):
 
-| Key | Contents |
-|-----|----------|
-| `settings.snapIntervalMinutes` | Clock snap interval (15, 30, or 60) |
-| `settings.modules[]` | Module enable/order/collapse state |
-| `settings.quickAccessPaths[]` | Pinned document paths |
-| `settings.tagColors` | Map of tag name to hex color |
-| `settings.templates[]` | Saved task templates (name, duration, subtasks, tags) |
-| `settings.audioEnabled` | Master toggle for audio notifications |
-| `settings.timerMode` | `'clock-aligned'` or `'pomodoro'` |
-| `settings.pomodoroWorkMinutes` | Pomodoro work interval (default 25) |
-| `settings.pomodoroBreakMinutes` | Pomodoro short break (default 5) |
-| `settings.pomodoroLongBreakMinutes` | Pomodoro long break (default 15) |
-| `settings.pomodoroLongBreakInterval` | Sessions before long break (default 4) |
-| `settings.hasSeenOnboarding` | Whether the user dismissed the first-run walkthrough |
-| `settings.moduleOrder[]` | Persisted module panel ordering |
-| `settings.aiTool` | AI CLI tool: `'cursor'`, `'claude-code'`, or `'none'` |
-| `settings.aiToolPath` | Custom CLI path override |
-| `settings.aiAutoOrganize` | AI tag/position suggestions in task modal |
-| `settings.aiAutoOrder` | AI task reordering in timeline |
-| `settings.aiAutoScheduler` | AI duration suggestions |
-| `settings.aiDelegation` | AI task delegation |
-| `settings.enableMultiTagFilter` | Multi-select tag filtering |
-| `settings.enableImageAttachments` | Image attachment support |
-| `settings.showConfirmDialogs` | Confirmation dialogs for destructive actions |
-| `settings.autoArchiveDays` | Auto-archive stale tasks after N days (0 = off) |
-| `settings.reportBasePath` | Base vault folder for report sources |
-| `settings.branchColor` | Custom git-tree branch color |
-| `tasks[]` | Task list with status, duration, timestamps, tags, sub-tasks, linked docs, images |
-| `archivedTasks[]` | Archived completed/skipped tasks |
-| `timerState` | Current timer: running, paused, end time, rollover balance, pomodoro count |
+| Key                                  | Contents                                                                                             |
+| ------------------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `settings.snapIntervalMinutes`       | Clock snap interval (15, 30, or 60)                                                                  |
+| `settings.modules[]`                 | Module enable/order/collapse state                                                                   |
+| `settings.quickAccessPaths[]`        | Pinned document paths                                                                                |
+| `settings.tagColors`                 | Map of tag name to hex color                                                                         |
+| `settings.templates[]`               | Saved task templates (name, duration, subtasks, tags)                                                |
+| `settings.audioEnabled`              | Master toggle for audio notifications                                                                |
+| `settings.timerMode`                 | `'clock-aligned'` or `'pomodoro'`                                                                    |
+| `settings.pomodoroWorkMinutes`       | Pomodoro work interval (default 25)                                                                  |
+| `settings.pomodoroBreakMinutes`      | Pomodoro short break (default 5)                                                                     |
+| `settings.pomodoroLongBreakMinutes`  | Pomodoro long break (default 15)                                                                     |
+| `settings.pomodoroLongBreakInterval` | Sessions before long break (default 4)                                                               |
+| `settings.hasSeenOnboarding`         | Whether the user dismissed the first-run walkthrough                                                 |
+| `settings.moduleOrder[]`             | Persisted module panel ordering                                                                      |
+| `settings.aiTool`                    | AI CLI tool: `'cursor'`, `'claude-code'`, or `'none'`                                                |
+| `settings.aiToolPath`                | Custom CLI path override                                                                             |
+| `settings.aiAutoOrganize`            | AI tag/position suggestions in task modal                                                            |
+| `settings.aiAutoOrder`               | AI task reordering in timeline                                                                       |
+| `settings.aiAutoScheduler`           | AI duration suggestions                                                                              |
+| `settings.aiDelegation`              | AI task delegation                                                                                   |
+| `settings.enableMultiTagFilter`      | Multi-select tag filtering                                                                           |
+| `settings.enableImageAttachments`    | Image attachment support                                                                             |
+| `settings.showConfirmDialogs`        | Confirmation dialogs for destructive actions                                                         |
+| `settings.autoArchiveDays`           | Auto-archive stale tasks after N days (0 = off)                                                      |
+| `settings.reportBasePath`            | Base vault folder for report sources                                                                 |
+| `settings.branchColor`               | Custom git-tree branch color                                                                         |
+| `tasks[]`                            | Task list with status, duration, timestamps, tags, sub-tasks, linked docs, images, working directory |
+| `archivedTasks[]`                    | Archived completed/skipped tasks                                                                     |
+| `timerState`                         | Current timer: running, paused, end time, rollover balance, pomodoro count                           |
 
 ## Requirements
 
@@ -308,13 +337,13 @@ Reload Obsidian with `Cmd+R` (macOS) or `Ctrl+R` (Windows/Linux) after changes.
 - Task tags, categories, and color-coded labels
 - Multi-tag filter for narrowing the task list
 - Task templates for recurring work
-- Linked documents (fuzzy search + inline creation)
-- Image attachments on tasks
+- Unified attachments (documents + images in one section, shared drop zone, type-routed)
+- Per-task working directory for AI CLI execution context
 - Task import from note checklists
 - Archive detail modal with restore and permanent delete
 - Auto-archive stale tasks after configurable days
 - Confirmation dialogs for destructive actions (with start-while-active prompt)
-- AI integration (Cursor CLI / Claude Code CLI) -- auto-organize, auto-order, auto-scheduler, delegation
+- AI integration (Cursor CLI / Claude Code CLI): auto-organize, auto-order, auto-scheduler, delegation
 - Heatmap tracker with streak and summary stats
 - Modular widget system with drag-to-reorder
 - Six report modules (Interview Prep, Daily Trends, Local Leads, App Store Intel, Jobs Report, Competitor Watch)
@@ -332,14 +361,12 @@ Reload Obsidian with `Cmd+R` (macOS) or `Ctrl+R` (Windows/Linux) after changes.
 
 ### Planned
 
-- **Day Timeline** -- Google Calendar-style time-block view (shelved while interaction model is refined)
-- Screenshots and demo GIF for README
-- Community plugin submission
+- **Day Timeline**: Google Calendar-style time-block view (shelved while the interaction model is refined)
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
 
 ## Author
 
-**Miguel A. Lopez** -- [Rank Up Games LLC](https://github.com/dudetru25)
+**Miguel A. Lopez** | [Rank Up Games LLC](https://github.com/dudetru25)

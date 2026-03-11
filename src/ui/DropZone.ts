@@ -135,36 +135,33 @@ export class DropZone {
 
 	/** Reads clipboard content directly via the Clipboard API on click. */
 	private async readClipboard(): Promise<void> {
-		try {
-			const items = await navigator.clipboard.read();
-			for (const item of items) {
-				const { mimeTypes } = this.config.accept;
-				if (mimeTypes && mimeTypes.length > 0 && this.config.callbacks.onBlob) {
-					for (const type of item.types) {
-						if (this.matchesMime(type)) {
-							const blob = await item.getType(type);
-							this.flash();
-							this.config.callbacks.onBlob(blob, type);
-							return;
-						}
+		const items = await navigator.clipboard.read().catch((): ClipboardItem[] => []);
+		for (const item of items) {
+			const { mimeTypes } = this.config.accept;
+			if (mimeTypes && mimeTypes.length > 0 && this.config.callbacks.onBlob) {
+				for (const type of item.types) {
+					if (this.matchesMime(type)) {
+						const blob = await item.getType(type);
+						this.flash();
+						this.config.callbacks.onBlob(blob, type);
+						return;
 					}
 				}
 			}
+		}
 
-			if (this.config.accept.text && this.config.callbacks.onText) {
-				const hasFiles = items.some((item) =>
-					item.types.some((t) => this.matchesMime(t)),
-				);
-				if (hasFiles) return;
+		if (items.length === 0) return;
+		if (this.config.accept.text && this.config.callbacks.onText) {
+			const hasFiles = items.some((item) =>
+				item.types.some((t) => this.matchesMime(t)),
+			);
+			if (hasFiles) return;
 
-				const text = await navigator.clipboard.readText();
-				if (text.trim().length > 0) {
-					this.flash();
-					this.config.callbacks.onText(text.trim());
-				}
+			const text = await navigator.clipboard.readText().catch(() => '');
+			if (text.trim().length > 0) {
+				this.flash();
+				this.config.callbacks.onText(text.trim());
 			}
-		} catch {
-			// Clipboard API unavailable or permission denied
 		}
 	}
 

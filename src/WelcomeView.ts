@@ -25,7 +25,7 @@ import { ReportScanner } from './services/ReportScanner';
 import { DailyReportModule, WeeklyReportModule } from './modules/ReportModule';
 import { LastOpenedModule, QuickAccessModule } from './modules/DocumentModule';
 import { DispatchModule } from './modules/DispatchModule';
-import { AIDispatcher, type DispatchRecord } from './services/AIDispatcher';
+import { isAIEnabled, type IAIDispatcher, type DispatchRecord } from './services/AIDispatcher';
 import { AudioService } from './core/AudioService';
 import { ModuleCard } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
@@ -44,6 +44,7 @@ export class WelcomeView extends ItemView {
 	private audioService: AudioService;
 	private eventBus: EventBus;
 	private moduleRegistry: ModuleRegistry;
+	private aiDispatcher: IAIDispatcher;
 	private sections: SectionRenderer[] = [];
 	private timerSection: TimerSection | null = null;
 	private quickAccessModule: QuickAccessModule | null = null;
@@ -61,6 +62,7 @@ export class WelcomeView extends ItemView {
 		audioService: AudioService,
 		eventBus: EventBus,
 		moduleRegistry: ModuleRegistry,
+		aiDispatcher: IAIDispatcher,
 	) {
 		super(leaf);
 		this.data = data;
@@ -70,6 +72,7 @@ export class WelcomeView extends ItemView {
 		this.audioService = audioService;
 		this.eventBus = eventBus;
 		this.moduleRegistry = moduleRegistry;
+		this.aiDispatcher = aiDispatcher;
 	}
 
 	/**
@@ -87,10 +90,11 @@ export class WelcomeView extends ItemView {
 			if (result.subtasks) {
 				this.taskManager.replaceSubtasks(task.id, result.subtasks);
 			}
-			const updates: Partial<Pick<Task, 'description' | 'linkedDocs' | 'images'>> = {};
+			const updates: Partial<Pick<Task, 'description' | 'linkedDocs' | 'images' | 'workingDirectory'>> = {};
 			if (result.description) updates.description = result.description;
 			if (result.linkedDocs) updates.linkedDocs = result.linkedDocs;
 			if (result.images) updates.images = result.images;
+			if (result.workingDirectory) updates.workingDirectory = result.workingDirectory;
 			if (Object.keys(updates).length > 0) {
 				this.taskManager.updateTask(task.id, updates);
 			}
@@ -273,6 +277,7 @@ export class WelcomeView extends ItemView {
 			settings: this.data.settings,
 			viewState: this.timelineViewState,
 			subtreeViewState: this.subtreeViewState,
+			aiDispatcher: this.aiDispatcher,
 		});
 
 		return [timer, heatmap, timeline];
@@ -320,15 +325,16 @@ export class WelcomeView extends ItemView {
 		this.moduleRegistry.register(new WeeklyReportModule(this.app, cfgFor('weekly-reports'), scanner, reportBase, reportConfigs));
 		this.moduleRegistry.register(new LastOpenedModule(this.app, cfgFor('last-opened')));
 
-		if (AIDispatcher.isEnabled(this.data.settings)) {
+		if (isAIEnabled(this.data.settings)) {
+			const dispatcher = this.aiDispatcher;
 			const dispatchProvider = {
-				onDispatchChange: (fn: () => void) => AIDispatcher.onDispatchChange(fn),
-				getDispatches: () => AIDispatcher.getDispatches(),
-				clearFinished: () => AIDispatcher.clearFinished(),
-				clearAll: () => AIDispatcher.clearAll(),
-				openTerminal: (path: string, app: 'ghostty' | 'terminal') => AIDispatcher.openTerminal(path, app),
+				onDispatchChange: (fn: () => void) => dispatcher.onDispatchChange(fn),
+				getDispatches: () => dispatcher.getDispatches(),
+				clearFinished: () => dispatcher.clearFinished(),
+				clearAll: () => dispatcher.clearAll(),
+				openTerminal: (path: string, app: 'ghostty' | 'terminal') => dispatcher.openTerminal(path, app),
 				completeTask: (taskId: string) => {
-					const records = AIDispatcher.getDispatches()
+					const records = dispatcher.getDispatches()
 						.filter((d) => d.taskId === taskId && d.status !== 'running')
 						.map((d) => ({
 							id: d.id,
@@ -351,31 +357,29 @@ export class WelcomeView extends ItemView {
 					this.renderAll();
 				},
 				approvePlan: (planId: string) => {
-					const rec = AIDispatcher.getRecord(planId);
+					const rec = dispatcher.getRecord(planId);
 					if (rec === undefined || rec.status !== 'plan-ready') return;
 					new PlanApprovalModal(
 						this.app,
 						rec,
 						async () => {
-							try {
-								await AIDispatcher.dispatchExecute(this.app, this.data.settings, planId);
-								if (rec.taskId) {
-									this.taskManager.updateTask(rec.taskId, { delegationStatus: 'completed' } as Partial<Task>);
-									this.saveCallback();
-									this.renderAll();
-								}
-							} catch {
-								if (rec.taskId) {
-									this.taskManager.updateTask(rec.taskId, { delegationStatus: 'failed' } as Partial<Task>);
-									this.saveCallback();
-									this.renderAll();
-								}
+							const execTask = rec.taskId ? this.taskManager.getTask(rec.taskId) : undefined;
+							await dispatcher.dispatchExecute(this.app, this.data.settings, planId, execTask);
+							if (rec.taskId) {
+								const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
+								const succeeded = execRec?.status === 'completed';
+								this.taskManager.updateTask(rec.taskId, {
+									delegationStatus: succeeded ? 'completed' : 'failed',
+									delegationFeedback: succeeded ? undefined : execRec?.error,
+								});
+								this.saveCallback();
+								this.renderAll();
 							}
 						},
 						() => {
-							AIDispatcher.rejectPlan(planId);
+							dispatcher.rejectPlan(planId);
 							if (rec.taskId) {
-								this.taskManager.updateTask(rec.taskId, { delegationStatus: undefined } as unknown as Partial<Task>);
+								this.taskManager.updateTask(rec.taskId, { delegationStatus: undefined, delegationFeedback: undefined });
 								this.saveCallback();
 								this.renderAll();
 							}
@@ -383,10 +387,10 @@ export class WelcomeView extends ItemView {
 					).open();
 				},
 				rejectPlan: (planId: string) => {
-					AIDispatcher.rejectPlan(planId);
-					const rec = AIDispatcher.getRecord(planId);
+					dispatcher.rejectPlan(planId);
+					const rec = dispatcher.getRecord(planId);
 					if (rec?.taskId) {
-						this.taskManager.updateTask(rec.taskId, { delegationStatus: undefined } as unknown as Partial<Task>);
+						this.taskManager.updateTask(rec.taskId, { delegationStatus: undefined, delegationFeedback: undefined });
 						this.saveCallback();
 						this.renderAll();
 					}
