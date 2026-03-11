@@ -122,12 +122,11 @@ export class TaskModal extends Modal {
 
 		const form = contentEl.createDiv({ cls: 'vw-edit-form' });
 
-		let titleInput: HTMLInputElement; // eslint-disable-line prefer-const -- assigned in if/else branches
 		let durHours: number;
 		let durMins: number;
 
 		form.createDiv({ cls: 'vw-edit-label', text: 'Title' });
-		titleInput = form.createEl('input', {
+		const titleInput = form.createEl('input', {
 			cls: 'vw-edit-input',
 			attr: { type: 'text', value: this.task?.title ?? '', placeholder: 'Task title' },
 		});
