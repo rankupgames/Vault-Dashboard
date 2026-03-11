@@ -1,9 +1,9 @@
 {
 	"id": "vault-welcome",
-	"name": "Vault Welcome Dashboard",
+	"name": "Vault Dashboard",
 	"version": "1.0.1",
 	"minAppVersion": "1.0.0",
-	"description": "Interactive productivity welcome dashboard with clock-aligned rollover timer, chunked task management, modular widgets, and a floating mini timer.",
+	"description": "Productivity home screen with a clock-aligned rollover timer, chunked task management, git-tree subtasks, heatmap tracker, AI dispatch, and a modular widget system.",
 	"author": "Miguel A. Lopez",
 	"authorUrl": "https://github.com/dudetru25",
 	"isDesktopOnly": false
