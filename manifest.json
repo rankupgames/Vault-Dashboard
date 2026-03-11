@@ -1,7 +1,7 @@
 {
 	"id": "vault-welcome",
 	"name": "Vault Welcome Dashboard",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"minAppVersion": "1.0.0",
 	"description": "Interactive productivity welcome dashboard with clock-aligned rollover timer, chunked task management, modular widgets, and a floating mini timer.",
 	"author": "Miguel A. Lopez",
