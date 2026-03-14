@@ -33,6 +33,7 @@ npm run build  # esbuild production build
 src/
   main.ts              -- Plugin entry point: commands, ribbon, view registration
   WelcomeView.ts       -- Orchestrator composing sections and modules into the dashboard
+  MiniTimerView.ts     -- Pop-out mini timer (Spotify-style compact view)
   SettingsTab.ts       -- Obsidian settings panel
 
   core/                -- Zero Obsidian imports. Pure logic. Unit-testable.
@@ -44,6 +45,7 @@ src/
     UndoManager.ts     -- Generic snapshot-based undo/redo stack
     AudioService.ts    -- Web Audio API tone generator
     ColorUtils.ts      -- Hex/HSL conversion, shade generators
+    TaskFormatter.ts   -- Markdown checklist formatting for tasks and subtasks
 
   interfaces/          -- Contracts only. No implementations, no deps.
     SectionRenderer.ts -- Dashboard section contract (zone, order, render)
@@ -52,6 +54,7 @@ src/
     TimerSection.ts    -- Timer circle UI, SVG ring, controls
     HeatmapBar.ts      -- Contribution heatmap with streaks and stats
     TaskTimeline.ts    -- Task list with git-tree layout, archive, export
+    BoardView.ts       -- Kanban board view grouping tasks by category
     SubtaskTree.ts     -- Subtask branch rendering with collapse
 
   modules/             -- ModuleRenderer implementations (left column widgets)
@@ -60,7 +63,7 @@ src/
     ModuleRegistry.ts  -- Central register/unregister for all modules
     ReportModule.ts    -- Daily and weekly report modules
     DocumentModule.ts  -- Last opened and quick access panels
-    DispatchModule.ts  -- AI dispatch widget panel
+    DispatchModule.ts  -- Live AI dispatch status with terminal take-over
 
   services/            -- Obsidian-coupled vault/file operations
     AIDispatcher.ts    -- AI context assembly and CLI dispatch
@@ -68,23 +71,33 @@ src/
     DocumentTracker.ts -- Recent file and path resolution
     AnalyticsExporter.ts -- CSV and daily note export
     TaskImporter.ts    -- Note checklist scanner
+    TaskParser.ts      -- Pure checklist-to-subtask-tree parser
+    BackupService.ts   -- Vault-side JSON backup for data protection
+    VaultUtils.ts      -- Shared vault filesystem helpers
 
   modals/              -- Obsidian modal dialogs
-    TaskModal.ts, ImportModal.ts, FileSuggestModal.ts,
-    ConfirmModal.ts, ConfirmStartModal.ts,
-    ArchiveDetailModal.ts, PlanApprovalModal.ts
+    TaskModal.ts       -- Unified add/edit task modal with all fields
+    WelcomeModal.ts    -- First-run feature overview modal
+    ImportModal.ts     -- Note checklist selective import
+    PlanApprovalModal.ts   -- AI plan review and approve/reject
+    ArchiveDetailModal.ts  -- Archived task detail viewer
+    ConfirmStartModal.ts   -- Start-while-active confirmation
+    ConfirmModal.ts    -- Generic destructive action confirmation
+    FolderSuggestModal.ts  -- Fuzzy folder picker
+    FileSuggestModal.ts    -- Fuzzy file picker
 
-  ui/                  -- Shared DOM utilities
+  ui/                  -- Shared DOM components
     Tooltip.ts         -- Custom tooltip and tag pill renderer
-    OnboardingOverlay.ts -- First-run walkthrough
-    DropZone.ts        -- Drag-and-drop file target
+    DropZone.ts        -- Drag-and-drop and clipboard paste handler
+    TimerRing.ts       -- SVG ring factory for circular progress
+    TagPills.ts        -- Tag pill strip with optional remove buttons
 
-  styles/              -- CSS (13 files, theme-aware)
+  styles/              -- CSS (14 files, theme-aware)
 
 tests/
   core/                -- Vitest unit tests for the core layer
     EventBus.test.ts, UndoManager.test.ts, TaskManager.test.ts,
-    ColorUtils.test.ts, TimerEngine.test.ts
+    ColorUtils.test.ts, TimerEngine.test.ts, types.test.ts
 ```
 
 ## Coding Standards
@@ -124,6 +137,14 @@ TypeScript adaptation of the project's Unity C# standards:
 2. Keep Obsidian imports minimal. If it can be pure logic, put it in `core/` instead.
 3. Export from `src/services/index.ts`
 4. Wire into the consuming section or module via deps
+5. Verify: `npm run build`
+
+## Adding a New Modal
+
+1. Create `src/modals/MyModal.ts`
+2. Extend Obsidian's `Modal` class
+3. Add `@override` on `onOpen` and `onClose`
+4. Import where needed (modals are typically opened directly, not registered)
 5. Verify: `npm run build`
 
 ## PR Expectations

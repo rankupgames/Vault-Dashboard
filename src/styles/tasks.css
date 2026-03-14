@@ -154,6 +154,14 @@
 	flex-shrink: 0;
 }
 
+.vw-task-duration-allocated {
+	font-size: 10px;
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
 .vw-task-active .vw-task-duration {
 	background: var(--interactive-accent);
 	color: var(--text-on-accent);
@@ -627,4 +635,39 @@
 
 .vw-docs-popover-link:hover {
 	text-decoration: underline;
+}
+
+/* -- Subtask Actions (hover copy) ---------------------------------------- */
+
+.vw-subtask-actions {
+	display: flex;
+	gap: 2px;
+	flex-shrink: 0;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+}
+
+.vw-git-branch-row:hover > .vw-subtask-actions {
+	opacity: 1;
+}
+
+.vw-subtask-copy-btn {
+	width: 18px;
+	height: 18px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--text-faint);
+	transition: color 0.15s ease;
+}
+
+.vw-subtask-copy-btn:hover {
+	color: var(--interactive-accent);
+}
+
+.vw-subtask-copy-btn svg {
+	width: 12px;
+	height: 12px;
 }

@@ -1,6 +1,6 @@
 {
 	"name": "vault-welcome",
-	"version": "1.0.1",
+	"version": "1.1.1031326",
 	"description": "Interactive productivity welcome dashboard for Obsidian",
 	"main": "main.js",
 	"scripts": {
@@ -8,7 +8,8 @@
 		"build": "node esbuild.config.mjs production",
 		"lint": "eslint src/",
 		"test": "vitest run",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"deploy": "node esbuild.config.mjs production && node deploy.mjs"
 	},
 	"keywords": [
 		"obsidian",

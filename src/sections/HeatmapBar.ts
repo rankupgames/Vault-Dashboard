@@ -30,6 +30,7 @@ export class HeatmapBar implements SectionRenderer {
 	private container: HTMLElement | null = null;
 	private tooltipEl: HTMLElement | null = null;
 
+	/** Creates the heatmap bar with the given dependencies. */
 	constructor(deps: HeatmapBarDeps) {
 		this.deps = deps;
 	}
@@ -60,12 +61,15 @@ export class HeatmapBar implements SectionRenderer {
 		}
 	}
 
+	/** Positions and displays a floating tooltip above or below a heatmap cell. */
 	private showTooltip(cell: HTMLElement, text: string): void {
 		this.removeTooltip();
-		const tip = document.createElement('div');
+		const ownerDoc = cell.doc;
+		const ownerWin = cell.win;
+		const tip = ownerDoc.createElement('div');
 		tip.className = 'vw-heatmap-tooltip';
 		tip.textContent = text;
-		document.body.appendChild(tip);
+		ownerDoc.body.appendChild(tip);
 		this.tooltipEl = tip;
 
 		const rect = cell.getBoundingClientRect();
@@ -79,14 +83,15 @@ export class HeatmapBar implements SectionRenderer {
 		}
 		if (left < 4) {
 			left = 4;
-		} else if (left + tipRect.width > window.innerWidth - 4) {
-			left = window.innerWidth - tipRect.width - 4;
+		} else if (left + tipRect.width > ownerWin.innerWidth - 4) {
+			left = ownerWin.innerWidth - tipRect.width - 4;
 		}
 
 		tip.style.top = `${top}px`;
 		tip.style.left = `${left}px`;
 	}
 
+	/** Removes the active heatmap tooltip from the DOM. */
 	private removeTooltip(): void {
 		if (this.tooltipEl) {
 			this.tooltipEl.remove();
@@ -94,6 +99,7 @@ export class HeatmapBar implements SectionRenderer {
 		}
 	}
 
+	/** Builds the full heatmap grid with month columns, day cells, header, stats, and legend. */
 	private renderGrid(el: HTMLElement): void {
 		const tagFilter = this.deps.tagFilter ?? 'Task';
 
@@ -238,6 +244,7 @@ export class HeatmapBar implements SectionRenderer {
 		legend.createSpan({ text: 'More' });
 	}
 
+	/** Creates a small icon + value chip in the stats row. */
 	private renderStatChip(parent: HTMLElement, icon: string, value: string, tooltip: string, extraCls?: string): void {
 		const chip = parent.createDiv({ cls: 'vw-heatmap-stat-chip' });
 		if (extraCls) chip.addClass(extraCls);
@@ -249,6 +256,7 @@ export class HeatmapBar implements SectionRenderer {
 		chip.createSpan({ cls: 'vw-heatmap-stat-val', text: value });
 	}
 
+	/** Counts tasks completed since the start of the current ISO week (Monday). */
 	private countWeeklyCompleted(): number {
 		const now = new Date();
 		const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -261,6 +269,7 @@ export class HeatmapBar implements SectionRenderer {
 		).length;
 	}
 
+	/** Computes the current and longest consecutive-day streaks from merged counts. */
 	private computeStreaks(merged: Map<string, number>): { current: number; longest: number } {
 		const today = new Date();
 		today.setHours(0, 0, 0, 0);
@@ -305,6 +314,7 @@ export class HeatmapBar implements SectionRenderer {
 		return { current, longest };
 	}
 
+	/** Scans daily notes for tag occurrences matching the given prefix. */
 	private collectDailyNoteTags(tagPrefix: string): Map<string, number> {
 		const folderPath = this.deps.dailyNotesFolder ?? '_DailyNotes';
 		const folder = this.deps.app.vault.getAbstractFileByPath(folderPath);
@@ -338,6 +348,7 @@ export class HeatmapBar implements SectionRenderer {
 		return counts;
 	}
 
+	/** Groups completed tasks by date string for heatmap contribution counts. */
 	private collectCompletedTaskCounts(): Map<string, number> {
 		const counts = new Map<string, number>();
 
@@ -351,6 +362,7 @@ export class HeatmapBar implements SectionRenderer {
 		return counts;
 	}
 
+	/** Merges two date-keyed count maps by summing overlapping entries. */
 	private mergeCounts(a: Map<string, number>, b: Map<string, number>): Map<string, number> {
 		const merged = new Map(a);
 		for (const [date, count] of b) {
@@ -359,6 +371,7 @@ export class HeatmapBar implements SectionRenderer {
 		return merged;
 	}
 
+	/** Formats a Date to YYYY-MM-DD string. */
 	private formatDate(d: Date): string {
 		const y = d.getFullYear();
 		const m = String(d.getMonth() + 1).padStart(2, '0');

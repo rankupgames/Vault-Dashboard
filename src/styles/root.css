@@ -16,8 +16,7 @@
 	--vw-danger: var(--color-red, #e05252);
 	--vw-on-accent: var(--text-on-accent);
 
-	display: grid;
-	grid-template-columns: 2fr 1fr;
+	display: flex;
 	height: 100%;
 	overflow: hidden;
 	background: var(--vw-bg);
@@ -28,8 +27,17 @@
 /* -- Left Column (Scrollable Modules) ------------------------------------- */
 
 .vw-left-col {
+	width: 33.333%;
+	flex-shrink: 0;
 	overflow-y: auto;
+	overflow-x: hidden;
 	border-left: 1px solid var(--background-modifier-border);
+	transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vw-root.vw-panel-collapsed .vw-left-col {
+	width: 40px;
+	overflow: hidden;
 }
 
 .vw-module-area {
@@ -45,6 +53,8 @@
 /* -- Right Column (Fixed Timer + Tasks + Timeline) ------------------------ */
 
 .vw-right-col {
+	flex: 1;
+	min-width: 0;
 	display: flex;
 	flex-direction: column;
 	overflow: hidden;

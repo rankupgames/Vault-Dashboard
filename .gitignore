@@ -3,3 +3,4 @@ main.js
 styles.css
 data.json
 .DS_Store
+.deploy-target

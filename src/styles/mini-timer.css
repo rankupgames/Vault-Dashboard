@@ -1,0 +1,274 @@
+/* ==========================================================================
+   mini-timer.css -- Compact pop-out timer view + headless chrome hiding
+   ========================================================================== */
+
+/* -- Headless pop-out: hide all Obsidian chrome ----------------------------- */
+
+body.vw-mini-headless .mod-root .workspace-tabs .workspace-tab-header-container {
+	display: none !important;
+}
+
+body.vw-mini-headless .view-header {
+	display: none !important;
+}
+
+body.vw-mini-headless .status-bar {
+	display: none !important;
+}
+
+body.vw-mini-headless .sidebar-toggle-button {
+	display: none !important;
+}
+
+body.vw-mini-headless .titlebar {
+	display: none !important;
+}
+
+body.vw-mini-headless ::-webkit-scrollbar {
+	display: none;
+}
+
+body.vw-mini-headless .vw-mini-timer {
+	position: fixed;
+	inset: 0;
+	-webkit-app-region: drag;
+	padding: 2%;
+	padding-top: max(18px, 8%);
+	justify-content: center;
+}
+
+body.vw-mini-headless .vw-mini-active {
+	position: relative;
+	justify-content: center;
+}
+
+body.vw-mini-headless .vw-mini-ring-wrap {
+	width: calc(100vh - 40px);
+	height: calc(100vh - 40px);
+}
+
+body.vw-mini-headless .vw-mini-ring-wrap svg {
+	width: 100%;
+	height: 100%;
+}
+
+body.vw-mini-headless .vw-mini-display {
+	font-size: clamp(9px, calc(100vh * 0.1), 14px);
+}
+
+body.vw-mini-headless .vw-mini-controls {
+	position: fixed;
+	inset: 0;
+	justify-content: center;
+	background: rgba(0, 0, 0, 0.55);
+	backdrop-filter: blur(4px);
+	border-radius: 0;
+	-webkit-app-region: drag;
+	transition: opacity 0.15s ease 0.25s;
+}
+
+body.vw-mini-headless .vw-mini-timer:hover .vw-mini-controls {
+	transition-delay: 0s;
+}
+
+body.vw-mini-headless .vw-mini-ctrl {
+	-webkit-app-region: no-drag;
+	width: clamp(22px, calc(100vh * 0.16), 36px);
+	height: clamp(22px, calc(100vh * 0.16), 36px);
+}
+
+body.vw-mini-headless .vw-mini-ctrl svg {
+	width: clamp(14px, calc(100vh * 0.1), 20px);
+	height: clamp(14px, calc(100vh * 0.1), 20px);
+}
+
+body.vw-mini-headless .vw-mini-marquee {
+	position: fixed;
+	bottom: 6px;
+	left: 0;
+	right: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+	text-align: center;
+}
+
+body.vw-mini-headless .vw-mini-timer:hover .vw-mini-marquee {
+	opacity: 1;
+}
+
+body.vw-mini-headless .vw-mini-marquee-text {
+	display: inline-block;
+	padding-left: 100%;
+	font-size: clamp(11px, calc(100vh * 0.088), 15px);
+	font-weight: 500;
+	color: var(--text-muted);
+	animation: vw-marquee 20s linear infinite;
+}
+
+@keyframes vw-marquee {
+	0% { transform: translateX(0); }
+	100% { transform: translateX(-200%); }
+}
+
+/* -- Mini timer root -------------------------------------------------------- */
+
+.vw-mini-timer {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	height: 100%;
+	padding: 6px 10px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font-family: var(--font-interface);
+	user-select: none;
+	box-sizing: border-box;
+}
+
+.vw-mini-hidden {
+	display: none !important;
+}
+
+/* -- Idle state ------------------------------------------------------------- */
+
+.vw-mini-idle {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	color: var(--text-muted);
+	font-size: 13px;
+}
+
+body.vw-mini-headless .vw-mini-idle {
+	flex-direction: column;
+	gap: 6px;
+	text-align: center;
+}
+
+.vw-mini-idle-icon {
+	display: flex;
+	align-items: center;
+	opacity: 0.5;
+}
+
+body.vw-mini-headless .vw-mini-idle-icon svg {
+	width: clamp(20px, calc(100vh * 0.15), 32px);
+	height: clamp(20px, calc(100vh * 0.15), 32px);
+}
+
+.vw-mini-idle-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+body.vw-mini-headless .vw-mini-idle-text {
+	font-size: clamp(10px, calc(100vh * 0.08), 13px);
+}
+
+/* -- Active state ----------------------------------------------------------- */
+
+.vw-mini-active {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	min-width: 0;
+}
+
+/* -- SVG ring --------------------------------------------------------------- */
+
+.vw-mini-ring-wrap {
+	position: relative;
+	width: 44px;
+	height: 44px;
+	flex-shrink: 0;
+}
+
+.vw-mini-ring-wrap svg {
+	width: 44px;
+	height: 44px;
+	transform: rotate(-90deg);
+}
+
+.vw-mini-ring-bg {
+	fill: none;
+	stroke: var(--background-modifier-border);
+	stroke-width: 3;
+}
+
+.vw-mini-ring {
+	fill: none;
+	stroke: var(--interactive-accent);
+	stroke-width: 3;
+	stroke-linecap: round;
+	transition: stroke-dashoffset 0.25s ease;
+}
+
+.vw-mini-ring.vw-mini-timer-negative {
+	stroke: var(--color-red, #e05252);
+}
+
+.vw-mini-display {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	font-size: 10px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	line-height: 1;
+	color: var(--text-normal);
+	white-space: nowrap;
+}
+
+.vw-mini-display.vw-mini-timer-negative {
+	color: var(--color-red, #e05252);
+}
+
+/* -- Controls overlay ------------------------------------------------------- */
+
+.vw-mini-controls {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	opacity: 0;
+	transition: opacity 0.15s ease;
+	pointer-events: none;
+}
+
+.vw-mini-timer:hover .vw-mini-controls {
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.vw-mini-timer:hover .vw-mini-display {
+	opacity: 0.3;
+}
+
+/* -- Control buttons -------------------------------------------------------- */
+
+.vw-mini-ctrl {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vw-mini-ctrl:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-mini-ctrl svg {
+	width: 16px;
+	height: 16px;
+}

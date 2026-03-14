@@ -72,6 +72,7 @@ export class DropZone {
 		this.zoneEl.remove();
 	}
 
+	/** Detaches the paste listener from the previously bound scope. */
 	private unbindPaste(): void {
 		if (this.pasteScope && this.pasteHandler) {
 			this.pasteScope.removeEventListener('paste', this.pasteHandler);
@@ -80,6 +81,7 @@ export class DropZone {
 		}
 	}
 
+	/** Creates the drop zone DOM element with icon and label. */
 	private buildZone(parent: HTMLElement): HTMLElement {
 		const zone = parent.createDiv({ cls: 'vw-drop-zone' });
 		zone.setAttribute('tabindex', '0');
@@ -94,6 +96,7 @@ export class DropZone {
 		return zone;
 	}
 
+	/** Attaches drag-enter, drag-over, drag-leave, and drop listeners to the zone. */
 	private attachDragListeners(): void {
 		const zone = this.zoneEl;
 
@@ -129,11 +132,13 @@ export class DropZone {
 		});
 	}
 
+	/** Adds a click handler that triggers a clipboard read. */
 	private attachClickToPaste(): void {
 		this.zoneEl.addEventListener('click', () => this.readClipboard());
 	}
 
 	/** Reads clipboard content directly via the Clipboard API on click. */
+	/** Reads files or text from the clipboard via the Clipboard API. */
 	private async readClipboard(): Promise<void> {
 		const items = await navigator.clipboard.read().catch((): ClipboardItem[] => []);
 		for (const item of items) {
@@ -165,6 +170,7 @@ export class DropZone {
 		}
 	}
 
+	/** Processes dropped files or vault paths from a drag event. */
 	private handleDrop(e: DragEvent): void {
 		const dt = e.dataTransfer;
 		if (dt === null) return;
@@ -188,13 +194,17 @@ export class DropZone {
 		}
 	}
 
+	/** Handles paste events, filtering by accepted MIME types. */
 	private handlePaste(e: ClipboardEvent): void {
 		if (e.defaultPrevented) return;
 
-		const active = document.activeElement;
-		const isEditable = active instanceof HTMLInputElement
-			|| active instanceof HTMLTextAreaElement
-			|| (active instanceof HTMLElement && active.isContentEditable);
+		const ownerDoc = this.zoneEl.doc;
+		const active = ownerDoc.activeElement;
+		if (active === null) return;
+		const el = active as HTMLElement;
+		const isEditable = el.instanceOf(HTMLInputElement)
+			|| el.instanceOf(HTMLTextAreaElement)
+			|| (el.instanceOf(HTMLElement) && el.isContentEditable);
 		if (isEditable && active !== this.zoneEl) return;
 
 		const cd = e.clipboardData;
@@ -229,6 +239,7 @@ export class DropZone {
 		}
 	}
 
+	/** Returns only files whose extensions match the accepted list. */
 	private filterFiles(fileList: FileList): File[] {
 		const { extensions } = this.config.accept;
 		if (extensions === undefined || extensions.length === 0) {
@@ -240,6 +251,7 @@ export class DropZone {
 		});
 	}
 
+	/** Checks whether a MIME type matches any accepted pattern. */
 	private matchesMime(type: string): boolean {
 		const { mimeTypes } = this.config.accept;
 		if (mimeTypes === undefined) return false;
@@ -252,6 +264,7 @@ export class DropZone {
 	}
 
 	/** Brief highlight to confirm a successful drop or paste. */
+	/** Brief highlight animation to confirm a successful drop or paste. */
 	private flash(): void {
 		this.zoneEl.addClass('vw-drop-zone-flash');
 		setTimeout(() => this.zoneEl.removeClass('vw-drop-zone-flash'), 600);

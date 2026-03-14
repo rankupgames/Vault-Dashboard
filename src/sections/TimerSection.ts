@@ -4,7 +4,7 @@
  * Project: Vault Dashboard Welcome
  * Description: Timer circle display with SVG ring, task info, rollover, and pause/resume/complete controls
  * Created: 2026-03-07
- * Last Modified: 2026-03-07
+ * Last Modified: 2026-03-11
  */
 
 import { App, setIcon } from 'obsidian';
@@ -16,6 +16,7 @@ import { EventBus } from '../core/EventBus';
 import { TaskEvents, TaskStartPayload, TaskSkipPayload } from '../core/events';
 import { ConfirmStartModal } from '../modals/ConfirmStartModal';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
+import { createTimerRing, TimerRingHandle } from '../ui/TimerRing';
 
 /** Dependencies for the timer section (app, timer engine, task manager, event bus, callbacks, settings). */
 export interface TimerSectionDeps {
@@ -26,17 +27,20 @@ export interface TimerSectionDeps {
 	onRenderAll: () => void;
 	saveCallback: () => void;
 	settings: PluginSettings;
+	onPopoutMiniTimer?: () => void;
 }
 
+/** Timer circle display with SVG ring, task info, rollover, and pause/resume/complete controls. */
 export class TimerSection implements SectionRenderer {
 	readonly id = 'timer';
 	readonly zone: SectionZone = 'top-bar';
 	readonly order = 0;
 	private deps: TimerSectionDeps;
 	private displayEl: HTMLElement | null = null;
-	private ringEl: SVGCircleElement | null = null;
+	private ringHandle: TimerRingHandle | null = null;
 	private unsubscribers: (() => void)[] = [];
 
+	/** Creates the timer section and subscribes to task start/skip events. */
 	constructor(deps: TimerSectionDeps) {
 		this.deps = deps;
 		this.unsubscribers.push(
@@ -64,7 +68,7 @@ export class TimerSection implements SectionRenderer {
 	 * @returns The ring element, or null if not rendered
 	 */
 	getRingEl(): SVGCircleElement | null {
-		return this.ringEl;
+		return this.ringHandle?.ring ?? null;
 	}
 
 	/**
@@ -75,26 +79,16 @@ export class TimerSection implements SectionRenderer {
 		const section = parent.createDiv({ cls: 'vw-timer-section' });
 
 		const circle = section.createDiv({ cls: 'vw-timer-circle' });
-		const svg = circle.createSvg('svg');
-		svg.setAttribute('viewBox', '0 0 80 80');
-
-		const bg = svg.createSvg('circle');
-		bg.setAttribute('cx', '40');
-		bg.setAttribute('cy', '40');
-		bg.setAttribute('r', '36');
-		bg.setAttribute('class', 'vw-timer-bg');
-
-		const ring = svg.createSvg('circle');
-		ring.setAttribute('cx', '40');
-		ring.setAttribute('cy', '40');
-		ring.setAttribute('r', '36');
-		const ringCls = this.deps.timerEngine.isOnBreak() ? 'vw-timer-ring vw-timer-ring-break' : 'vw-timer-ring';
-		ring.setAttribute('class', ringCls);
-		const circumference = 2 * Math.PI * 36;
-		ring.style.strokeDasharray = String(circumference);
-		const isRunning = this.deps.timerEngine.getState().isRunning;
-		ring.style.strokeDashoffset = isRunning ? '0' : String(circumference);
-		this.ringEl = ring;
+		this.ringHandle = createTimerRing(circle, {
+			size: 80,
+			radius: 36,
+			bgClass: 'vw-timer-bg',
+			ringClass: this.deps.timerEngine.isOnBreak() ? 'vw-timer-ring vw-timer-ring-break' : 'vw-timer-ring',
+			negativeClass: 'vw-timer-negative',
+		});
+		if (this.deps.timerEngine.getState().isRunning) {
+			this.ringHandle.update(this.deps.timerEngine.getProgress(), this.deps.timerEngine.isNegative());
+		}
 
 		const displayWrap = circle.createDiv({ cls: 'vw-timer-display-wrap' });
 
@@ -250,6 +244,14 @@ export class TimerSection implements SectionRenderer {
 			}
 		}
 
+		if (this.deps.onPopoutMiniTimer) {
+			const popoutBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
+			setIcon(popoutBtn, 'picture-in-picture-2');
+			popoutBtn.setAttribute('aria-label', 'Pop out mini timer');
+			popoutBtn.setAttribute('tabindex', '0');
+			popoutBtn.addEventListener('click', () => this.deps.onPopoutMiniTimer?.());
+		}
+
 		this.updateDisplay();
 	}
 
@@ -315,6 +317,7 @@ export class TimerSection implements SectionRenderer {
 		this.startTaskImmediate(task);
 	}
 
+	/** Cancels the current task, resets rollover, and starts the given task. */
 	private overrideAndStart(task: Task): void {
 		const state = this.deps.timerEngine.getState();
 		if (state.isRunning && state.currentTaskId) {
@@ -325,6 +328,7 @@ export class TimerSection implements SectionRenderer {
 		this.startTaskImmediate(task);
 	}
 
+	/** Starts a task timer immediately using either pomodoro or clock-aligned mode. */
 	private startTaskImmediate(task: Task): void {
 		if (this.deps.timerEngine.isPomodoroMode()) {
 			this.deps.taskManager.startTask(task.id, 0);
@@ -345,13 +349,6 @@ export class TimerSection implements SectionRenderer {
 			this.displayEl.setText(text);
 			this.displayEl.toggleClass('vw-timer-negative', this.deps.timerEngine.isNegative());
 		}
-
-		if (this.ringEl) {
-			const circumference = 2 * Math.PI * 36;
-			const progress = this.deps.timerEngine.getProgress();
-			const offset = circumference * progress;
-			this.ringEl.style.strokeDashoffset = String(offset);
-			this.ringEl.toggleClass('vw-timer-negative', this.deps.timerEngine.isNegative());
-		}
+		this.ringHandle?.update(this.deps.timerEngine.getProgress(), this.deps.timerEngine.isNegative());
 	}
 }

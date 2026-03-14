@@ -261,10 +261,12 @@
 	display: flex;
 	gap: 6px;
 	align-items: center;
+	width: 100%;
 }
 
 .vw-modal-subtask-input {
 	flex: 1;
+	min-width: 0;
 	padding: 4px 8px;
 	font-size: 12px;
 	border: 1px solid var(--background-modifier-border);
@@ -667,6 +669,46 @@
 	opacity: 0.8;
 }
 
+/* -- Pending Tag Pills --------------------------------------------------- */
+
+.vw-pending-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.vw-tag-pill {
+	font-size: 10px;
+	padding: 2px 8px;
+	border-radius: 10px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	white-space: nowrap;
+	line-height: 1.4;
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.vw-tag-pill-removable {
+	cursor: pointer;
+	transition: opacity 0.12s ease;
+}
+
+.vw-tag-pill-removable:hover {
+	opacity: 0.8;
+}
+
+.vw-tag-pill-x {
+	display: inline-flex;
+	align-items: center;
+}
+
+.vw-tag-pill-x svg {
+	width: 10px;
+	height: 10px;
+}
+
 /* -- Confirm Modal ------------------------------------------------------- */
 
 .vw-confirm-modal h3,
@@ -707,4 +749,74 @@
 	margin-bottom: 16px;
 	font-size: 13px;
 	line-height: 1.6;
+}
+
+/* ==========================================================================
+   Welcome modal -- first-open instructions & feature list
+   ========================================================================== */
+
+.vw-welcome-modal h2 {
+	margin: 0 0 4px;
+	font-size: 18px;
+	font-weight: 700;
+}
+
+.vw-welcome-subtitle {
+	color: var(--text-muted);
+	font-size: 13px;
+	margin-bottom: 16px;
+}
+
+.vw-welcome-list {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	max-height: 380px;
+	overflow-y: auto;
+	padding-right: 4px;
+}
+
+.vw-welcome-item {
+	display: flex;
+	align-items: flex-start;
+	gap: 10px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+}
+
+.vw-welcome-item-icon {
+	flex-shrink: 0;
+	width: 20px;
+	height: 20px;
+	color: var(--interactive-accent);
+	margin-top: 2px;
+}
+
+.vw-welcome-item-icon svg {
+	width: 20px;
+	height: 20px;
+}
+
+.vw-welcome-item-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.vw-welcome-item-title {
+	font-size: 13px;
+	font-weight: 600;
+	margin-bottom: 2px;
+}
+
+.vw-welcome-item-desc {
+	font-size: 12px;
+	color: var(--text-muted);
+	line-height: 1.45;
+}
+
+.vw-welcome-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: 16px;
 }

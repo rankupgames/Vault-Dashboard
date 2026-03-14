@@ -1,4 +1,7 @@
 export { attachOverflowTooltip, destroyTooltip, renderTagPills } from './Tooltip';
-export { OnboardingOverlay } from './OnboardingOverlay';
 export { DropZone } from './DropZone';
 export type { DropZoneAccept, DropZoneCallbacks, DropZoneConfig } from './DropZone';
+export { createTimerRing } from './TimerRing';
+export type { TimerRingConfig, TimerRingHandle } from './TimerRing';
+export { TagPills } from './TagPills';
+export type { TagPillsConfig } from './TagPills';

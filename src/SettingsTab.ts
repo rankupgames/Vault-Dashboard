@@ -7,9 +7,10 @@
  * Last Modified: 2026-03-10
  */
 
-import { App, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type VaultWelcomePlugin from './main';
 import { DEFAULT_SETTINGS } from './core/types';
+import { AnalyticsExporter } from './services/AnalyticsExporter';
 
 /** Plugin settings tab for Obsidian Settings panel. */
 export class SettingsTab extends PluginSettingTab {
@@ -37,10 +38,13 @@ export class SettingsTab extends PluginSettingTab {
 		this.renderTaskTreeSection(containerEl);
 		this.renderHeatmapSection(containerEl);
 		this.renderReportsSection(containerEl);
+		this.renderCategorySection(containerEl);
 		this.renderModulesSection(containerEl);
+		this.renderExportSection(containerEl);
 		this.renderDataSection(containerEl);
 	}
 
+	/** Renders auto-open, pin-tab, and output folder settings. */
 	private renderGeneralSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'General' });
 
@@ -80,6 +84,7 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	/** Renders timer mode dropdown and conditional clock-aligned / pomodoro sub-settings. */
 	private renderTimerSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Timer' });
 
@@ -177,6 +182,7 @@ export class SettingsTab extends PluginSettingTab {
 		}
 	}
 
+	/** Renders audio enable toggle and per-event sound toggles. */
 	private renderAudioSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Audio' });
 
@@ -216,6 +222,7 @@ export class SettingsTab extends PluginSettingTab {
 		}
 	}
 
+	/** Renders AI tool selection, CLI path, permission, and delegation settings. */
 	private renderAISection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'AI Integration' });
 
@@ -282,16 +289,6 @@ export class SettingsTab extends PluginSettingTab {
 				);
 
 			new Setting(el)
-				.setName('AI auto-scheduler')
-				.setDesc('Show AI schedule button to estimate task durations.')
-				.addToggle((toggle) =>
-					toggle.setValue(settings.aiAutoScheduler).onChange(async (val) => {
-						settings.aiAutoScheduler = val;
-						await this.save();
-					}),
-				);
-
-			new Setting(el)
 				.setName('AI delegation')
 				.setDesc('Show delegate button on task rows to dispatch tasks to the AI tool.')
 				.addToggle((toggle) =>
@@ -317,6 +314,7 @@ export class SettingsTab extends PluginSettingTab {
 		}
 	}
 
+	/** Renders task behavior settings: multi-tag filter, images, confirmations, auto-archive. */
 	private renderTaskSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Tasks' });
 
@@ -367,6 +365,7 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	/** Renders heatmap settings: daily notes folder, tag filter, and base color picker. */
 	private renderHeatmapSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Heatmap' });
 
@@ -409,6 +408,7 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	/** Renders subtask tree settings: branch color picker. */
 	private renderTaskTreeSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Task Tree' });
 
@@ -425,6 +425,7 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	/** Renders report base folder, per-source toggles, and "add source" button. */
 	private renderReportsSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Reports' });
 
@@ -475,6 +476,55 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	/** Renders category list with color pickers, rename fields, and delete buttons. */
+	private renderCategorySection(el: HTMLElement): void {
+		el.createEl('h2', { text: 'Task Categories' });
+
+		const settings = this.plugin.data.settings;
+		const sorted = [...settings.taskCategories].sort((a, b) => a.order - b.order);
+
+		for (const cat of sorted) {
+			const s = new Setting(el).setName(cat.name);
+
+			if (cat.isDefault) s.setDesc(cat.dailyReset ? 'Default (daily reset)' : 'Default');
+
+			s.addColorPicker((cp) =>
+				cp.setValue(cat.color ?? '#888888').onChange(async (val) => {
+					cat.color = val;
+					await this.save();
+				}),
+			);
+
+			if (cat.isDefault === false || cat.isDefault === undefined) {
+				s.addText((text) =>
+					text.setValue(cat.name).onChange(async (val) => {
+						this.plugin.taskManager.renameCategory(cat.id, val.trim() || cat.name);
+						await this.save();
+					}),
+				);
+
+				s.addButton((btn) =>
+					btn.setButtonText('Delete + Tasks').setWarning().onClick(async () => {
+						this.plugin.taskManager.removeCategoryWithTasks(cat.id);
+						await this.save();
+						this.display();
+					}),
+				);
+			}
+		}
+
+		new Setting(el)
+			.setName('Add category')
+			.addButton((btn) =>
+				btn.setButtonText('Add').onClick(async () => {
+					this.plugin.taskManager.addCategory('New Category');
+					await this.save();
+					this.display();
+				}),
+			);
+	}
+
+	/** Renders per-module enable/disable toggles. */
 	private renderModulesSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Modules' });
 
@@ -492,14 +542,48 @@ export class SettingsTab extends PluginSettingTab {
 		}
 	}
 
+	/** Renders CSV export and daily note append buttons. */
+	private renderExportSection(el: HTMLElement): void {
+		el.createEl('h2', { text: 'Export' });
+
+		new Setting(el)
+			.setName('Export CSV')
+			.setDesc('Download all tasks (active + archived) as a CSV file.')
+			.addButton((btn) =>
+				btn.setButtonText('Export').onClick(() => {
+					const csv = AnalyticsExporter.exportToCSV(
+						this.plugin.taskManager.toJSON(),
+						this.plugin.taskManager.getArchivedTasks(),
+					);
+					AnalyticsExporter.downloadCSV(csv, 'vault-welcome-tasks.csv');
+					new Notice('CSV exported');
+				}),
+			);
+
+		new Setting(el)
+			.setName('Append to Daily Note')
+			.setDesc('Append today\'s task summary to the daily note.')
+			.addButton((btn) =>
+				btn.setButtonText('Append').onClick(async () => {
+					await AnalyticsExporter.exportToDailyNote(
+						this.app,
+						this.plugin.taskManager.toJSON(),
+						this.plugin.data.settings.dailyNotesFolder,
+					);
+					new Notice('Appended to daily note');
+				}),
+			);
+	}
+
+	/** Renders data management section with welcome guide reset. */
 	private renderDataSection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'Data' });
 
 		const settings = this.plugin.data.settings;
 
 		new Setting(el)
-			.setName('Re-show onboarding')
-			.setDesc('Reset the onboarding overlay so it appears on next dashboard open.')
+			.setName('Re-show welcome guide')
+			.setDesc('Reset so the welcome modal appears on next dashboard open.')
 			.addButton((btn) =>
 				btn
 					.setButtonText(settings.hasSeenOnboarding ? 'Reset' : 'Already showing')
@@ -512,6 +596,7 @@ export class SettingsTab extends PluginSettingTab {
 			);
 	}
 
+	/** Persists plugin data and refreshes all open dashboard views. */
 	private async save(): Promise<void> {
 		await this.plugin.saveData(this.plugin.data);
 		this.plugin.refreshWelcomeViews();

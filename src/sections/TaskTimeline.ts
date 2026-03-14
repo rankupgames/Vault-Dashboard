@@ -8,7 +8,7 @@
  */
 
 import { App, setIcon, TFile, Notice } from 'obsidian';
-import { Task, SubTask, PluginSettings } from '../core/types';
+import { Task, PluginSettings } from '../core/types';
 import { TimerEngine } from '../core/TimerEngine';
 import { TaskManager } from '../core/TaskManager';
 import { SubtaskTree, SubtreeViewState } from './SubtaskTree';
@@ -19,8 +19,10 @@ import { ConfirmModal } from '../modals/ConfirmModal';
 import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
 import { isAIEnabled, gatherContext, composePrompt, parseJsonArray, type IAIDispatcher } from '../services/AIDispatcher';
 import { PlanApprovalModal } from '../modals/PlanApprovalModal';
-import { AnalyticsExporter } from '../services/AnalyticsExporter';
 import { attachOverflowTooltip, renderTagPills } from '../ui/Tooltip';
+import { TaskFormatter } from '../core/TaskFormatter';
+import { DropZone } from '../ui/DropZone';
+import { TaskParser } from '../services/TaskParser';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
 /** View state for the task timeline (collapse, archive, filters). */
@@ -62,6 +64,12 @@ export interface TaskTimelineDeps {
 	viewState: TimelineViewState;
 	subtreeViewState: SubtreeViewState;
 	aiDispatcher: IAIDispatcher;
+	/** Switches between list and board view modes. */
+	onSwitchView?: (mode: 'list' | 'board') => void;
+	/** When set, shows only tasks from this category with a back button. */
+	categoryFilter?: string | null;
+	/** Called when the user wants to go back to the board. */
+	onBackToBoard?: () => void;
 }
 
 /** Task list with git-style tree, duration display, actions, and subtask rendering. */
@@ -101,8 +109,16 @@ export class TaskTimeline implements SectionRenderer {
 		const headerLeft = header.createDiv({ cls: 'vw-tasks-header-left' });
 
 		const tasks = this.deps.taskManager.getTasks();
-		const hasExpandable = tasks.some((t) => t.subtasks && t.subtasks.length > 0);
 
+		// Back to board button
+		const backBtn = headerLeft.createDiv({ cls: 'vw-view-toggle' });
+		setIcon(backBtn, 'arrow-left');
+		backBtn.setAttribute('aria-label', 'Back to board');
+		backBtn.setAttribute('tabindex', '0');
+		backBtn.addEventListener('click', () => this.deps.onBackToBoard?.());
+
+		// Collapse toggle icon
+		const hasExpandable = tasks.some((t) => t.subtasks && t.subtasks.length > 0);
 		if (hasExpandable) {
 			const toggleBtn = headerLeft.createDiv({ cls: 'vw-tasks-collapse-toggle' });
 			setIcon(toggleBtn, this.vs.allCollapsed ? 'unfold-vertical' : 'fold-vertical');
@@ -122,13 +138,17 @@ export class TaskTimeline implements SectionRenderer {
 			});
 		}
 
-		headerLeft.createDiv({ cls: 'vw-tasks-title', text: 'Task Timeline' });
+		// Category name text
+		const cat = this.deps.settings.taskCategories.find((c) => c.id === this.deps.categoryFilter);
+		headerLeft.createDiv({ cls: 'vw-tasks-title', text: cat?.name ?? 'Category' });
 
+		// Tag dropdown
 		const allTags = this.deps.taskManager.getAllTags();
 		if (allTags.length > 0) {
 			this.renderTagDropdown(headerLeft, allTags);
 		}
 
+		// Add task button
 		const addBtn = headerLeft.createDiv({ cls: 'vw-tasks-add-btn' });
 		setIcon(addBtn, 'plus');
 		addBtn.createSpan({ text: ' Add Task' });
@@ -145,6 +165,10 @@ export class TaskTimeline implements SectionRenderer {
 						images: result.images,
 						workingDirectory: result.workingDirectory,
 					});
+				}
+				const catId = result.categoryId !== undefined ? result.categoryId : this.deps.categoryFilter;
+				if (catId) {
+					this.deps.taskManager.assignTaskCategory(newTask.id, catId);
 				}
 				this.deps.onRenderAll();
 			}, allTags, this.deps.taskManager, this.deps.aiDispatcher).open();
@@ -192,17 +216,6 @@ export class TaskTimeline implements SectionRenderer {
 				});
 			}
 
-			if (this.deps.settings.aiAutoScheduler) {
-				const aiScheduleBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
-				setIcon(aiScheduleBtn, 'calendar-clock');
-				aiScheduleBtn.setAttribute('aria-label', 'AI auto-schedule durations');
-				aiScheduleBtn.setAttribute('tabindex', '0');
-				aiScheduleBtn.addEventListener('click', async () => {
-					const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
-					const prompt = composePrompt('schedule', ctx);
-					await this.deps.aiDispatcher.dispatch(this.deps.app, this.deps.settings, 'schedule', prompt);
-				});
-			}
 		}
 
 		headerActions.createDiv({ cls: 'vw-header-divider' });
@@ -223,22 +236,15 @@ export class TaskTimeline implements SectionRenderer {
 			}).open();
 		});
 
-		const exportBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
-		setIcon(exportBtn, 'download');
-		exportBtn.setAttribute('aria-label', 'Export analytics');
-		exportBtn.setAttribute('tabindex', '0');
-		exportBtn.addEventListener('click', (e) => {
-			e.stopPropagation();
-			this.showExportMenu(exportBtn);
-		});
-
 		const copyBtn = headerActions.createDiv({ cls: 'vw-tasks-clear-btn' });
 		setIcon(copyBtn, 'copy');
 		copyBtn.setAttribute('aria-label', 'Copy all tasks to clipboard');
 		copyBtn.setAttribute('tabindex', '0');
 		copyBtn.addEventListener('click', () => {
-			const allTasks = this.deps.taskManager.getTasks();
-			const text = this.formatTasksForCopy(allTasks);
+			const allTasks = this.deps.categoryFilter
+				? this.deps.taskManager.getTasksByCategory(this.deps.categoryFilter)
+				: this.deps.taskManager.getTasks();
+			const text = TaskFormatter.formatTasks(allTasks);
 			navigator.clipboard.writeText(text).then(() => {
 				new Notice('Tasks copied to clipboard');
 			});
@@ -275,46 +281,35 @@ export class TaskTimeline implements SectionRenderer {
 		} else {
 			this.renderTaskList(tasksPane);
 		}
+
+		new DropZone(tasksPane, {
+			accept: { text: true },
+			callbacks: {
+				onText: async (text) => {
+					const lines = text.split('\n');
+					const parsed = TaskParser.parseLines(lines);
+					if (parsed.length > 0) {
+						for (const item of parsed) {
+							const task = this.deps.taskManager.addTask(item.title, 30);
+							if (item.subtasks.length > 0) {
+								this.deps.taskManager.replaceSubtasks(task.id, item.subtasks);
+							}
+						}
+					} else {
+						const title = text.trim();
+						if (title !== '') this.deps.taskManager.addTask(title, 30);
+					}
+					this.deps.saveCallback();
+					this.deps.onRenderAll();
+					new Notice(`Added ${parsed.length || 1} task(s) from clipboard`);
+				},
+			},
+			label: 'Paste or drop checklist text to add tasks',
+			icon: 'clipboard-paste',
+		});
 	}
 
-	private showExportMenu(anchor: HTMLElement): void {
-		const existing = document.querySelector('.vw-export-menu');
-		if (existing) { existing.remove(); return; }
-
-		const menu = document.createElement('div');
-		menu.className = 'vw-export-menu';
-		const rect = anchor.getBoundingClientRect();
-		menu.style.position = 'fixed';
-		menu.style.top = `${rect.bottom + 4}px`;
-		menu.style.right = `${window.innerWidth - rect.right}px`;
-		menu.style.zIndex = '10000';
-
-		const csvBtn = menu.createDiv({ cls: 'vw-export-menu-item', text: 'Export CSV' });
-		csvBtn.addEventListener('click', () => {
-			const csv = AnalyticsExporter.exportToCSV(
-				this.deps.taskManager.toJSON(),
-				this.deps.taskManager.getArchivedTasks(),
-			);
-			AnalyticsExporter.downloadCSV(csv, 'vault-welcome-tasks.csv');
-			menu.remove();
-		});
-
-		const noteBtn = menu.createDiv({ cls: 'vw-export-menu-item', text: 'Append to Daily Note' });
-		noteBtn.addEventListener('click', async () => {
-			await AnalyticsExporter.exportToDailyNote(this.deps.app, this.deps.taskManager.toJSON(), this.deps.settings.dailyNotesFolder);
-			menu.remove();
-		});
-
-		document.body.appendChild(menu);
-		const dismiss = (e: MouseEvent): void => {
-			if (menu.contains(e.target as Node) === false) {
-				menu.remove();
-				document.removeEventListener('click', dismiss, true);
-			}
-		};
-		setTimeout(() => document.addEventListener('click', dismiss, true), 0);
-	}
-
+	/** Renders the tag filter dropdown with multi-select chips. */
 	private renderTagDropdown(parent: HTMLElement, allTags: string[]): void {
 		const wrapper = parent.createDiv({ cls: 'vw-tag-dropdown' });
 
@@ -331,10 +326,11 @@ export class TaskTimeline implements SectionRenderer {
 		setIcon(chevron, 'chevron-down');
 
 		trigger.addEventListener('click', () => {
-			const existing = document.querySelector('.vw-tag-dropdown-menu');
+			const tagDoc = trigger.doc;
+			const existing = tagDoc.querySelector('.vw-tag-dropdown-menu');
 			if (existing) { existing.remove(); return; }
 
-			const menu = document.createElement('div');
+			const menu = tagDoc.createElement('div') as HTMLDivElement;
 			menu.className = 'vw-tag-dropdown-menu';
 			const rect = trigger.getBoundingClientRect();
 			menu.style.position = 'fixed';
@@ -377,17 +373,18 @@ export class TaskTimeline implements SectionRenderer {
 				});
 			}
 
-			document.body.appendChild(menu);
+			tagDoc.body.appendChild(menu);
 			const dismiss = (e: MouseEvent): void => {
 				if (menu.contains(e.target as Node) === false && trigger.contains(e.target as Node) === false) {
 					menu.remove();
-					document.removeEventListener('click', dismiss, true);
+					tagDoc.removeEventListener('click', dismiss, true);
 				}
 			};
-			setTimeout(() => document.addEventListener('click', dismiss, true), 0);
+			setTimeout(() => tagDoc.addEventListener('click', dismiss, true), 0);
 		});
 	}
 
+	/** Renders the archived tasks grid with detail modals and delete controls. */
 	private renderArchiveSection(parent: HTMLElement, archived: Task[]): void {
 		const section = parent.createDiv({ cls: 'vw-archive-section' });
 		const header = section.createDiv({ cls: 'vw-archive-header' });
@@ -417,7 +414,7 @@ export class TaskTimeline implements SectionRenderer {
 				}).open();
 			});
 
-			const dur = box.createDiv({ cls: 'vw-archive-box-dur', text: this.formatDuration(task.durationMinutes) });
+			const dur = box.createDiv({ cls: 'vw-archive-box-dur', text: TaskFormatter.formatDuration(task.durationMinutes) });
 			if (task.status === 'skipped') dur.addClass('vw-archive-box-skipped');
 
 			const name = box.createDiv({ cls: 'vw-archive-box-name', text: task.title });
@@ -436,8 +433,11 @@ export class TaskTimeline implements SectionRenderer {
 		}
 	}
 
+	/** Renders the git-style task tree with dots, subtask branches, and drag reordering. */
 	private renderTaskList(section: HTMLElement): void {
-		let tasks = this.deps.taskManager.getTasks();
+		let tasks = this.deps.categoryFilter
+			? this.deps.taskManager.getTasksByCategory(this.deps.categoryFilter)
+			: this.deps.taskManager.getTasks();
 		if (this.vs.activeTagFilters.length > 0) {
 			tasks = tasks.filter((t) => t.tags?.some((tag) => this.vs.activeTagFilters.includes(tag)));
 		}
@@ -449,7 +449,8 @@ export class TaskTimeline implements SectionRenderer {
 		for (const task of tasks) {
 			const node = tree.createDiv({ cls: 'vw-git-node' });
 			const hasSubtasks = task.subtasks && task.subtasks.length > 0;
-			const isCollapsed = this.vs.collapsedTaskIds.has(task.id);
+			const isDone = task.status === 'completed' || task.status === 'skipped';
+			const isCollapsed = isDone || this.vs.collapsedTaskIds.has(task.id);
 
 			const leftControls = node.createDiv({ cls: 'vw-task-left-controls' });
 
@@ -501,14 +502,15 @@ export class TaskTimeline implements SectionRenderer {
 						workingDirectory: result.workingDirectory,
 					});
 					this.deps.taskManager.replaceSubtasks(task.id, result.subtasks);
+					if (result.categoryId !== undefined) {
+						this.deps.taskManager.assignTaskCategory(task.id, result.categoryId);
+					}
 					this.deps.onRenderAll();
 				}, knownTags, this.deps.taskManager, this.deps.aiDispatcher).open();
 			});
 
-			const durText = task.status === 'active' && state.isRunning
-				? this.deps.timerEngine.formatRemaining()
-				: this.formatDuration(task.durationMinutes);
-			row.createDiv({ cls: 'vw-task-duration', text: durText });
+			const className = task.status === 'active' && state.isRunning ? 'vw-task-duration-allocated' : 'vw-task-duration';
+			row.createDiv({ cls: className, text: TaskFormatter.formatDuration(task.durationMinutes) });
 
 			const nameWrap = row.createDiv({ cls: 'vw-task-name-wrap' });
 			const nameEl = nameWrap.createDiv({ cls: 'vw-task-name', text: task.title });
@@ -542,21 +544,23 @@ export class TaskTimeline implements SectionRenderer {
 				});
 			}
 
-		const actions = row.createDiv({ cls: 'vw-task-actions' });
-		this.renderTaskActions(actions, task);
+			const actions = row.createDiv({ cls: 'vw-task-actions' });
+			this.renderTaskActions(actions, task);
 
 			if (hasSubtasks) {
 				setIcon(leftControls, isCollapsed ? 'chevron-right' : 'chevron-down');
-				leftControls.addEventListener('click', (e) => {
-					e.stopPropagation();
-					if (this.vs.collapsedTaskIds.has(task.id)) {
-						this.vs.collapsedTaskIds.delete(task.id);
-					} else {
-						this.vs.collapsedTaskIds.add(task.id);
-					}
-					this.vs.allCollapsed = false;
-					this.deps.onRenderAll();
-				});
+				if (isDone === false) {
+					leftControls.addEventListener('click', (e) => {
+						e.stopPropagation();
+						if (this.vs.collapsedTaskIds.has(task.id)) {
+							this.vs.collapsedTaskIds.delete(task.id);
+						} else {
+							this.vs.collapsedTaskIds.add(task.id);
+						}
+						this.vs.allCollapsed = false;
+						this.deps.onRenderAll();
+					});
+				}
 
 				if (isCollapsed === false) {
 					this.subtaskTree.renderBranch(content, task.subtasks!, 1);
@@ -565,6 +569,7 @@ export class TaskTimeline implements SectionRenderer {
 		}
 	}
 
+	/** Wires drag-start, drag-over, and drop handlers for task reordering. */
 	private setupTaskDrag(node: HTMLElement, handle: HTMLElement, taskId: string, tree: HTMLElement): void {
 		handle.addEventListener('mousedown', (e: MouseEvent) => {
 			const target = e.target as HTMLElement;
@@ -617,6 +622,7 @@ export class TaskTimeline implements SectionRenderer {
 		});
 	}
 
+	/** Renders action buttons (start, delegate, copy, archive, etc.) for a task row. */
 	private renderTaskActions(actions: HTMLElement, task: Task): void {
 		const isPending = task.status === 'pending';
 		const isActive = task.status === 'active';
@@ -709,22 +715,23 @@ export class TaskTimeline implements SectionRenderer {
 							navigator.clipboard.writeText(task.delegationFeedback!).then(() => new Notice('Error copied to clipboard'));
 						}
 					});
-			} else if (task.delegationStatus !== 'completed') {
-				badge.setAttribute('aria-label', `Delegation: ${task.delegationStatus}`);
-			}
+				} else if (task.delegationStatus !== 'completed') {
+					badge.setAttribute('aria-label', `Delegation: ${task.delegationStatus}`);
+				}
 			}
 
 			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
 			copyBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				navigator.clipboard.writeText(this.formatTasksForCopy([task])).then(() => new Notice('Task copied'));
+				navigator.clipboard.writeText(TaskFormatter.formatTasks([task])).then(() => new Notice('Task copied'));
 			});
 
-			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
-			removeBtn.addEventListener('click', (e) => {
+			const archiveBtn = this.createIconBtn(actions, 'archive', 'Archive task', true);
+			archiveBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				new ConfirmModal(this.deps.app, 'Remove Task', `Remove "${task.title}"?`, () => {
-					this.deps.taskManager.removeTask(task.id);
+				new ConfirmModal(this.deps.app, 'Archive Task', `Archive "${task.title}"?`, () => {
+					this.deps.taskManager.archiveTask(task.id);
+					this.deps.saveCallback();
 					this.deps.onRenderAll();
 				}).open();
 			});
@@ -741,7 +748,7 @@ export class TaskTimeline implements SectionRenderer {
 			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
 			copyBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				navigator.clipboard.writeText(this.formatTasksForCopy([task])).then(() => new Notice('Task copied'));
+				navigator.clipboard.writeText(TaskFormatter.formatTasks([task])).then(() => new Notice('Task copied'));
 			});
 		} else if (isCompleted) {
 			const restartBtn = this.createIconBtn(actions, 'rotate-ccw', 'Reset task');
@@ -752,33 +759,25 @@ export class TaskTimeline implements SectionRenderer {
 				}).open();
 			});
 
-			const requeueBtn = this.createIconBtn(actions, 'list-start', 'Requeue to front');
-			requeueBtn.addEventListener('click', (e) => {
-				e.stopPropagation();
-				new ConfirmModal(this.deps.app, 'Requeue Task', `Move "${task.title}" back to pending at the front?`, () => {
-					this.deps.taskManager.resetToPending(task.id);
-					this.deps.taskManager.moveToFront(task.id);
-					this.deps.onRenderAll();
-				}).open();
-			});
-
 			const copyBtn = this.createIconBtn(actions, 'copy', 'Copy task');
 			copyBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				navigator.clipboard.writeText(this.formatTasksForCopy([task])).then(() => new Notice('Task copied'));
+				navigator.clipboard.writeText(TaskFormatter.formatTasks([task])).then(() => new Notice('Task copied'));
 			});
 
-			const removeBtn = this.createIconBtn(actions, 'x', 'Remove task', true);
-			removeBtn.addEventListener('click', (e) => {
+			const archiveBtn = this.createIconBtn(actions, 'archive', 'Archive task', true);
+			archiveBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
-				new ConfirmModal(this.deps.app, 'Remove Task', `Remove "${task.title}"?`, () => {
-					this.deps.taskManager.removeTask(task.id);
+				new ConfirmModal(this.deps.app, 'Archive Task', `Archive "${task.title}"?`, () => {
+					this.deps.taskManager.archiveTask(task.id);
+					this.deps.saveCallback();
 					this.deps.onRenderAll();
 				}).open();
 			});
 		}
 	}
 
+	/** Creates an accessible icon button, optionally styled as a danger action. */
 	private createIconBtn(parent: HTMLElement, icon: string, label: string, danger = false): HTMLDivElement {
 		const cls = danger
 			? 'vw-task-action-btn vw-task-action-btn-danger'
@@ -790,11 +789,13 @@ export class TaskTimeline implements SectionRenderer {
 		return btn;
 	}
 
+	/** Shows a floating popover listing the task's linked documents with clickable links. */
 	private showLinkedDocsPopover(anchor: HTMLElement, task: Task): void {
-		const existing = document.querySelector('.vw-docs-popover');
+		const popDoc = anchor.doc;
+		const existing = popDoc.querySelector('.vw-docs-popover');
 		if (existing) { existing.remove(); return; }
 
-		const popover = document.createElement('div');
+		const popover = popDoc.createElement('div') as HTMLDivElement;
 		popover.className = 'vw-docs-popover';
 		const rect = anchor.getBoundingClientRect();
 		popover.style.position = 'fixed';
@@ -823,68 +824,14 @@ export class TaskTimeline implements SectionRenderer {
 			});
 		}
 
-		document.body.appendChild(popover);
+		popDoc.body.appendChild(popover);
 		const dismiss = (e: MouseEvent): void => {
 			if (popover.contains(e.target as Node) === false) {
 				popover.remove();
-				document.removeEventListener('click', dismiss, true);
+				popDoc.removeEventListener('click', dismiss, true);
 			}
 		};
-		setTimeout(() => document.addEventListener('click', dismiss, true), 0);
+		setTimeout(() => popDoc.addEventListener('click', dismiss, true), 0);
 	}
 
-	private formatTasksForCopy(tasks: Task[]): string {
-		const lines: string[] = [];
-		for (const task of tasks) {
-			const check = task.status === 'completed' ? 'x' : task.status === 'skipped' ? '-' : ' ';
-			const planned = this.formatDuration(task.durationMinutes);
-			const tags = task.tags?.length ? ` [${task.tags.join(', ')}]` : '';
-			const actual = task.actualDurationMinutes !== null && task.actualDurationMinutes !== undefined
-				? ` | actual: ${this.formatDuration(task.actualDurationMinutes)}`
-				: '';
-			lines.push(`- [${check}] ${task.title} (${planned}${actual})${tags}`);
-			if (task.description) {
-				lines.push(`  ${task.description}`);
-			}
-			if (task.startedAt) {
-				lines.push(`  Started: ${new Date(task.startedAt).toLocaleString()}`);
-			}
-			if (task.completedAt) {
-				lines.push(`  Completed: ${new Date(task.completedAt).toLocaleString()}`);
-			}
-			if (task.linkedDocs?.length) {
-				lines.push(`  Linked: ${task.linkedDocs.join(', ')}`);
-			}
-			if (task.images?.length) {
-				lines.push(`  Images: ${task.images.join(', ')}`);
-			}
-			if (task.delegationStatus) {
-				lines.push(`  Delegation: ${task.delegationStatus}`);
-			}
-			if (task.delegationFeedback) {
-				lines.push(`  Feedback: ${task.delegationFeedback}`);
-			}
-			if (task.subtasks?.length) {
-				this.formatSubtasksForCopy(task.subtasks, lines, 1);
-			}
-		}
-		return lines.join('\n');
-	}
-
-	private formatSubtasksForCopy(subtasks: SubTask[], lines: string[], depth: number): void {
-		const indent = '  '.repeat(depth);
-		for (const sub of subtasks) {
-			const check = sub.status === 'completed' ? 'x' : ' ';
-			lines.push(`${indent}- [${check}] ${sub.title}`);
-			if (sub.subtasks?.length) {
-				this.formatSubtasksForCopy(sub.subtasks, lines, depth + 1);
-			}
-		}
-	}
-
-	private formatDuration(minutes: number): string {
-		const h = Math.floor(minutes / 60);
-		const m = minutes % 60;
-		return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
-	}
 }

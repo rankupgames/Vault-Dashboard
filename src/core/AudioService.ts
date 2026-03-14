@@ -28,6 +28,7 @@ export class AudioService {
 		}
 	}
 
+	/** Lazily initializes and returns the shared AudioContext. */
 	private ensureContext(): AudioContext {
 		if (this.ctx === null) {
 			this.ctx = new AudioContext();
@@ -50,6 +51,7 @@ export class AudioService {
 		this.playTone(ctx, 220, 0.3, 0);
 	}
 
+	/** Schedules a sine-wave tone with exponential decay at the given frequency and timing. */
 	private playTone(ctx: AudioContext, frequency: number, duration: number, delay: number): void {
 		const osc = ctx.createOscillator();
 		const gain = ctx.createGain();

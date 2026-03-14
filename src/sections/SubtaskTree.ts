@@ -7,9 +7,10 @@
  * Last Modified: 2026-03-09
  */
 
-import { setIcon } from 'obsidian';
+import { Notice, setIcon } from 'obsidian';
 import { SubTask } from '../core/types';
 import { attachOverflowTooltip } from '../ui/Tooltip';
+import { TaskFormatter } from '../core/TaskFormatter';
 
 /** View state for subtask tree collapse state. */
 export interface SubtreeViewState {
@@ -87,6 +88,16 @@ export class SubtaskTree {
 			const subInfo = row.createDiv({ cls: `vw-subtask-row ${sub.status === 'completed' ? 'vw-subtask-completed' : ''}` });
 			const textEl = subInfo.createSpan({ cls: 'vw-subtask-text', text: sub.title });
 			attachOverflowTooltip(textEl, sub.title);
+
+			const actionsEl = row.createDiv({ cls: 'vw-subtask-actions' });
+			const copyBtn = actionsEl.createDiv({ cls: 'vw-subtask-copy-btn' });
+			setIcon(copyBtn, 'clipboard-copy');
+			copyBtn.setAttribute('aria-label', 'Copy subtask');
+			copyBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const text = TaskFormatter.formatSubtasks([sub]);
+				navigator.clipboard.writeText(text).then(() => new Notice('Subtask copied'));
+			});
 
 			if (hasChildren && this.vs.collapsedSubtaskIds.has(sub.id) === false) {
 				const children = wrapper.createDiv({ cls: 'vw-git-branch-children' });

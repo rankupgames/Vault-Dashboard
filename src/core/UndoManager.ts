@@ -15,6 +15,7 @@ export class UndoManager<T> {
 	private redoStack: T[] = [];
 	private cloneFn: (snapshot: T) => T;
 
+	/** Creates an undo manager with an optional custom clone function (defaults to JSON roundtrip). */
 	constructor(cloneFn?: (snapshot: T) => T) {
 		this.cloneFn = cloneFn ?? ((s) => JSON.parse(JSON.stringify(s)));
 	}

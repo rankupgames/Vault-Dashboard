@@ -4,8 +4,7 @@
 
 @media (max-width: 800px) {
 	.vw-root {
-		grid-template-columns: 1fr;
-		grid-template-rows: auto 1fr;
+		flex-direction: column;
 	}
 
 	.vw-right-col {
@@ -15,6 +14,7 @@
 
 	.vw-left-col {
 		order: 2;
+		width: 100% !important;
 		border-left: none;
 		border-top: 1px solid var(--background-modifier-border);
 	}

@@ -4,8 +4,24 @@
  * Project: Vault Dashboard Welcome
  * Description: Shared types, interfaces, and default data for the plugin
  * Created: 2026-03-07
- * Last Modified: 2026-03-10
+ * Last Modified: 2026-03-13
  */
+
+/** A named category for grouping tasks in the board view. */
+export interface TaskCategory {
+	/** Unique identifier. */
+	id: string;
+	/** Display name. */
+	name: string;
+	/** Sort order. */
+	order: number;
+	/** Optional hex color for the category column accent. */
+	color?: string;
+	/** When true, this category cannot be deleted by the user. */
+	isDefault?: boolean;
+	/** When true, tasks in this category are cleared on day change. */
+	dailyReset?: boolean;
+}
 
 /** A subtask within a parent task, supporting nested hierarchy. */
 export interface SubTask {
@@ -61,6 +77,8 @@ export interface Task {
 	delegationFeedback?: string;
 	/** AI dispatch records attached to this task. Archived alongside the task. */
 	dispatchRecords?: DispatchHistoryEntry[];
+	/** Category this task belongs to (uncategorized if absent). */
+	categoryId?: string;
 }
 
 /** Reusable task template for quick creation. */
@@ -205,8 +223,6 @@ export interface PluginSettings {
 	aiAutoOrganize: boolean;
 	/** AI auto-order tasks. */
 	aiAutoOrder: boolean;
-	/** AI auto-scheduler. */
-	aiAutoScheduler: boolean;
 	/** AI delegation feature. */
 	aiDelegation: boolean;
 	/** Skip interactive permission prompts when dispatching to AI CLI tools. */
@@ -223,6 +239,12 @@ export interface PluginSettings {
 	autoArchiveDays: number;
 	/** Base folder for all plugin-generated output (prompts, attachments, documents). */
 	outputFolder: string;
+	/** Task category definitions for the board view. */
+	taskCategories: TaskCategory[];
+	/** Currently focused category in the board view, or null for all. */
+	activeCategoryId: string | null;
+	/** Whether the entire modules section is collapsed. */
+	modulesCollapsed: boolean;
 }
 
 /** Possible statuses for a dispatch record. */
@@ -327,7 +349,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	aiToolPath: '',
 	aiAutoOrganize: false,
 	aiAutoOrder: false,
-	aiAutoScheduler: false,
 	aiDelegation: false,
 	aiSkipPermissions: false,
 	terminalApp: 'ghostty',
@@ -336,6 +357,12 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	showConfirmDialogs: true,
 	autoArchiveDays: 0,
 	outputFolder: '_VaultWelcome',
+	taskCategories: [
+		{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
+		{ id: 'default-general', name: 'General', order: 1, isDefault: true },
+	],
+	activeCategoryId: null,
+	modulesCollapsed: false,
 };
 
 /** Default plugin data for new installs. */
@@ -357,6 +384,9 @@ export const isImageExtension = (ext: string): boolean =>
 
 /** Obsidian view type identifier for the welcome dashboard. */
 export const VIEW_TYPE_WELCOME = 'vault-welcome-view';
+
+/** Obsidian view type identifier for the mini timer pop-out. */
+export const VIEW_TYPE_MINI_TIMER = 'vault-welcome-mini-timer';
 
 /** Callback invoked on each timer tick with remaining ms and negative flag. */
 export type TimerEventCallback = (remaining: number, isNegative: boolean) => void;

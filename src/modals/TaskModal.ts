@@ -11,6 +11,7 @@ import { App, Modal, Notice, Platform, setIcon, TFile, normalizePath } from 'obs
 import { Task, SubTask, PluginSettings, IMAGE_EXTENSIONS, isImageExtension } from '../core/types';
 import { attachOverflowTooltip } from '../ui/Tooltip';
 import { DropZone } from '../ui/DropZone';
+import { TagPills } from '../ui/TagPills';
 import { FileSuggestModal } from './FileSuggestModal';
 import { ConfirmModal } from './ConfirmModal';
 import { isAIEnabled, gatherContext, type IAIDispatcher } from '../services/AIDispatcher';
@@ -43,6 +44,8 @@ export interface TaskModalResult {
 	images?: string[];
 	/** Per-task working directory for AI CLI execution. */
 	workingDirectory?: string;
+	/** Category this task belongs to. */
+	categoryId?: string;
 }
 
 /** Unified add/edit task modal with subtask bulk entry, tags, linked docs, and images. */
@@ -56,6 +59,7 @@ export class TaskModal extends Modal {
 	private pendingLinkedDocs: string[] = [];
 	private pendingImages: string[] = [];
 	private pendingWorkingDir = '';
+	private pendingCategoryId: string | undefined = undefined;
 	private subtaskListEl: HTMLElement | null = null;
 	private tagSuggestEl: HTMLElement | null = null;
 	private attachmentsListEl: HTMLElement | null = null;
@@ -77,6 +81,7 @@ export class TaskModal extends Modal {
 	private wdPathEl: HTMLElement | null = null;
 	private durGetter: (() => number) | null = null;
 	private tmplCloseHandler: ((e: MouseEvent) => void) | null = null;
+	private tagPillsEl: TagPills | null = null;
 
 	/**
 	 * @param app - Obsidian app instance
@@ -107,6 +112,7 @@ export class TaskModal extends Modal {
 			this.pendingImages = [...task.images];
 		}
 		this.pendingWorkingDir = task?.workingDirectory ?? '';
+		this.pendingCategoryId = task?.categoryId;
 		this.taskManager = taskManager;
 		this.aiDispatcher = aiDispatcher;
 	}
@@ -186,12 +192,24 @@ export class TaskModal extends Modal {
 			cls: 'vw-modal-subtask-input',
 			attr: { type: 'text', placeholder: 'Add tag (Enter to add)' },
 		});
+		this.tagPillsEl = new TagPills(tagInputWrap, {
+			tagColors: this.settings.tagColors,
+			removable: true,
+			onRemove: (tag) => {
+				this.pendingTags = this.pendingTags.filter((t) => t !== tag);
+				this.tagPillsEl?.update(this.pendingTags);
+				this.refreshTagSuggestions('');
+			},
+		});
+		this.tagPillsEl.update(this.pendingTags);
+
 		this.tagSuggestEl = tagInputWrap.createDiv({ cls: 'vw-tag-suggest' });
 
 		const addTag = (tag: string): void => {
 			if (tag === '' || this.pendingTags.includes(tag)) return;
 			this.pendingTags.push(tag);
 			tagInput.value = '';
+			this.tagPillsEl?.update(this.pendingTags);
 			this.refreshTagSuggestions('');
 		};
 
@@ -209,6 +227,20 @@ export class TaskModal extends Modal {
 		});
 
 		this.refreshTagSuggestions('');
+
+		if (this.settings.taskCategories.length > 0) {
+			form.createDiv({ cls: 'vw-edit-label', text: 'Category' });
+			const catSelect = form.createEl('select', { cls: 'vw-edit-input' });
+			const noneOpt = catSelect.createEl('option', { text: 'None', attr: { value: '' } });
+			if (this.pendingCategoryId === undefined) noneOpt.selected = true;
+			for (const cat of this.settings.taskCategories) {
+				const opt = catSelect.createEl('option', { text: cat.name, attr: { value: cat.id } });
+				if (this.pendingCategoryId === cat.id) opt.selected = true;
+			}
+			catSelect.addEventListener('change', () => {
+				this.pendingCategoryId = catSelect.value || undefined;
+			});
+		}
 
 		const attachSection = form.createDiv({ cls: 'vw-modal-docs-section' });
 		attachSection.createDiv({ cls: 'vw-edit-label', text: 'Attachments' });
@@ -435,7 +467,7 @@ export class TaskModal extends Modal {
 		});
 
 		if (isEdit) {
-			const tmplBtn = actionsRight.createEl('button', { cls: 'vw-timer-btn', text: 'Save as Template' });
+			const tmplBtn = actionsLeft.createEl('button', { cls: 'vw-timer-btn', text: 'Save as Template' });
 			tmplBtn.addEventListener('click', (e) => {
 				e.preventDefault();
 				const name = titleInput.value.trim();
@@ -470,6 +502,7 @@ export class TaskModal extends Modal {
 				linkedDocs: this.pendingLinkedDocs.length > 0 ? [...this.pendingLinkedDocs] : undefined,
 				images: this.pendingImages.length > 0 ? [...this.pendingImages] : undefined,
 				workingDirectory: wd || undefined,
+				categoryId: this.pendingCategoryId,
 			});
 			this.close();
 		};
@@ -499,6 +532,7 @@ export class TaskModal extends Modal {
 		});
 	}
 
+	/** Returns true if any field has been modified since the modal opened. */
 	private isDirty(): boolean {
 		if (this.titleInputRef === null) return false;
 		if (this.titleInputRef.value !== this.initialTitle) return true;
@@ -512,6 +546,7 @@ export class TaskModal extends Modal {
 		return false;
 	}
 
+	/** Updates the working directory display label with the basename or hides it. */
 	private updateWdPathDisplay(): void {
 		if (this.wdPathEl === null) return;
 		if (this.pendingWorkingDir) {
@@ -545,9 +580,12 @@ export class TaskModal extends Modal {
 		}
 		for (const dz of this.dropZones) dz.destroy();
 		this.dropZones = [];
+		this.tagPillsEl?.destroy();
+		this.tagPillsEl = null;
 		this.contentEl.empty();
 	}
 
+	/** Rebuilds the tag suggestion chips, filtering by the current input text. */
 	private refreshTagSuggestions(filter: string): void {
 		if (this.tagSuggestEl === null) return;
 		this.tagSuggestEl.empty();
@@ -579,17 +617,20 @@ export class TaskModal extends Modal {
 				} else {
 					this.pendingTags.push(tag);
 				}
+				this.tagPillsEl?.update(this.pendingTags);
 				this.refreshTagSuggestions(filter);
 			});
 		}
 	}
 
+	/** Clears and re-renders the subtask tree from pending subtasks. */
 	private refreshSubtaskList(): void {
 		if (this.subtaskListEl === null) return;
 		this.subtaskListEl.empty();
 		this.renderSubtaskTree(this.subtaskListEl, this.pendingSubtasks, 0);
 	}
 
+	/** Recursively renders editable subtask rows with drag reorder, add-child, and remove. */
 	private renderSubtaskTree(container: HTMLElement, subtasks: SubTask[], depth: number): void {
 		const depthIdx = Math.min(depth, 3);
 
@@ -674,6 +715,7 @@ export class TaskModal extends Modal {
 		}
 	}
 
+	/** Wires long-press drag handlers for reordering subtasks within the same level. */
 	private setupSubtaskDrag(
 		wrapper: HTMLElement,
 		row: HTMLElement,
@@ -751,6 +793,7 @@ export class TaskModal extends Modal {
 		});
 	}
 
+	/** Re-renders the attachments list showing linked docs and images with remove buttons. */
 	private refreshAttachmentsList(): void {
 		if (this.attachmentsListEl === null) return;
 		this.attachmentsListEl.empty();
@@ -802,6 +845,7 @@ export class TaskModal extends Modal {
 		}
 	}
 
+	/** Shows an inline panel for creating a new vault document with title and content fields. */
 	private showCreateDocInput(parent: HTMLElement): void {
 		const existing = parent.querySelector('.vw-modal-docs-create-panel');
 		if (existing) { existing.remove(); return; }
@@ -863,6 +907,7 @@ export class TaskModal extends Modal {
 		requestAnimationFrame(() => titleInput.focus());
 	}
 
+	/** Shows an inline input for adding a child subtask under the given parent. */
 	private showChildInput(parent: HTMLElement, sub: SubTask, _depth: number): void {
 		const existing = parent.querySelector('.vw-modal-subtask-child-input');
 		if (existing) { existing.remove(); return; }
@@ -953,7 +998,10 @@ export class TaskModal extends Modal {
 			const ext = dot > 0 ? name.substring(dot) : '';
 			path = normalizePath(`${folder}/${baseName}-${Date.now().toString(36)}${ext}`);
 		}
-		const file = await this.app.vault.createBinary(path, data).catch((): null => null);
+		const file = await this.app.vault.createBinary(path, data).catch((err: Error): null => {
+			console.warn(`vault-welcome: failed to write attachment "${name}":`, err.message);
+			return null;
+		});
 		return file ? path : null;
 	}
 
@@ -975,7 +1023,10 @@ export class TaskModal extends Modal {
 			await ensureVaultFolder(this.app, docsFolder);
 			const slug = trimmed.substring(0, 60).replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
 			const path = normalizePath(`${docsFolder}/${slug}.md`);
-			const created = await this.app.vault.create(path, text).catch((): null => null);
+			const created = await this.app.vault.create(path, text).catch((err: Error): null => {
+				console.warn(`vault-welcome: failed to create document "${slug}":`, err.message);
+				return null;
+			});
 			if (created === null) return;
 			this.pendingLinkedDocs.push(path);
 		}

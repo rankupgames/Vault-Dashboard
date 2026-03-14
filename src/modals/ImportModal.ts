@@ -92,6 +92,7 @@ export class ImportModal extends Modal {
 		this.contentEl.empty();
 	}
 
+	/** Clears and re-renders the selectable checklist items from the parsed note. */
 	private renderItemList(): void {
 		if (this.listEl === null) return;
 		this.listEl.empty();

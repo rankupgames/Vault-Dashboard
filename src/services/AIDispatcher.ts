@@ -17,7 +17,6 @@ export type AIAction =
 	| 'organize'
 	| 'order'
 	| 'create-doc'
-	| 'schedule'
 	| 'delegate';
 
 /** Assembled context passed to the AI prompt composer. */
@@ -51,22 +50,36 @@ export interface DispatchRecord {
 
 /** Contract for the stateful AI dispatch lifecycle. */
 export interface IAIDispatcher {
+	/** Restores dispatch records from persisted history entries. */
 	hydrate(entries: DispatchHistoryEntry[]): void;
+	/** Serializes active dispatch records for persistence. */
 	toJSON(): DispatchHistoryEntry[];
+	/** Clears all dispatch records regardless of status. */
 	clearAll(): void;
 
+	/** Subscribes to dispatch list changes. Returns an unsubscribe function. */
 	onDispatchChange(fn: () => void): () => void;
+	/** Subscribes to dispatch finish events. Returns an unsubscribe function. */
 	onDispatchFinish(fn: (record: DispatchRecord) => void): () => void;
 
+	/** Returns all dispatch records, newest first. */
 	getDispatches(): DispatchRecord[];
+	/** Returns a specific dispatch record by ID, or undefined. */
 	getRecord(id: string): DispatchRecord | undefined;
+	/** Removes completed and failed records from the list. */
 	clearFinished(): void;
 
+	/** Dispatches an AI action with the given prompt. Returns the dispatch record ID. */
 	dispatch(app: App, settings: PluginSettings, action: AIAction, prompt: string, task?: Task): Promise<string>;
+	/** Dispatches a plan-phase request using assembled AI context. Returns the dispatch record ID. */
 	dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string>;
+	/** Executes an approved plan by its record ID. */
 	dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void>;
+	/** Marks a plan-ready record as rejected. */
 	rejectPlan(planId: string): void;
+	/** Opens the configured terminal app at the given vault path. */
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void;
+	/** Kills all running dispatch processes. */
 	killAll(): void;
 }
 
@@ -206,7 +219,6 @@ const ACTION_LABELS: Record<AIAction, string> = {
 	organize: 'AI Organize',
 	order: 'AI Auto-Order',
 	'create-doc': 'AI Create Doc',
-	schedule: 'AI Auto-Schedule',
 	delegate: 'AI Delegate',
 };
 
@@ -217,7 +229,6 @@ const ACTION_INSTRUCTIONS: Record<AIAction, string> = {
 	organize: 'Analyze this task and suggest appropriate tags and timeline position relative to the other tasks. Return a JSON object with { tags: string[], insertAfterTaskId: string | null }.',
 	order: 'Reorder these pending tasks by priority, dependency, and logical flow. Return a JSON array of task IDs in the optimal order.',
 	'create-doc': 'Create a comprehensive document for this task based on the provided context. Output the document content in markdown format.',
-	schedule: 'Estimate durations for tasks that lack them and optimize existing durations based on task complexity. Return a JSON array of { taskId: string, durationMinutes: number }.',
 	delegate: 'Execute the following task. The description below is your primary instruction.',
 };
 
@@ -321,10 +332,12 @@ export class AIDispatcher implements IAIDispatcher {
 		return () => { this.finishListeners = this.finishListeners.filter((l) => l !== fn); };
 	}
 
+	/** Notifies all finish listeners that a dispatch has completed or failed. */
 	private notifyFinish(record: DispatchRecord): void {
 		for (const fn of this.finishListeners) fn(record);
 	}
 
+	/** Notifies all change listeners that the dispatch list has been modified. */
 	private notifyListeners(): void {
 		for (const fn of this.listeners) fn();
 	}
@@ -766,10 +779,12 @@ export class AIDispatcher implements IAIDispatcher {
 		return [];
 	}
 
+	/** Adds a spawned process to the active set for lifecycle tracking. */
 	private trackProcess(proc: { kill(signal?: NodeJS.Signals | number): boolean }): void {
 		this.activeProcesses.add(proc);
 	}
 
+	/** Removes a finished process from the active set. */
 	private untrackProcess(proc: { kill(signal?: NodeJS.Signals | number): boolean }): void {
 		this.activeProcesses.delete(proc);
 	}

@@ -65,6 +65,7 @@ export class ModuleContainer {
 		}
 	}
 
+	/** Reorders module configs after a drag-drop and triggers a re-render. */
 	private handleReorder(fromId: string, toId: string, before: boolean): void {
 		const fromIdx = this.configs.findIndex((c) => c.id === fromId);
 		const toIdx = this.configs.findIndex((c) => c.id === toId);
@@ -106,6 +107,7 @@ export class ModuleContainer {
 		return this.cards.map((c) => c.getConfig());
 	}
 
+	/** Returns module cards that are enabled, sorted by their config order. */
 	private getEnabledCards(): ModuleCard[] {
 		return this.cards
 			.filter((c) => {
