@@ -7,4 +7,7 @@ export type { DocumentEntry } from './DocumentTracker';
 export { AnalyticsExporter } from './AnalyticsExporter';
 export { TaskImporter } from './TaskImporter';
 export type { TaskImportItem } from './TaskImporter';
+export { BackupService } from './BackupService';
+export { TaskParser } from './TaskParser';
+export type { ParsedChecklistItem } from './TaskParser';
 export { ensureVaultFolder } from './VaultUtils';

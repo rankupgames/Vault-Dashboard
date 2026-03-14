@@ -121,6 +121,7 @@ The left column is a container of independent widget panels:
 | **Last Opened Documents**  | Shows recently opened vault files                                 |
 | **Quick Access Documents** | User-pinned file shortcuts (also available via file context menu) |
 | **Heatmap Tracker**        | Contribution grid with streak and stat counters                   |
+| **AI Dispatches**          | Live AI dispatch status with terminal take-over and plan approval |
 
 Report modules are powered by a configurable `reportBasePath` setting. Each module is collapsible, independently scrollable, and drag-to-reorderable.
 
@@ -219,28 +220,32 @@ Start at 6:12, 30 min task, snap = 30 min:
 src/
   main.ts              -- Plugin entry, commands, ribbon, view registration
   WelcomeView.ts       -- Orchestrator composing sections + modules
+  MiniTimerView.ts     -- Pop-out mini timer (Spotify-style compact view)
   SettingsTab.ts       -- Plugin settings panel
 
   core/                -- Zero Obsidian imports. Pure logic. Unit-testable.
     types.ts, EventBus.ts, events.ts, TimerEngine.ts,
-    TaskManager.ts, UndoManager.ts, AudioService.ts, ColorUtils.ts
+    TaskManager.ts, UndoManager.ts, AudioService.ts, ColorUtils.ts,
+    TaskFormatter.ts
 
   interfaces/          -- Contracts only (SectionRenderer, ModuleRenderer)
 
   sections/            -- SectionRenderer implementations (right column)
-    TimerSection.ts, HeatmapBar.ts, TaskTimeline.ts, SubtaskTree.ts
+    TimerSection.ts, HeatmapBar.ts, TaskTimeline.ts, BoardView.ts,
+    SubtaskTree.ts
 
   modules/             -- ModuleRenderer implementations (left column widgets)
     ModuleCard.ts, ModuleContainer.ts, ModuleRegistry.ts,
-    ReportModule.ts, DocumentModule.ts
+    ReportModule.ts, DocumentModule.ts, DispatchModule.ts
 
   services/            -- Obsidian-coupled vault/file operations
     AIDispatcher.ts, ReportScanner.ts, DocumentTracker.ts,
-    AnalyticsExporter.ts, TaskImporter.ts, VaultUtils.ts
+    AnalyticsExporter.ts, TaskImporter.ts, TaskParser.ts,
+    BackupService.ts, VaultUtils.ts
 
-  ui/                  -- Shared DOM utilities (Tooltip, OnboardingOverlay)
-  modals/              -- Obsidian modal dialogs (7 files, incl. FolderSuggestModal)
-  styles/              -- CSS (13 files, theme-aware)
+  ui/                  -- Shared DOM components (Tooltip, DropZone, TimerRing, TagPills)
+  modals/              -- Obsidian modal dialogs (9 files)
+  styles/              -- CSS (14 files, theme-aware)
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full layer diagram and dependency graph.
@@ -281,17 +286,22 @@ All persistent state lives in `data.json` (managed by Obsidian's plugin data API
 | `settings.aiToolPath`                | Custom CLI path override                                                                             |
 | `settings.aiAutoOrganize`            | AI tag/position suggestions in task modal                                                            |
 | `settings.aiAutoOrder`               | AI task reordering in timeline                                                                       |
-| `settings.aiAutoScheduler`           | AI duration suggestions                                                                              |
 | `settings.aiDelegation`              | AI task delegation                                                                                   |
+| `settings.aiSkipPermissions`         | Skip AI permission prompts                                                                           |
+| `settings.terminalApp`               | Terminal app for AI dispatch take-over (`'ghostty'` or `'terminal'`)                                 |
 | `settings.enableMultiTagFilter`      | Multi-select tag filtering                                                                           |
 | `settings.enableImageAttachments`    | Image attachment support                                                                             |
 | `settings.showConfirmDialogs`        | Confirmation dialogs for destructive actions                                                         |
 | `settings.autoArchiveDays`           | Auto-archive stale tasks after N days (0 = off)                                                      |
 | `settings.reportBasePath`            | Base vault folder for report sources                                                                 |
 | `settings.branchColor`               | Custom git-tree branch color                                                                         |
+| `settings.taskCategories[]`          | Board view category definitions (id, name, order, color)                                             |
+| `settings.activeCategoryId`          | Currently focused category in board view                                                             |
+| `settings.modulesCollapsed`          | Whether the modules column is collapsed                                                              |
 | `tasks[]`                            | Task list with status, duration, timestamps, tags, sub-tasks, linked docs, images, working directory |
 | `archivedTasks[]`                    | Archived completed/skipped tasks                                                                     |
 | `timerState`                         | Current timer: running, paused, end time, rollover balance, pomodoro count                           |
+| `dispatchHistory[]`                  | AI dispatch records (action, status, timing, output, plan text)                                      |
 
 ## Requirements
 
@@ -339,21 +349,25 @@ Reload Obsidian with `Cmd+R` (macOS) or `Ctrl+R` (Windows/Linux) after changes.
 - Task templates for recurring work
 - Unified attachments (documents + images in one section, shared drop zone, type-routed)
 - Per-task working directory for AI CLI execution context
-- Task import from note checklists
+- Task import from note checklists (with clipboard paste support via TaskParser)
 - Archive detail modal with restore and permanent delete
 - Auto-archive stale tasks after configurable days
 - Confirmation dialogs for destructive actions (with start-while-active prompt)
-- AI integration (Cursor CLI / Claude Code CLI): auto-organize, auto-order, auto-scheduler, delegation
+- AI integration (Cursor CLI / Claude Code CLI): auto-organize, auto-order, delegation with plan approval
+- AI dispatch module with live status, terminal take-over, and plan preview
+- Board view (Kanban columns grouped by task category)
 - Heatmap tracker with streak and summary stats
 - Modular widget system with drag-to-reorder
-- Six report modules (Interview Prep, Daily Trends, Local Leads, App Store Intel, Jobs Report, Competitor Watch)
+- Configurable report modules (daily + weekly, user-defined sources)
 - Last opened and quick access document modules
+- Mini timer pop-out view (Spotify-style compact player)
 - Audio notifications (completion chime, overtime warning)
 - Keyboard shortcuts for all timer actions
 - CSV and daily note analytics export
 - Undo/redo for task mutations
+- Vault-side backup for data protection across plugin updates
 - Dashboard deep link (`obsidian://vault-welcome`)
-- Onboarding walkthrough for first-run
+- Welcome modal for first-run feature overview
 - Theme-aware design with Obsidian CSS variables
 - Responsive layout (desktop 2-column, mobile single-column)
 - Pinned first tab with layout persistence

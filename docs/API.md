@@ -154,12 +154,20 @@ interface Task {
   status: 'pending' | 'active' | 'completed' | 'skipped';
   order: number;
   createdAt: number;
-  completedAt: number | null;
-  tags?: string[];
+  startedAt?: number;
+  completedAt?: number;
+  actualEndTime?: number;
+  rolloverApplied?: number;
   subtasks?: SubTask[];
+  tags?: string[];
   linkedDocs?: string[];
   images?: string[];
-  delegationStatus?: 'none' | 'delegated' | 'completed';
+  workingDirectory?: string;
+  actualDurationMinutes?: number;
+  delegationStatus?: 'dispatched' | 'completed' | 'failed';
+  delegationFeedback?: string;
+  dispatchRecords?: DispatchHistoryEntry[];
+  categoryId?: string;
 }
 ```
 
@@ -171,6 +179,54 @@ interface SubTask {
   title: string;
   status: 'pending' | 'completed';
   subtasks?: SubTask[];
+}
+```
+
+### TaskCategory
+
+```typescript
+interface TaskCategory {
+  /** Unique identifier. */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** Sort order. */
+  order: number;
+  /** Optional hex color for the category column accent. */
+  color?: string;
+  /** When true, this category cannot be deleted by the user. */
+  isDefault?: boolean;
+  /** When true, tasks in this category are cleared on day change. */
+  dailyReset?: boolean;
+}
+```
+
+### TaskTemplate
+
+```typescript
+interface TaskTemplate {
+  id: string;
+  name: string;
+  durationMinutes: number;
+  subtasks?: SubTask[];
+  tags?: string[];
+}
+```
+
+### TimerState
+
+```typescript
+interface TimerState {
+  currentTaskId: string | null;
+  startTime: number | null;
+  endTime: number | null;
+  rolloverBalance: number;
+  baseDurationMinutes: number;
+  isRunning: boolean;
+  isPaused: boolean;
+  pausedRemaining: number | null;
+  pomodoroCount: number;
+  isBreak: boolean;
 }
 ```
 
@@ -200,6 +256,48 @@ interface ReportSourceConfig {
 }
 ```
 
+### DispatchHistoryEntry
+
+```typescript
+type DispatchStatus =
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'plan-pending'
+  | 'plan-ready'
+  | 'plan-approved'
+  | 'plan-rejected';
+
+interface DispatchHistoryEntry {
+  id: string;
+  action: string;
+  label: string;
+  taskId: string;
+  taskTitle: string;
+  tool: string;
+  status: DispatchStatus;
+  startTime: number;
+  endTime?: number;
+  error?: string;
+  vaultPath: string;
+  planText?: string;
+  parentPlanId?: string;
+}
+```
+
+### PluginData
+
+```typescript
+interface PluginData {
+  settings: PluginSettings;
+  tasks: Task[];
+  archivedTasks: Task[];
+  timerState: TimerState;
+  lastDashboardOpenedAt: number;
+  dispatchHistory: DispatchHistoryEntry[];
+}
+```
+
 ---
 
 ## Commands
@@ -216,3 +314,20 @@ All commands are registered under the `vault-welcome` prefix:
 | Undo Last Task Action | `undo` | Restore previous task state |
 | Redo Task Action | `redo` | Reapply undone task action |
 | Add New Task | `open-add-task` | Open the add-task modal |
+| Pop Out Mini Timer | `pop-out-mini-timer` | Open the compact timer in a separate pane |
+
+---
+
+## Protocol Handler
+
+```
+obsidian://vault-welcome
+```
+
+Opens the dashboard tab from external links or automation.
+
+---
+
+## Context Menu
+
+Right-clicking any file in the vault sidebar shows **Add to Quick Access**, which pins the file to the Quick Access Documents module.

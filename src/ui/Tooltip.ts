@@ -9,18 +9,21 @@
 
 let tooltipEl: HTMLDivElement | null = null;
 
-const ensureTooltip = (): HTMLDivElement => {
-	if (tooltipEl === null) {
-		tooltipEl = document.createElement('div');
-		tooltipEl.className = 'vw-tooltip';
-		document.body.appendChild(tooltipEl);
-	}
+const ensureTooltip = (ownerDoc: Document): HTMLDivElement => {
+	if (tooltipEl && tooltipEl.ownerDocument === ownerDoc) return tooltipEl;
+
+	if (tooltipEl) tooltipEl.remove();
+	tooltipEl = ownerDoc.createElement('div');
+	tooltipEl.className = 'vw-tooltip';
+	ownerDoc.body.appendChild(tooltipEl);
 	return tooltipEl;
 };
 
 /** Shows a tooltip above the anchor element with the given text. */
 export const showTooltip = (anchor: HTMLElement, text: string): void => {
-	const tip = ensureTooltip();
+	const ownerDoc = anchor.doc;
+	const ownerWin = anchor.win;
+	const tip = ensureTooltip(ownerDoc);
 	tip.textContent = text;
 	tip.classList.add('vw-tooltip-visible');
 
@@ -33,8 +36,8 @@ export const showTooltip = (anchor: HTMLElement, text: string): void => {
 		const tipRect = tip.getBoundingClientRect();
 		if (tipRect.left < 4) {
 			tip.style.left = `${4 + tipRect.width / 2}px`;
-		} else if (tipRect.right > window.innerWidth - 4) {
-			tip.style.left = `${window.innerWidth - 4 - tipRect.width / 2}px`;
+		} else if (tipRect.right > ownerWin.innerWidth - 4) {
+			tip.style.left = `${ownerWin.innerWidth - 4 - tipRect.width / 2}px`;
 		}
 		if (tipRect.top < 4) {
 			tip.style.top = `${rect.bottom + 6}px`;

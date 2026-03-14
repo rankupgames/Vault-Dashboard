@@ -96,6 +96,7 @@ export class DispatchModule implements ModuleRenderer {
 		this.bodyEl = null;
 	}
 
+	/** Starts a 1-second interval that refreshes elapsed time badges for running dispatches. */
 	private startElapsedTimer(): void {
 		if (this.timerHandle) clearInterval(this.timerHandle);
 		this.timerHandle = setInterval(() => {
@@ -109,6 +110,7 @@ export class DispatchModule implements ModuleRenderer {
 		}, 1000);
 	}
 
+	/** Clears and re-renders the dispatch list from current provider data. */
 	private rebuildList(): void {
 		if (this.bodyEl === null) return;
 		this.bodyEl.empty();
@@ -125,6 +127,7 @@ export class DispatchModule implements ModuleRenderer {
 		}
 	}
 
+	/** Renders a single dispatch record row with status, actions, and expandable output. */
 	private renderRow(list: HTMLElement, rec: DispatchRecord): void {
 		const wrapper = list.createDiv({ cls: 'vw-dispatch-item' });
 		const row = wrapper.createDiv({ cls: `vw-dispatch-row vw-dispatch-${rec.status}` });
@@ -267,6 +270,7 @@ export class DispatchModule implements ModuleRenderer {
 		}
 	}
 
+	/** Formats a millisecond duration as a compact human-readable string (e.g. "3m 12s"). */
 	private formatElapsed(ms: number): string {
 		const totalSec = Math.floor(ms / 1000);
 		if (totalSec < 60) return `${totalSec}s`;

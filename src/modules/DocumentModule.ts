@@ -155,6 +155,7 @@ export class QuickAccessModule implements ModuleRenderer {
 		}
 	}
 
+	/** Clears and re-renders the module body content. */
 	private refreshBody(): void {
 		if (this.bodyEl === null) return;
 		this.bodyEl.empty();

@@ -7,7 +7,7 @@
  * Last Modified: 2026-03-07
  */
 
-import { Plugin, WorkspaceLeaf, TFile } from 'obsidian';
+import { Notice, Plugin, WorkspaceLeaf, TFile } from 'obsidian';
 import {
 	PluginData,
 	PluginSettings,
@@ -15,18 +15,21 @@ import {
 	DEFAULT_DATA,
 	DEFAULT_SETTINGS,
 	VIEW_TYPE_WELCOME,
+	VIEW_TYPE_MINI_TIMER,
 } from './core/types';
 import { EventBus } from './core/EventBus';
 import { TaskEvents, TaskStartPayload, TaskSkipPayload } from './core/events';
 import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { WelcomeView } from './WelcomeView';
+import { MiniTimerView } from './MiniTimerView';
 import { AudioService } from './core/AudioService';
 import { AIDispatcher, validateToolPath, type IAIDispatcher } from './services/AIDispatcher';
 import { ModuleRenderer } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
 import { destroyTooltip } from './ui/Tooltip';
+import { BackupService } from './services/BackupService';
 
 /** Plugin entry point -- registers view, commands, and manages data persistence. */
 export default class VaultWelcomePlugin extends Plugin {
@@ -60,6 +63,7 @@ export default class VaultWelcomePlugin extends Plugin {
 			this.eventBus,
 		);
 		this.taskManager = new TaskManager(this.data.tasks, this.data.archivedTasks, this.data.settings, this.eventBus);
+		this.taskManager.ensureDefaultCategories();
 		this.taskManager.autoArchiveStale(this.data.settings.autoArchiveDays);
 		this.audioService = new AudioService(this.data.settings, this.eventBus);
 		this.moduleRegistry = new ModuleRegistry();
@@ -124,6 +128,17 @@ export default class VaultWelcomePlugin extends Plugin {
 				this.eventBus,
 				this.moduleRegistry,
 				this.aiDispatcher,
+				() => this.openMiniTimer(),
+			);
+		});
+
+		this.registerView(VIEW_TYPE_MINI_TIMER, (leaf) => {
+			return new MiniTimerView(
+				leaf,
+				this.timerEngine,
+				this.taskManager,
+				this.eventBus,
+				() => this.scheduleSave(),
 			);
 		});
 
@@ -231,7 +246,15 @@ export default class VaultWelcomePlugin extends Plugin {
 			},
 		});
 
+		this.addCommand({
+			id: 'pop-out-mini-timer',
+			name: 'Pop Out Mini Timer',
+			callback: () => this.openMiniTimer(),
+		});
+
 		this.app.workspace.onLayoutReady(() => {
+			this.app.workspace.detachLeavesOfType(VIEW_TYPE_MINI_TIMER);
+
 			if (this.data.settings.autoOpenOnStartup) {
 				setTimeout(() => this.ensureWelcomeLeaf(), 500);
 			}
@@ -250,6 +273,8 @@ export default class VaultWelcomePlugin extends Plugin {
 			const now = new Date().toDateString();
 			if (now !== this.lastDateStr) {
 				this.lastDateStr = now;
+				this.taskManager.clearDailyTasks();
+				this.saveData_();
 				this.refreshWelcomeViews();
 			}
 		}, 60_000);
@@ -291,14 +316,63 @@ export default class VaultWelcomePlugin extends Plugin {
 			window.clearInterval(this.dayCheckInterval);
 		}
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_WELCOME);
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_MINI_TIMER);
 	}
 
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private getElectronRemote(): any | null {
+		if (typeof process === 'undefined' || !process.versions?.electron) return null;
+		// eslint-disable-next-line @typescript-eslint/no-require-imports
+		return require('@electron/remote');
+	}
+
+	/** Opens a compact popout window with the mini timer view. */
+	private async openMiniTimer(): Promise<void> {
+		this.app.workspace.detachLeavesOfType(VIEW_TYPE_MINI_TIMER);
+
+		const remote = this.getElectronRemote();
+		const existingIds: number[] = remote?.BrowserWindow?.getAllWindows()
+			?.map((w: { id: number }) => w.id) ?? [];
+
+		const leaf = this.app.workspace.openPopoutLeaf({
+			size: { width: 120, height: 160 },
+		});
+
+		await new Promise(r => setTimeout(r, 150));
+
+		type BwHandle = { setOpacity: (v: number) => void; setAlwaysOnTop: (flag: boolean, level?: string) => void };
+		const popout: BwHandle | null = remote?.BrowserWindow?.getAllWindows()
+			?.find((w: { id: number }) => existingIds.includes(w.id) === false) ?? null;
+		popout?.setOpacity(0);
+
+		await new Promise(r => setTimeout(r, 350));
+		await leaf.setViewState({ type: VIEW_TYPE_MINI_TIMER, active: true });
+
+		const view = leaf.view;
+		if (view instanceof MiniTimerView) {
+			view.forceRender();
+		}
+
+		const doc = view?.containerEl?.ownerDocument;
+		doc?.body?.classList.add('vw-mini-headless');
+
+		const win = doc?.defaultView;
+		if (win) win.resizeTo(120, 160);
+
+		if (popout) {
+			popout.setAlwaysOnTop(true, 'floating');
+			popout.setOpacity(1);
+		}
+	}
+
+	/** Returns all open WelcomeView instances that have been fully rendered. */
 	private getWelcomeViews(): WelcomeView[] {
 		return this.app.workspace.getLeavesOfType(VIEW_TYPE_WELCOME)
 			.map((l) => l.view as WelcomeView)
 			.filter((v) => v && typeof v.renderAll === 'function');
 	}
 
+	/** Creates a welcome leaf if none exists, optionally pinning it as the first tab. */
 	private async ensureWelcomeLeaf(): Promise<void> {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_WELCOME);
 		if (leaves.length > 0) {
@@ -317,6 +391,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		}
 	}
 
+	/** Reveals an existing welcome leaf or creates one if none exists. */
 	private activateWelcomeLeaf(): void {
 		const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_WELCOME);
 		if (leaves.length > 0) {
@@ -326,6 +401,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		this.ensureWelcomeLeaf();
 	}
 
+	/** Moves the welcome leaf to the first tab position and pins it. */
 	private enforceFirstPosition(): void {
 		if (this.data.settings.autoPinTab === false) return;
 
@@ -378,6 +454,7 @@ export default class VaultWelcomePlugin extends Plugin {
 		}
 	}
 
+	/** Debounces data persistence with a 1-second delay. */
 	private scheduleSave(): void {
 		if (this.saveTimeout !== null) {
 			window.clearTimeout(this.saveTimeout);
@@ -388,8 +465,16 @@ export default class VaultWelcomePlugin extends Plugin {
 		}, 1000);
 	}
 
+	/** Loads persisted plugin data, falling back to vault backup if primary storage is empty. */
 	private async loadData_(): Promise<void> {
-		const saved = await this.loadData();
+		let saved = await this.loadData();
+		if (saved === null || saved === undefined || (saved && Object.keys(saved).length === 0)) {
+			const restored = await BackupService.restore(this.app, DEFAULT_SETTINGS.outputFolder);
+			if (restored) {
+				saved = restored;
+				new Notice('Restored dashboard data from vault backup');
+			}
+		}
 		if (saved) {
 			const mergedSettings = { ...DEFAULT_DATA.settings, ...saved.settings };
 
@@ -427,6 +512,8 @@ export default class VaultWelcomePlugin extends Plugin {
 			if (saved.settings?.hasSeenOnboarding !== undefined) mergedSettings.hasSeenOnboarding = saved.settings.hasSeenOnboarding;
 			if (saved.settings?.moduleOrder) mergedSettings.moduleOrder = saved.settings.moduleOrder;
 			if (saved.settings?.reportSources) mergedSettings.reportSources = saved.settings.reportSources;
+			if (saved.settings?.taskCategories) mergedSettings.taskCategories = saved.settings.taskCategories;
+			if (saved.settings?.activeCategoryId !== undefined) mergedSettings.activeCategoryId = saved.settings.activeCategoryId;
 
 			this.validateSettings(mergedSettings);
 
@@ -471,16 +558,19 @@ export default class VaultWelcomePlugin extends Plugin {
 		if (validTerminals.includes(s.terminalApp) === false) s.terminalApp = 'ghostty';
 	}
 
+	/** Clamps a numeric value (or coerces non-numbers) to the given range. */
 	private clamp(val: unknown, min: number, max: number): number {
 		const n = typeof val === 'number' ? val : min;
 		return Math.max(min, Math.min(max, Math.floor(n)));
 	}
 
+	/** Persists all plugin data to Obsidian storage and writes a vault-side backup. */
 	private async saveData_(): Promise<void> {
 		this.data.timerState = this.timerEngine.getState();
 		this.data.tasks = this.taskManager.toJSON();
 		this.data.archivedTasks = this.taskManager.getArchivedTasksRef();
 		this.data.dispatchHistory = this.aiDispatcher.toJSON();
 		await this.saveData(this.data);
+		BackupService.write(this.app, this.data.settings.outputFolder, this.data);
 	}
 }

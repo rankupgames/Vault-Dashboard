@@ -136,6 +136,7 @@ export class ModuleCard {
 		}
 	}
 
+	/** Wires drag-start/end handlers on the header for module reordering. */
 	private setupModuleDrag(header: HTMLElement): void {
 		const card = this.container!;
 		const moduleId = this.renderer.id;
@@ -155,14 +156,15 @@ export class ModuleCard {
 			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
 			ModuleCard.draggedModuleId = moduleId;
 
-			const preview = document.createElement('div');
+			const ownerDoc = card.doc;
+			const preview = ownerDoc.createElement('div');
 			preview.className = 'vw-drag-preview';
 			preview.textContent = this.renderer.name;
-			document.body.appendChild(preview);
+			ownerDoc.body.appendChild(preview);
 			e.dataTransfer?.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
 			requestAnimationFrame(() => preview.remove());
 
-			document.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.add('vw-module-remove-zone-visible'));
+			ownerDoc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.add('vw-module-remove-zone-visible'));
 		});
 
 		card.addEventListener('dragend', () => {
@@ -172,7 +174,7 @@ export class ModuleCard {
 			card.parentElement?.querySelectorAll('.vw-drag-above, .vw-drag-below').forEach((el) => {
 				el.classList.remove('vw-drag-above', 'vw-drag-below');
 			});
-			document.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.remove('vw-module-remove-zone-visible', 'vw-module-remove-zone-over'));
+			card.doc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.remove('vw-module-remove-zone-visible', 'vw-module-remove-zone-over'));
 		});
 
 		card.addEventListener('dragover', (e: DragEvent) => {
@@ -207,6 +209,7 @@ export class ModuleCard {
 	/** ID of the module currently being dragged, or null. */
 	static draggedModuleId: string | null = null;
 
+	/** Syncs the card body visibility and button icon with the collapsed flag. */
 	private updateCollapseState(btn: HTMLElement): void {
 		if (this.container === null) return;
 		const body = this.container.querySelector('.vw-module-body') as HTMLElement | null;

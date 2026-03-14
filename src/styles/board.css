@@ -1,0 +1,260 @@
+/* ==========================================================================
+   board.css -- Board/column view for task categories
+   ========================================================================== */
+
+.vw-board-container {
+	display: flex;
+	gap: 12px;
+	overflow-x: auto;
+	padding: 8px 0 12px;
+	min-height: 200px;
+	align-items: flex-start;
+}
+
+.vw-board-column {
+	display: flex;
+	flex-direction: column;
+	min-width: 250px;
+	max-width: 320px;
+	flex-shrink: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-primary);
+	overflow: hidden;
+}
+
+.vw-board-column-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 10px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background: var(--background-secondary);
+	position: relative;
+}
+
+.vw-board-column-accent {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	height: 3px;
+	border-radius: 8px 8px 0 0;
+}
+
+.vw-board-column-name-group {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex: 1;
+	min-width: 0;
+	border-radius: 4px;
+	padding: 2px 4px;
+	transition: background 0.12s ease;
+}
+
+.vw-board-column-name {
+	font-size: 12px;
+	font-weight: 600;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-board-column-count {
+	font-size: 10px;
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+
+.vw-board-column-add {
+	width: 22px;
+	height: 22px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--text-faint);
+	flex-shrink: 0;
+	transition: color 0.12s ease;
+}
+
+.vw-board-column-add:hover {
+	color: var(--interactive-accent);
+}
+
+.vw-board-column-add svg {
+	width: 14px;
+	height: 14px;
+}
+
+.vw-board-column-body {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px;
+	max-height: 500px;
+	overflow-y: auto;
+	min-height: 60px;
+}
+
+.vw-board-task-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 8px;
+	border-radius: 6px;
+	background: var(--background-secondary);
+	cursor: grab;
+	transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+
+.vw-board-task-row:hover {
+	background: var(--background-modifier-hover);
+}
+
+.vw-board-task-row.vw-board-dragging {
+	opacity: 0.4;
+}
+
+.vw-board-task-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.vw-board-task-dot-pending {
+	border: 2px solid var(--text-faint);
+	background: transparent;
+}
+
+.vw-board-task-dot-active {
+	border: 2px solid var(--interactive-accent);
+	background: var(--interactive-accent);
+	animation: vw-pulse 1.5s infinite;
+}
+
+.vw-board-task-dot-completed {
+	border: 2px solid var(--text-faint);
+	background: var(--text-faint);
+}
+
+.vw-board-task-info {
+	flex: 1;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.vw-board-task-title {
+	font-size: 12px;
+	color: var(--text-normal);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-board-task-meta {
+	font-size: 10px;
+	color: var(--text-muted);
+}
+
+.vw-board-task-archive {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+	border-radius: 4px;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition: color 0.12s ease, background 0.12s ease;
+}
+
+.vw-board-task-archive svg {
+	width: 12px;
+	height: 12px;
+}
+
+.vw-board-task-row:hover .vw-board-task-archive {
+	display: flex;
+}
+
+.vw-board-task-archive:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-board-column-body.vw-board-drop-target {
+	background: rgba(var(--interactive-accent-rgb, 72, 138, 255), 0.06);
+	outline: 2px dashed var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* -- Column drag-and-drop ------------------------------------------------ */
+
+.vw-board-column.vw-board-column-dragging {
+	opacity: 0.35;
+}
+
+.vw-board-column.vw-board-column-drop-before {
+	border-left: 3px solid var(--interactive-accent);
+}
+
+.vw-board-column.vw-board-column-drop-after {
+	border-right: 3px solid var(--interactive-accent);
+}
+
+.vw-board-empty {
+	font-size: 11px;
+	color: var(--text-faint);
+	font-style: italic;
+	padding: 8px 0;
+	text-align: center;
+}
+
+/* -- View Toggle --------------------------------------------------------- */
+
+.vw-view-toggle {
+	width: 24px;
+	height: 24px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--text-faint);
+	transition: color 0.12s ease;
+}
+
+.vw-view-toggle:hover {
+	color: var(--text-normal);
+}
+
+.vw-view-toggle svg {
+	width: 14px;
+	height: 14px;
+}
+
+/* -- Daily Tasks badge --------------------------------------------------- */
+
+.vw-board-column-daily {
+	border-color: rgba(var(--interactive-accent-rgb, 72, 138, 255), 0.3);
+}
+
+.vw-board-daily-badge {
+	display: inline-flex;
+	align-items: center;
+	color: var(--text-faint);
+}
+
+.vw-board-daily-badge svg {
+	width: 10px;
+	height: 10px;
+}

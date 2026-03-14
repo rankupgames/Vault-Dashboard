@@ -7,19 +7,21 @@
  * Last Modified: 2026-03-09
  */
 
-import { ItemView, WorkspaceLeaf } from 'obsidian';
+import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { PlanApprovalModal } from './modals/PlanApprovalModal';
 import { VIEW_TYPE_WELCOME, PluginData, Task, ModuleConfig } from './core/types';
 import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { EventBus } from './core/EventBus';
+import { TimerEvents } from './core/events';
 import { ModuleContainer } from './modules/ModuleContainer';
 import { TimerSection } from './sections/TimerSection';
 import { HeatmapBar } from './sections/HeatmapBar';
 import { TaskTimeline, createTimelineViewState, TimelineViewState } from './sections/TaskTimeline';
+import { BoardView } from './sections/BoardView';
 import { createSubtreeViewState, SubtreeViewState } from './sections/SubtaskTree';
-import { OnboardingOverlay } from './ui/OnboardingOverlay';
+import { WelcomeModal } from './modals/WelcomeModal';
 import { TaskModal } from './modals/TaskModal';
 import { ReportScanner } from './services/ReportScanner';
 import { DailyReportModule, WeeklyReportModule } from './modules/ReportModule';
@@ -52,7 +54,13 @@ export class WelcomeView extends ItemView {
 	private hasRenderedOnce = false;
 	private timelineViewState: TimelineViewState = createTimelineViewState();
 	private subtreeViewState: SubtreeViewState = createSubtreeViewState();
+	private viewMode: 'list' | 'board' = 'board';
+	private activeCategoryId: string | null = null;
+	private popoutMiniTimer: (() => void) | null = null;
+	private busUnsubscribers: (() => void)[] = [];
+	private lastTimerStateKey = '';
 
+	/** Creates the dashboard view with all core services and the module registry. */
 	constructor(
 		leaf: WorkspaceLeaf,
 		data: PluginData,
@@ -63,6 +71,7 @@ export class WelcomeView extends ItemView {
 		eventBus: EventBus,
 		moduleRegistry: ModuleRegistry,
 		aiDispatcher: IAIDispatcher,
+		popoutMiniTimer?: () => void,
 	) {
 		super(leaf);
 		this.data = data;
@@ -73,6 +82,7 @@ export class WelcomeView extends ItemView {
 		this.eventBus = eventBus;
 		this.moduleRegistry = moduleRegistry;
 		this.aiDispatcher = aiDispatcher;
+		this.popoutMiniTimer = popoutMiniTimer ?? null;
 	}
 
 	/**
@@ -100,6 +110,29 @@ export class WelcomeView extends ItemView {
 			}
 			this.renderAll();
 		}).open();
+	}
+
+	/** Opens the edit-task modal for an existing task. */
+	private openEditTaskModal(task: Task): void {
+		const knownTags = this.taskManager.getAllTags();
+		new TaskModal(this.app, task, this.data.settings, (result) => {
+			this.taskManager.updateTask(task.id, {
+				title: result.title,
+				description: result.description,
+				durationMinutes: result.durationMinutes,
+				tags: result.tags,
+				linkedDocs: result.linkedDocs,
+				images: result.images,
+				workingDirectory: result.workingDirectory,
+			});
+			if (result.subtasks) {
+				this.taskManager.replaceSubtasks(task.id, result.subtasks);
+			}
+			if (result.categoryId !== undefined) {
+				this.taskManager.assignTaskCategory(task.id, result.categoryId);
+			}
+			this.renderAll();
+		}, knownTags).open();
 	}
 
 	/** @override */
@@ -133,6 +166,11 @@ export class WelcomeView extends ItemView {
 		this.reportScanner = new ReportScanner(this.app, previousOpenedAt);
 
 		this.timerEngine.onTickCallback(() => this.updateTimerDisplay());
+
+		this.busUnsubscribers.push(
+			this.eventBus.on(TimerEvents.StateChange, () => this.onTimerStateChange()),
+		);
+
 		this.timerEngine.onCompleteCallback((taskId) => {
 			this.audioService.playComplete();
 			this.taskManager.completeTask(taskId, Date.now());
@@ -156,6 +194,8 @@ export class WelcomeView extends ItemView {
 
 	/** Closes the view and destroys the module container. */
 	async onClose(): Promise<void> {
+		for (const unsub of this.busUnsubscribers) unsub();
+		this.busUnsubscribers = [];
 		if (this.moduleContainer) {
 			this.moduleContainer.destroy();
 		}
@@ -163,7 +203,8 @@ export class WelcomeView extends ItemView {
 
 	/** Rebuilds the entire dashboard layout (timer, heatmap, timeline, modules). */
 	renderAll(): void {
-		document.querySelectorAll(ORPHAN_POPOVER_SELECTORS).forEach((el) => el.remove());
+		const ownerDoc = this.containerEl.doc;
+		ownerDoc.querySelectorAll(ORPHAN_POPOVER_SELECTORS).forEach((el) => el.remove());
 
 		const container = this.containerEl.children[1] as HTMLElement;
 		const scrollState = this.captureScrollState(container);
@@ -171,7 +212,7 @@ export class WelcomeView extends ItemView {
 
 		const root = container.createDiv({ cls: 'vw-root' });
 
-		const cssTarget = document.body;
+		const cssTarget = ownerDoc.body;
 
 		const heatmapShades = generateHeatmapShades(this.data.settings.heatmapColor);
 		cssTarget.style.setProperty('--vw-heatmap-1', heatmapShades[0]);
@@ -234,19 +275,17 @@ export class WelcomeView extends ItemView {
 
 		this.renderModuleArea(leftCol);
 
-		const onboarding = new OnboardingOverlay({
-			settings: this.data.settings,
-			onDismiss: () => {
+		if (this.data.settings.hasSeenOnboarding === false) {
+			new WelcomeModal(this.app, () => {
+				this.data.settings.hasSeenOnboarding = true;
 				this.saveCallback();
-			},
-		});
-		if (onboarding.shouldShow() && this.taskManager.getTasks().length === 0) {
-			onboarding.render(root);
+			}).open();
 		}
 
 		requestAnimationFrame(() => this.restoreScrollState(container, scrollState));
 	}
 
+	/** Instantiates timer, heatmap, and either board or timeline sections based on view mode. */
 	private buildSections(): SectionRenderer[] {
 		const timer = new TimerSection({
 			app: this.app,
@@ -256,6 +295,7 @@ export class WelcomeView extends ItemView {
 			onRenderAll: () => this.renderAll(),
 			saveCallback: this.saveCallback,
 			settings: this.data.settings,
+			onPopoutMiniTimer: this.popoutMiniTimer ?? undefined,
 		});
 
 		const heatmap = new HeatmapBar({
@@ -266,6 +306,25 @@ export class WelcomeView extends ItemView {
 			dailyNotesFolder: this.data.settings.dailyNotesFolder,
 			skipAutoScroll: this.hasRenderedOnce,
 		});
+
+		if (this.viewMode === 'board') {
+			const board = new BoardView({
+				app: this.app,
+				taskManager: this.taskManager,
+				onRenderAll: () => this.renderAll(),
+				saveCallback: this.saveCallback,
+				settings: this.data.settings,
+				onEditTask: (task) => this.openEditTaskModal(task),
+				onSwitchView: (mode) => { this.viewMode = mode; this.activeCategoryId = null; this.renderAll(); },
+				onEnterCategory: (catId) => {
+					this.activeCategoryId = catId;
+					this.viewMode = 'list';
+					this.renderAll();
+				},
+				aiDispatcher: this.aiDispatcher,
+			});
+			return [timer, heatmap, board];
+		}
 
 		const timeline = new TaskTimeline({
 			app: this.app,
@@ -278,15 +337,52 @@ export class WelcomeView extends ItemView {
 			viewState: this.timelineViewState,
 			subtreeViewState: this.subtreeViewState,
 			aiDispatcher: this.aiDispatcher,
+			onSwitchView: (mode) => { this.viewMode = mode; this.activeCategoryId = null; this.renderAll(); },
+			categoryFilter: this.activeCategoryId,
+			onBackToBoard: () => { this.viewMode = 'board'; this.activeCategoryId = null; this.renderAll(); },
 		});
 
 		return [timer, heatmap, timeline];
 	}
 
+	/** Renders the collapsible module panel with drag-to-reorder and collapse controls. */
 	private renderModuleArea(parent: HTMLElement): void {
+		const root = parent.closest('.vw-root') as HTMLElement | null;
+		const collapsed = this.data.settings.modulesCollapsed;
+
+		if (collapsed && root) {
+			root.addClass('vw-panel-collapsed');
+		}
+
+		const strip = parent.createDiv({ cls: 'vw-panel-collapsed-strip' });
+		const expandBtn = strip.createDiv({ cls: 'vw-panel-toggle-btn' });
+		setIcon(expandBtn, 'layout-grid');
+		expandBtn.setAttribute('aria-label', 'Expand modules');
+		expandBtn.setAttribute('tabindex', '0');
+		expandBtn.addEventListener('click', () => {
+			this.data.settings.modulesCollapsed = false;
+			root?.removeClass('vw-panel-collapsed');
+			this.saveCallback();
+		});
+
 		const area = parent.createDiv({ cls: 'vw-module-area' });
 
-		this.moduleContainer = new ModuleContainer(area, this.data.settings.modules);
+		const sectionHeader = area.createDiv({ cls: 'vw-modules-section-header' });
+		sectionHeader.createDiv({ cls: 'vw-modules-section-title', text: 'Modules' });
+		const collapseBtn = sectionHeader.createDiv({ cls: 'vw-modules-section-collapse' });
+		setIcon(collapseBtn, 'panel-right-close');
+		collapseBtn.setAttribute('aria-label', 'Collapse modules');
+		collapseBtn.setAttribute('tabindex', '0');
+
+		sectionHeader.addEventListener('click', () => {
+			this.data.settings.modulesCollapsed = true;
+			root?.addClass('vw-panel-collapsed');
+			this.saveCallback();
+		});
+
+		const wrapper = area.createDiv({ cls: 'vw-modules-section-body' });
+
+		this.moduleContainer = new ModuleContainer(wrapper, this.data.settings.modules);
 		this.moduleContainer.onReorderCallback((configs) => {
 			this.data.settings.modules = configs;
 			this.saveCallback();
@@ -304,6 +400,7 @@ export class WelcomeView extends ItemView {
 		this.moduleContainer.render();
 	}
 
+	/** Registers quick access, reports, last-opened, and dispatch modules into the registry. */
 	private registerBuiltinModules(): void {
 		const cfgFor = (id: string): ModuleConfig => {
 			return this.data.settings.modules.find((m) => m.id === id) ?? {
@@ -403,6 +500,16 @@ export class WelcomeView extends ItemView {
 		}
 	}
 
+	/** Re-renders the dashboard when the timer transitions between states. */
+	private onTimerStateChange(): void {
+		const s = this.timerEngine.getState();
+		const key = `${s.isRunning}:${s.isPaused}:${this.timerEngine.isOnBreak()}:${s.currentTaskId}`;
+		if (key === this.lastTimerStateKey) return;
+		this.lastTimerStateKey = key;
+		this.renderAll();
+	}
+
+	/** Forwards each timer tick to the timer section and snapshots the timer state. */
 	private updateTimerDisplay(): void {
 		if (this.timerSection) {
 			this.timerSection.updateDisplay();
@@ -410,6 +517,7 @@ export class WelcomeView extends ItemView {
 		this.data.timerState = this.timerEngine.getState();
 	}
 
+	/** Captures scroll positions of panes, modules, and heatmap before a re-render. */
 	private captureScrollState(root: HTMLElement): Map<string, number> {
 		const state = new Map<string, number>();
 		const selectors = ['.vw-tasks-pane', '.vw-left-col'];
@@ -427,6 +535,7 @@ export class WelcomeView extends ItemView {
 		return state;
 	}
 
+	/** Restores previously captured scroll positions after a re-render. */
 	private restoreScrollState(root: HTMLElement, state: Map<string, number>): void {
 		for (const [sel, val] of state) {
 			if (sel === '.vw-heatmap-grid:scrollLeft') {

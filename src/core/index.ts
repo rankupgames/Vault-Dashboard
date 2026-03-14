@@ -14,10 +14,12 @@ export type { PomodoroBreakCallback } from './TimerEngine';
 export { TaskManager } from './TaskManager';
 export { UndoManager } from './UndoManager';
 export { AudioService } from './AudioService';
+export { TaskFormatter } from './TaskFormatter';
 export { generateHeatmapShades, generateBranchShades } from './ColorUtils';
 export type {
 	SubTask,
 	Task,
+	TaskCategory,
 	TaskTemplate,
 	TimerState,
 	ReportSource,

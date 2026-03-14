@@ -32,6 +32,7 @@ export class TimerEngine {
 	private settings: PluginSettings;
 	private bus: EventBus;
 
+	/** Initializes the timer engine with saved state, settings, and optional event bus. */
 	constructor(state: TimerState, settings: PluginSettings, bus?: EventBus) {
 		this.state = state;
 		this.settings = settings;
@@ -371,6 +372,7 @@ export class TimerEngine {
 		this.stopInterval();
 	}
 
+	/** Starts the 250ms tick interval that drives display updates and state changes. */
 	private beginInterval(): void {
 		this.stopInterval();
 		this.intervalId = window.setInterval(() => {
@@ -386,6 +388,7 @@ export class TimerEngine {
 		}, 250);
 	}
 
+	/** Clears the active tick interval. */
 	private stopInterval(): void {
 		if (this.intervalId !== null) {
 			window.clearInterval(this.intervalId);
@@ -393,6 +396,7 @@ export class TimerEngine {
 		}
 	}
 
+	/** Resets all running state without triggering callbacks. */
 	private reset(): void {
 		this.stopInterval();
 		this.state.currentTaskId = null;
@@ -404,6 +408,7 @@ export class TimerEngine {
 		this.state.pausedRemaining = null;
 	}
 
+	/** Invokes the state-change callback and emits the StateChange event on the bus. */
 	private emitStateChange(): void {
 		if (this.onStateChange) {
 			this.onStateChange();

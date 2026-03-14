@@ -7,6 +7,7 @@
  * Last Modified: 2026-03-08
  */
 
+/** Parses a hex color string into an [R, G, B] tuple (0-255). */
 const hexToRgb = (hex: string): [number, number, number] => {
 	const h = hex.replace('#', '');
 	return [
@@ -16,6 +17,7 @@ const hexToRgb = (hex: string): [number, number, number] => {
 	];
 };
 
+/** Converts RGB values (0-255) to HSL [h 0-360, s 0-100, l 0-100]. */
 const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => {
 	r /= 255;
 	g /= 255;
@@ -36,6 +38,7 @@ const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => 
 	return [h * 360, s * 100, l * 100];
 };
 
+/** Converts HSL [h 0-360, s 0-100, l 0-100] to a hex color string. */
 const hslToHex = (h: number, s: number, l: number): string => {
 	h /= 360;
 	s /= 100;

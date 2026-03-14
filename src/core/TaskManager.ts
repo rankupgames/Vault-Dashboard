@@ -7,7 +7,7 @@
  * Last Modified: 2026-03-07
  */
 
-import { Task, SubTask, TaskTemplate, PluginSettings, DispatchHistoryEntry } from './types';
+import { Task, SubTask, TaskCategory, TaskTemplate, PluginSettings, DispatchHistoryEntry } from './types';
 import { UndoManager } from './UndoManager';
 import { EventBus } from './EventBus';
 import { TaskEvents } from './events';
@@ -97,6 +97,7 @@ export class TaskManager {
 		this.pushUndo();
 	}
 
+	/** Pushes a snapshot of current tasks and archive onto the undo stack. */
 	private pushUndo(): void {
 		this.undoManager.push({ tasks: this.toJSON(), archivedTasks: [...this.archivedTasks] });
 	}
@@ -342,6 +343,17 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Moves a single completed/skipped task to the archive. */
+	archiveTask(taskId: string): void {
+		const task = this.tasks.find((t) => t.id === taskId);
+		if (task === undefined) return;
+		this.pushUndo();
+		this.archivedTasks.push(task);
+		this.tasks = this.tasks.filter((t) => t.id !== taskId);
+		this.reindex();
+		this.emitChange();
+	}
+
 	/** Returns a copy of archived tasks. */
 	getArchivedTasks(): Task[] {
 		return [...this.archivedTasks];
@@ -469,6 +481,7 @@ export class TaskManager {
 		this.archivedTasks = tasks;
 	}
 
+	/** Deep-clones subtasks with fresh IDs for template creation. */
 	private cloneSubtasks(subs: SubTask[]): SubTask[] {
 		return subs.map((s) => ({
 			...s,
@@ -549,6 +562,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
+	/** Recursively marks all subtasks as completed. */
 	private completeAllSubtasks(subtasks: SubTask[] | undefined): void {
 		if (subtasks === undefined) return;
 		for (const sub of subtasks) {
@@ -557,6 +571,7 @@ export class TaskManager {
 		}
 	}
 
+	/** Recursively resets all subtasks to pending. */
 	private pendAllSubtasks(subtasks: SubTask[] | undefined): void {
 		if (subtasks === undefined) return;
 		for (const sub of subtasks) {
@@ -565,6 +580,7 @@ export class TaskManager {
 		}
 	}
 
+	/** Walks the subtask hierarchy to find the parent node at the given path. */
 	private resolveSubTaskParent(task: Task, path: string[]): (Task | SubTask) | undefined {
 		let current: Task | SubTask = task;
 		for (const id of path) {
@@ -576,6 +592,7 @@ export class TaskManager {
 		return current;
 	}
 
+	/** Resolves a specific subtask by walking its ancestor ID path. */
 	private resolveSubTask(task: Task, path: string[]): SubTask | undefined {
 		if (path.length === 0) return undefined;
 		const parentPath = path.slice(0, -1);
@@ -590,6 +607,7 @@ export class TaskManager {
 		return this.tasks.map((t) => ({ ...t }));
 	}
 
+	/** Reassigns sequential order values after deletions or archives. */
 	private reindex(): void {
 		const sorted = this.getTasks();
 		sorted.forEach((t, i) => {
@@ -597,10 +615,135 @@ export class TaskManager {
 		});
 	}
 
+	/** Generates a short unique ID using base-36 timestamp + random suffix. */
 	private generateId(): string {
 		return Date.now().toString(36) + Math.random().toString(36).substring(2, 8);
 	}
 
+	/** Creates a new task category and returns it. */
+	addCategory(name: string, color?: string): TaskCategory {
+		const maxOrder = this.settings.taskCategories.reduce((m, c) => Math.max(m, c.order), -1);
+		const cat: TaskCategory = {
+			id: this.generateId(),
+			name,
+			order: maxOrder + 1,
+			color,
+		};
+		this.settings.taskCategories.push(cat);
+		this.emitChange();
+		return cat;
+	}
+
+	/** Removes a category and unsets categoryId on affected tasks. Skips default categories. */
+	removeCategory(id: string): void {
+		const cat = this.settings.taskCategories.find((c) => c.id === id);
+		if (cat === undefined || cat.isDefault) return;
+		this.settings.taskCategories = this.settings.taskCategories.filter((c) => c.id !== id);
+		for (const task of this.tasks) {
+			if (task.categoryId === id) task.categoryId = undefined;
+		}
+		this.emitChange();
+	}
+
+	/** Removes a category and archives all tasks assigned to it. Skips default categories. */
+	removeCategoryWithTasks(id: string): void {
+		const cat = this.settings.taskCategories.find((c) => c.id === id);
+		if (cat === undefined || cat.isDefault) return;
+		this.pushUndo();
+		const toArchive = this.tasks.filter((t) => t.categoryId === id);
+		this.archivedTasks.push(...toArchive);
+		this.tasks = this.tasks.filter((t) => t.categoryId !== id);
+		this.settings.taskCategories = this.settings.taskCategories.filter((c) => c.id !== id);
+		this.reindex();
+		this.emitChange();
+	}
+
+	/** Renames an existing category. */
+	renameCategory(id: string, name: string): void {
+		const cat = this.settings.taskCategories.find((c) => c.id === id);
+		if (cat === undefined) return;
+		cat.name = name;
+		this.emitChange();
+	}
+
+	/** Reorders categories to match the given ordered IDs. */
+	reorderCategories(orderedIds: string[]): void {
+		const idToCategory = new Map(this.settings.taskCategories.map((c) => [c.id, c]));
+		let order = 0;
+		for (const id of orderedIds) {
+			const cat = idToCategory.get(id);
+			if (cat) {
+				cat.order = order++;
+				idToCategory.delete(id);
+			}
+		}
+		for (const cat of idToCategory.values()) {
+			cat.order = order++;
+		}
+		this.emitChange();
+	}
+
+	/** Assigns a task to a category (or removes category if undefined). */
+	assignTaskCategory(taskId: string, categoryId: string | undefined): void {
+		const task = this.getTask(taskId);
+		if (task === undefined) return;
+		task.categoryId = categoryId;
+		this.emitChange();
+	}
+
+	/** Returns tasks belonging to a category. Null = uncategorized. */
+	getTasksByCategory(categoryId: string | null): Task[] {
+		const sorted = this.getTasks();
+		if (categoryId === null) {
+			return sorted.filter((t) => t.categoryId === undefined || t.categoryId === null);
+		}
+		return sorted.filter((t) => t.categoryId === categoryId);
+	}
+
+	/** Ensures the two built-in default categories exist and migrates orphan tasks to General. */
+	ensureDefaultCategories(): void {
+		const DEFAULTS: { id: string; name: string; order: number; isDefault: true; dailyReset?: true }[] = [
+			{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
+			{ id: 'default-general', name: 'General', order: 1, isDefault: true },
+		];
+		for (const def of DEFAULTS) {
+			const existing = this.settings.taskCategories.find((c) => c.id === def.id);
+			if (existing === undefined) {
+				this.settings.taskCategories.push({ ...def });
+			}
+		}
+
+		for (const task of this.tasks) {
+			if (task.categoryId === undefined || task.categoryId === null) {
+				task.categoryId = 'default-general';
+			}
+		}
+	}
+
+	/** Clears all pending/active tasks in categories marked with dailyReset. */
+	clearDailyTasks(): void {
+		const dailyCatIds = new Set(
+			this.settings.taskCategories.filter((c) => c.dailyReset).map((c) => c.id),
+		);
+		if (dailyCatIds.size === 0) return;
+
+		const removed: Task[] = [];
+		this.tasks = this.tasks.filter((t) => {
+			if (t.categoryId && dailyCatIds.has(t.categoryId) && t.status !== 'completed' && t.status !== 'skipped') {
+				removed.push(t);
+				return false;
+			}
+			return true;
+		});
+		if (removed.length > 0) this.emitChange();
+	}
+
+	/** Returns the settings reference for external readers. */
+	getSettings(): PluginSettings {
+		return this.settings;
+	}
+
+	/** Invokes the change callback and emits the TaskChanged event on the bus. */
 	private emitChange(): void {
 		if (this.onChangeCallback) {
 			this.onChangeCallback();

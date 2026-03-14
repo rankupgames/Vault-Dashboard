@@ -60,10 +60,12 @@ export class DocumentTracker {
 		return this.app.vault.getAbstractFileByPath(path) instanceof TFile;
 	}
 
+	/** Returns true if the file extension is trackable (md, canvas, excalidraw). */
 	private isAllowedFile(path: string): boolean {
 		return path.endsWith('.md') || path.endsWith('.canvas') || path.endsWith('.excalidraw');
 	}
 
+	/** Returns recently modified vault files as entries when no explicit history exists. */
 	private fallbackLastOpened(limit: number): DocumentEntry[] {
 		const files = this.app.vault.getFiles();
 		return files
@@ -77,6 +79,7 @@ export class DocumentTracker {
 			}));
 	}
 
+	/** Converts a vault path into a DocumentEntry with existence check. */
 	private toEntry(path: string): DocumentEntry {
 		const file = this.app.vault.getAbstractFileByPath(path);
 		const name = path.split('/').pop()?.replace(/\.\w+$/, '') ?? path;
