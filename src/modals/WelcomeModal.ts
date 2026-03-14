@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: First-open welcome modal listing instructions and features
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

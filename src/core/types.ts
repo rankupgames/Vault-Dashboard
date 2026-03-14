@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Shared types, interfaces, and default data for the plugin
  * Created: 2026-03-07
  * Last Modified: 2026-03-13
@@ -356,7 +356,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableImageAttachments: true,
 	showConfirmDialogs: true,
 	autoArchiveDays: 0,
-	outputFolder: '_VaultWelcome',
+	outputFolder: '_VaultDashboard',
 	taskCategories: [
 		{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
 		{ id: 'default-general', name: 'General', order: 1, isDefault: true },
@@ -383,10 +383,10 @@ export const isImageExtension = (ext: string): boolean =>
 	(IMAGE_EXTENSIONS as readonly string[]).includes(ext.toLowerCase());
 
 /** Obsidian view type identifier for the welcome dashboard. */
-export const VIEW_TYPE_WELCOME = 'vault-welcome-view';
+export const VIEW_TYPE_WELCOME = 'vault-dashboard-view';
 
 /** Obsidian view type identifier for the mini timer pop-out. */
-export const VIEW_TYPE_MINI_TIMER = 'vault-welcome-mini-timer';
+export const VIEW_TYPE_MINI_TIMER = 'vault-dashboard-mini-timer';
 
 /** Callback invoked on each timer tick with remaining ms and negative flag. */
 export type TimerEventCallback = (remaining: number, isNegative: boolean) => void;

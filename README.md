@@ -1,4 +1,4 @@
-# Vault Welcome Dashboard
+# Vault Dashboard
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Obsidian: 1.0+](https://img.shields.io/badge/Obsidian-1.0%2B-7c3aed)
@@ -8,13 +8,13 @@
 
 ## Why This Exists
 
-Most task timers treat time as a raw countdown: start 30 minutes, finish whenever. Real schedules don't work that way. Meetings start on the hour, focus blocks end at :30. **Vault Welcome** snaps every timer to the next clean time boundary so your day stays structured without manual math. Finish early and the leftover minutes bank forward; go over and the debt rolls into the next task. It's a self-correcting schedule that keeps you on track across an entire work session.
+Most task timers treat time as a raw countdown: start 30 minutes, finish whenever. Real schedules don't work that way. Meetings start on the hour, focus blocks end at :30. **Vault Dashboard** snaps every timer to the next clean time boundary so your day stays structured without manual math. Finish early and the leftover minutes bank forward; go over and the debt rolls into the next task. It's a self-correcting schedule that keeps you on track across an entire work session.
 
 Opens as the first thing you see in your vault: tasks, timer, recent documents, and productivity history in one view.
 
 ## Screenshots
 
-![Vault Welcome Dashboard](assets/dashboard-screenshot.png)
+![Vault Dashboard](assets/dashboard-screenshot.png)
 
 Adapts to any Obsidian theme (light, dark, or custom).
 
@@ -96,7 +96,7 @@ Adapts to any Obsidian theme (light, dark, or custom).
 - **AI auto-order**: Reorder pending tasks by priority from the timeline header
 - **AI auto-scheduler**: Suggest durations for tasks without estimates
 - **AI delegation**: Dispatch a task (with linked docs and images as context) to a CLI tool for execution
-- Writes a temporary prompt file (`_vault-welcome-ai-prompt.md`) and invokes the configured CLI
+- Writes a temporary prompt file (`_vault-dashboard-ai-prompt.md`) and invokes the configured CLI
 - All AI features are individually toggleable; set to `none` to disable entirely
 
 ### Heatmap Tracker
@@ -130,7 +130,7 @@ Report modules are powered by a configurable `reportBasePath` setting. Each modu
 Other Obsidian plugins can register their own widget panels:
 
 ```typescript
-const vw = (this.app as any).plugins.plugins["vault-welcome"];
+const vw = (this.app as any).plugins.plugins["vault-dashboard"];
 vw.registerModule({
   id: "my-widget",
   name: "My Widget",
@@ -164,7 +164,7 @@ interface ModuleRenderer {
 - **Pinned first tab**: auto-pins as the leftmost tab, survives layout changes
 - **Audio notifications**: synthesized tones on timer completion and overtime
 - **Keyboard shortcuts**: Obsidian commands for start, pause, complete, skip, and add-task
-- **Dashboard deep link**: `obsidian://vault-welcome` protocol handler
+- **Dashboard deep link**: `obsidian://vault-dashboard` protocol handler
 - **Undo/redo**: snapshot-based undo stack for task mutations
 - **Export analytics**: CSV export or append summary to today's daily note
 - **Onboarding walkthrough**: inline 4-step guide on first launch
@@ -314,8 +314,8 @@ All persistent state lives in `data.json` (managed by Obsidian's plugin data API
 ### From Source
 
 ```bash
-git clone https://github.com/dudetru25/vault-welcome.git
-cd vault-welcome
+git clone https://github.com/dudetru25/vault-dashboard.git
+cd vault-dashboard
 npm install
 npm run build
 ```
@@ -323,10 +323,10 @@ npm run build
 Then symlink or copy the built plugin into your vault:
 
 ```bash
-ln -s /path/to/vault-welcome "/path/to/vault/.obsidian/plugins/vault-welcome"
+ln -s /path/to/vault-dashboard "/path/to/vault/.obsidian/plugins/vault-dashboard"
 ```
 
-Enable **Vault Welcome Dashboard** in Obsidian > Settings > Community Plugins.
+Enable **Vault Dashboard** in Obsidian > Settings > Community Plugins.
 
 ### Development
 
@@ -366,7 +366,7 @@ Reload Obsidian with `Cmd+R` (macOS) or `Ctrl+R` (Windows/Linux) after changes.
 - CSV and daily note analytics export
 - Undo/redo for task mutations
 - Vault-side backup for data protection across plugin updates
-- Dashboard deep link (`obsidian://vault-welcome`)
+- Dashboard deep link (`obsidian://vault-dashboard`)
 - Welcome modal for first-run feature overview
 - Theme-aware design with Obsidian CSS variables
 - Responsive layout (desktop 2-column, mobile single-column)

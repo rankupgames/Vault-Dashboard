@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Daily and weekly report modules driven by user-configurable report source settings
  * Created: 2026-03-07
  * Last Modified: 2026-03-09

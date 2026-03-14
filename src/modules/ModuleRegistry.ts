@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Central registry for module renderers -- unifies built-in and external module registration
  * Created: 2026-03-09
  * Last Modified: 2026-03-09

@@ -7,7 +7,7 @@ Public API for plugin consumers and third-party Obsidian plugins.
 Access the plugin from another Obsidian plugin:
 
 ```typescript
-const vw = (this.app as any).plugins.plugins['vault-welcome'];
+const vw = (this.app as any).plugins.plugins['vault-dashboard'];
 ```
 
 ## Module Registration
@@ -302,7 +302,7 @@ interface PluginData {
 
 ## Commands
 
-All commands are registered under the `vault-welcome` prefix:
+All commands are registered under the `vault-dashboard` prefix:
 
 | Command | ID | Description |
 |---------|----|-------------|
@@ -321,7 +321,7 @@ All commands are registered under the `vault-welcome` prefix:
 ## Protocol Handler
 
 ```
-obsidian://vault-welcome
+obsidian://vault-dashboard
 ```
 
 Opens the dashboard tab from external links or automation.

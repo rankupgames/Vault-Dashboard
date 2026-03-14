@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Module showing active and recent AI dispatches with take-over capability
  * Created: 2026-03-09
  * Last Modified: 2026-03-09
@@ -26,6 +26,7 @@ export interface DispatchProvider {
 	approvePlan(planId: string): void;
 	rejectPlan(planId: string): void;
 	previewPlan(record: DispatchRecord): void;
+	retryDispatch(recordId: string): void;
 }
 
 /** Module that renders live AI dispatch status with terminal take-over. */
@@ -227,6 +228,24 @@ export class DispatchModule implements ModuleRenderer {
 			rejectBtn.addEventListener('click', (e) => {
 				e.stopPropagation();
 				this.provider.rejectPlan(rec.id);
+			});
+		}
+
+		if (rec.status === 'failed' && rec.taskId) {
+			const retryBtn = actions.createDiv({ cls: 'vw-dispatch-action-btn vw-dispatch-retry-btn' });
+			setIcon(retryBtn, 'refresh-cw');
+			retryBtn.setAttribute('aria-label', 'Retry dispatch');
+			retryBtn.setAttribute('tabindex', '0');
+			retryBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				this.provider.retryDispatch(rec.id);
+			});
+			retryBtn.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.stopPropagation();
+					e.preventDefault();
+					this.provider.retryDispatch(rec.id);
+				}
 			});
 		}
 

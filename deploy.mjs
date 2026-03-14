@@ -6,7 +6,7 @@ const ARTIFACTS = ['main.js', 'styles.css', 'manifest.json'];
 
 if (!existsSync(TARGET_FILE)) {
 	console.error(`Missing ${TARGET_FILE}. Create it with the absolute path to your vault plugin folder:`);
-	console.error(`  echo "/path/to/vault/.obsidian/plugins/vault-welcome" > ${TARGET_FILE}`);
+	console.error(`  echo "/path/to/vault/.obsidian/plugins/vault-dashboard" > ${TARGET_FILE}`);
 	process.exit(1);
 }
 

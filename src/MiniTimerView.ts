@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Compact pop-out timer view -- Spotify-style mini player for the active task
  * Created: 2026-03-11
  * Last Modified: 2026-03-11

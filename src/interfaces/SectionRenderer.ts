@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Contract for renderable dashboard sections (timer, heatmap, tasks, etc)
  * Created: 2026-03-09
  * Last Modified: 2026-03-09

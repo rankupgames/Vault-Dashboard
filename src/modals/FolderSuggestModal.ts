@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Fuzzy folder picker modal for selecting vault directories
  * Created: 2026-03-10
  * Last Modified: 2026-03-10

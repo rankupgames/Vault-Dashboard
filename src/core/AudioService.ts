@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Web Audio API tone generator for timer completion and warning sounds
  * Created: 2026-03-08
  * Last Modified: 2026-03-08

@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Modal for reviewing and approving an AI-generated execution plan
  * Created: 2026-03-09
  * Last Modified: 2026-03-09

@@ -1,26 +1,26 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
  * Last Modified: 2026-03-10
  */
 
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
-import type VaultWelcomePlugin from './main';
+import type VaultDashboardPlugin from './main';
 import { DEFAULT_SETTINGS } from './core/types';
 import { AnalyticsExporter } from './services/AnalyticsExporter';
 
 /** Plugin settings tab for Obsidian Settings panel. */
 export class SettingsTab extends PluginSettingTab {
-	private plugin: VaultWelcomePlugin;
+	private plugin: VaultDashboardPlugin;
 
 	/**
 	 * @param app - Obsidian app instance
-	 * @param plugin - VaultWelcomePlugin instance
+	 * @param plugin - VaultDashboardPlugin instance
 	 */
-	constructor(app: App, plugin: VaultWelcomePlugin) {
+	constructor(app: App, plugin: VaultDashboardPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -555,7 +555,7 @@ export class SettingsTab extends PluginSettingTab {
 						this.plugin.taskManager.toJSON(),
 						this.plugin.taskManager.getArchivedTasks(),
 					);
-					AnalyticsExporter.downloadCSV(csv, 'vault-welcome-tasks.csv');
+					AnalyticsExporter.downloadCSV(csv, 'vault-dashboard-tasks.csv');
 					new Notice('CSV exported');
 				}),
 			);

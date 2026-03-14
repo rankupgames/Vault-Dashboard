@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Color conversion utilities and gradient shade generators for heatmap and branch colors
  * Created: 2026-03-08
  * Last Modified: 2026-03-08

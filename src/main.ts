@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Plugin entry point -- registers view, commands, and manages data persistence
  * Created: 2026-03-07
  * Last Modified: 2026-03-07
@@ -32,7 +32,7 @@ import { destroyTooltip } from './ui/Tooltip';
 import { BackupService } from './services/BackupService';
 
 /** Plugin entry point -- registers view, commands, and manages data persistence. */
-export default class VaultWelcomePlugin extends Plugin {
+export default class VaultDashboardPlugin extends Plugin {
 	/** Plugin data (tasks, archived, timer state, settings). */
 	data: PluginData = DEFAULT_DATA;
 	/** Event bus for task and timer events. */
@@ -142,13 +142,13 @@ export default class VaultWelcomePlugin extends Plugin {
 			);
 		});
 
-		this.addRibbonIcon('layout-dashboard', 'Welcome Dashboard', () => {
+		this.addRibbonIcon('layout-dashboard', 'Vault Dashboard', () => {
 			this.activateWelcomeLeaf();
 		});
 
 		this.addCommand({
 			id: 'open-welcome-dashboard',
-			name: 'Open Welcome Dashboard',
+			name: 'Open Vault Dashboard',
 			callback: () => this.activateWelcomeLeaf(),
 		});
 
@@ -170,7 +170,7 @@ export default class VaultWelcomePlugin extends Plugin {
 			}),
 		);
 
-		this.registerObsidianProtocolHandler('vault-welcome', () => {
+		this.registerObsidianProtocolHandler('vault-dashboard', () => {
 			this.activateWelcomeLeaf();
 		});
 

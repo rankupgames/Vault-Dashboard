@@ -26,27 +26,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          latest_tag=$(gh release list --limit 1 --json tagName,createdAt -q '.[0].tagName' 2>/dev/null || echo "")
+          version=$(node -p "require('./manifest.json').version")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
-          if [ -n "$latest_tag" ]; then
-            created_at=$(gh release list --limit 1 --json createdAt -q '.[0].createdAt')
-            days_ago=$(( ($(date +%s) - $(date -d "$created_at" +%s)) / 86400 ))
-
-            if [ "$days_ago" -lt 7 ]; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "::notice::Skipping — release $latest_tag was created $days_ago day(s) ago"
-              exit 0
-            fi
-
-            commits_since=$(git rev-list "$latest_tag"..HEAD --count 2>/dev/null || echo "0")
-            if [ "$commits_since" -eq 0 ]; then
-              echo "skip=true" >> "$GITHUB_OUTPUT"
-              echo "::notice::Skipping — no new commits since $latest_tag"
-              exit 0
-            fi
+          if gh release view "$version" &>/dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping — release $version already exists"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Will create release $version"
           fi
-
-          echo "skip=false" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.check.outputs.skip != 'true'
@@ -69,36 +58,35 @@ jobs:
         if: steps.check.outputs.skip != 'true'
         run: npm run build
 
-      - name: Bump version, tag, and release
+      - name: Tag and release
         if: steps.check.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.check.outputs.version }}
         run: |
-          current=$(node -p "require('./manifest.json').version")
-          IFS='.' read -r major minor patch <<< "$current"
-          new_version="$major.$minor.$((patch + 1))"
-
           node -e "
             const fs = require('fs');
-            for (const file of ['manifest.json', 'package.json']) {
-              const json = JSON.parse(fs.readFileSync(file, 'utf8'));
-              json.version = '$new_version';
-              fs.writeFileSync(file, JSON.stringify(json, null, '\t') + '\n');
-            }
             const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
             const versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
-            versions['$new_version'] = manifest.minAppVersion;
-            fs.writeFileSync('versions.json', JSON.stringify(versions, null, '\t') + '\n');
+            if (versions[process.env.VERSION] === undefined) {
+              versions[process.env.VERSION] = manifest.minAppVersion;
+              fs.writeFileSync('versions.json', JSON.stringify(versions, null, '\t') + '\n');
+            }
           "
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add manifest.json package.json versions.json
-          git commit -m "chore: bump version to $new_version"
-          git tag "$new_version"
-          git push origin HEAD --tags
 
-          gh release create "$new_version" \
-            --title="$new_version" \
+          if ! git diff --quiet versions.json 2>/dev/null; then
+            git add versions.json
+            git commit -m "chore: sync versions.json for $VERSION"
+            git push origin HEAD
+          fi
+
+          git tag "$VERSION"
+          git push origin "$VERSION"
+
+          gh release create "$VERSION" \
+            --title="$VERSION" \
             --generate-notes \
             main.js manifest.json styles.css

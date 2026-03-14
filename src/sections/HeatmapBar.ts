@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Heatmap contribution grid displayed in the top bar alongside the timer
  * Created: 2026-03-07
  * Last Modified: 2026-03-07

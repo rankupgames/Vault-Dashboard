@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Board/column view rendering tasks grouped by category
  * Created: 2026-03-13
  * Last Modified: 2026-03-13
@@ -12,6 +12,8 @@ import { Task, TaskCategory, PluginSettings } from '../core/types';
 import { TaskManager } from '../core/TaskManager';
 import { TaskFormatter } from '../core/TaskFormatter';
 import { TaskModal } from '../modals/TaskModal';
+import { CategoryModal } from '../modals/CategoryModal';
+import { ConfirmModal } from '../modals/ConfirmModal';
 import { attachOverflowTooltip } from '../ui/Tooltip';
 import type { IAIDispatcher } from '../services/AIDispatcher';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
@@ -56,11 +58,11 @@ export class BoardView implements SectionRenderer {
 		addCatBtn.setAttribute('aria-label', 'Add category');
 		addCatBtn.setAttribute('tabindex', '0');
 		addCatBtn.addEventListener('click', () => {
-			const name = prompt('Category name:');
-			if (name === null || name.trim() === '') return;
-			this.deps.taskManager.addCategory(name.trim());
-			this.deps.saveCallback();
-			this.deps.onRenderAll();
+			new CategoryModal(this.deps.app, 'New Category', (result) => {
+				this.deps.taskManager.addCategory(result.name, result.color);
+				this.deps.saveCallback();
+				this.deps.onRenderAll();
+			}).open();
 		});
 
 		const container = section.createDiv({ cls: 'vw-board-container' });
@@ -113,9 +115,9 @@ export class BoardView implements SectionRenderer {
 			e.preventDefault();
 			if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
 			const rect = col.getBoundingClientRect();
-			const midX = rect.left + rect.width / 2;
-			col.classList.toggle('vw-board-column-drop-before', e.clientX < midX);
-			col.classList.toggle('vw-board-column-drop-after', e.clientX >= midX);
+			const midY = rect.top + rect.height / 2;
+			col.classList.toggle('vw-board-column-drop-before', e.clientY < midY);
+			col.classList.toggle('vw-board-column-drop-after', e.clientY >= midY);
 		});
 		col.addEventListener('dragleave', () => {
 			col.classList.remove('vw-board-column-drop-before', 'vw-board-column-drop-after');
@@ -182,14 +184,22 @@ export class BoardView implements SectionRenderer {
 			setIcon(delBtn, 'trash-2');
 			delBtn.setAttribute('aria-label', `Archive tasks & delete ${cat.name}`);
 			delBtn.addEventListener('click', () => {
-				const taskCount = tasks.length;
-				if (taskCount > 0) {
-					const ok = confirm(`Delete "${cat.name}"? ${taskCount} task(s) will be archived.`);
-					if (ok === false) return;
+				const doDelete = (): void => {
+					this.deps.taskManager.removeCategoryWithTasks(cat.id);
+					this.deps.saveCallback();
+					this.deps.onRenderAll();
+				};
+				if (tasks.length > 0) {
+					new ConfirmModal(
+						this.deps.app,
+						'Delete Category',
+						`Delete "${cat.name}"? ${tasks.length} task(s) will be archived.`,
+						doDelete,
+						'Delete',
+					).open();
+				} else {
+					doDelete();
 				}
-				this.deps.taskManager.removeCategoryWithTasks(cat.id);
-				this.deps.saveCallback();
-				this.deps.onRenderAll();
 			});
 		}
 
@@ -232,7 +242,7 @@ export class BoardView implements SectionRenderer {
 		if (targetIdx === -1) return;
 
 		const rect = targetEl.getBoundingClientRect();
-		const insertBefore = e.clientX < rect.left + rect.width / 2;
+		const insertBefore = e.clientY < rect.top + rect.height / 2;
 		const insertIdx = insertBefore ? targetIdx : targetIdx + 1;
 		ordered.splice(insertIdx, 0, sourceId);
 

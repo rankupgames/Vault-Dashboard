@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Confirmation modal when starting a task while another is active
  * Created: 2026-03-08
  * Last Modified: 2026-03-08

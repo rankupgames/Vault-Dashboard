@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Tracks recently opened files and quick access pinned documents
  * Created: 2026-03-07
  * Last Modified: 2026-03-07

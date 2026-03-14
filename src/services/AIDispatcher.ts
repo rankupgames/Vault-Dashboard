@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: AI context assembler and terminal dispatcher for Cursor/Claude Code CLI
  * Created: 2026-03-08
  * Last Modified: 2026-03-11
@@ -56,6 +56,8 @@ export interface IAIDispatcher {
 	toJSON(): DispatchHistoryEntry[];
 	/** Clears all dispatch records regardless of status. */
 	clearAll(): void;
+	/** Removes a single dispatch record by ID. */
+	removeRecord(id: string): void;
 
 	/** Subscribes to dispatch list changes. Returns an unsubscribe function. */
 	onDispatchChange(fn: () => void): () => void;
@@ -320,6 +322,13 @@ export class AIDispatcher implements IAIDispatcher {
 		this.notifyListeners();
 	}
 
+	/** Removes a single dispatch record by ID. */
+	removeRecord(id: string): void {
+		if (this.dispatches.delete(id)) {
+			this.notifyListeners();
+		}
+	}
+
 	/** Subscribe to dispatch list changes. Returns an unsubscribe function. */
 	onDispatchChange(fn: DispatchListener): () => void {
 		this.listeners.push(fn);
@@ -388,12 +397,11 @@ export class AIDispatcher implements IAIDispatcher {
 		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
 		const promptFile = `${vaultPath}/${tempPath}`;
 		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
-		const subcommand = settings.aiTool === 'cursor' ? 'agent' : '--print';
 		const skipFlags = this.permissionsFlags(settings);
 
 		const fs = require('fs') as typeof import('fs');
 		const promptContent = fs.readFileSync(promptFile, 'utf-8');
-		const args = [subcommand, ...skipFlags, promptContent];
+		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const actionLabel = ACTION_LABELS[action];
@@ -422,7 +430,9 @@ export class AIDispatcher implements IAIDispatcher {
 			this.notifyListeners();
 
 			const stdoutChunks: Buffer[] = [];
+			const stderrChunks: Buffer[] = [];
 			child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+			child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
 
 			child.on('error', (err: Error) => {
 				this.untrackProcess(child);
@@ -439,15 +449,16 @@ export class AIDispatcher implements IAIDispatcher {
 			child.on('close', (code: number | null) => {
 				this.untrackProcess(child);
 				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+				const stderr = Buffer.concat(stderrChunks).toString('utf-8');
 				if (code !== 0) {
 					record.status = 'failed';
 					record.endTime = Date.now();
 					record.error = `Process exited with code ${code}`;
-					record.output = stdout || undefined;
+					record.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
 					this.notifyListeners();
 					this.notifyFinish(record);
 					new Notice(`${actionLabel} failed (exit ${code}).`);
-					console.error('[AIDispatcher] exit code', code);
+					console.error('[AIDispatcher] exit code', code, 'stderr:', stderr);
 					resolve('');
 					return;
 				}
@@ -500,12 +511,11 @@ export class AIDispatcher implements IAIDispatcher {
 		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
 		const promptFile = `${vaultPath}/${tempPath}`;
 		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
-		const subcommand = settings.aiTool === 'cursor' ? 'agent' : '--print';
 		const skipFlags = this.permissionsFlags(settings);
 
 		const fs = require('fs') as typeof import('fs');
 		const promptContent = fs.readFileSync(promptFile, 'utf-8');
-		const args = [subcommand, ...skipFlags, promptContent];
+		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const recordId = String(this.nextId++);
@@ -556,11 +566,11 @@ export class AIDispatcher implements IAIDispatcher {
 				record.status = 'failed';
 				record.endTime = Date.now();
 				record.error = `Process exited with code ${code}`;
-				record.output = stdout || undefined;
+				record.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
 				this.notifyListeners();
 				this.notifyFinish(record);
 				new Notice(`AI Plan failed (exit ${code}).`);
-				console.error('[AIDispatcher] plan phase error, exit code', code);
+				console.error('[AIDispatcher] plan phase error, exit code', code, 'stderr:', stderr);
 				return;
 			}
 
@@ -626,12 +636,11 @@ export class AIDispatcher implements IAIDispatcher {
 		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
 		const promptFile = `${vaultPath}/${tempPath}`;
 		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
-		const subcommand = settings.aiTool === 'cursor' ? 'agent' : '--print';
 		const skipFlags = this.permissionsFlags(settings);
 
 		const fs = require('fs') as typeof import('fs');
 		const promptContent = fs.readFileSync(promptFile, 'utf-8');
-		const args = [subcommand, ...skipFlags, promptContent];
+		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
 		const recordId = String(this.nextId++);
@@ -661,7 +670,9 @@ export class AIDispatcher implements IAIDispatcher {
 			this.notifyListeners();
 
 			const stdoutChunks: Buffer[] = [];
+			const stderrChunks: Buffer[] = [];
 			child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
+			child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
 
 			child.on('error', (err: Error) => {
 				this.untrackProcess(child);
@@ -678,15 +689,16 @@ export class AIDispatcher implements IAIDispatcher {
 			child.on('close', (code: number | null) => {
 				this.untrackProcess(child);
 				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
+				const stderr = Buffer.concat(stderrChunks).toString('utf-8');
 				if (code !== 0) {
 					record.status = 'failed';
 					record.endTime = Date.now();
 					record.error = `Process exited with code ${code}`;
-					record.output = stdout || undefined;
+					record.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
 					this.notifyListeners();
 					this.notifyFinish(record);
 					new Notice(`AI Execute failed (exit ${code}).`);
-					console.error('[AIDispatcher] execute phase error, exit code', code);
+					console.error('[AIDispatcher] execute phase error, exit code', code, 'stderr:', stderr);
 					resolve();
 					return;
 				}
@@ -771,11 +783,22 @@ export class AIDispatcher implements IAIDispatcher {
 		return task?.workingDirectory || vaultPath;
 	}
 
+	/**
+	 * Builds the spawn argument list for the configured tool.
+	 * Cursor agent requires `--print` for headless/non-interactive mode.
+	 */
+	private buildArgs(tool: string, skipFlags: string[], promptContent: string): string[] {
+		if (tool === 'cursor') {
+			return ['agent', '--print', ...skipFlags, promptContent];
+		}
+		return ['--print', ...skipFlags, promptContent];
+	}
+
 	/** Returns skip-permissions flags as an array for spawn argv. */
 	private permissionsFlags(settings: PluginSettings): string[] {
 		if (settings.aiSkipPermissions === false) return [];
 		if (settings.aiTool === 'claude-code') return ['--dangerously-skip-permissions'];
-		if (settings.aiTool === 'cursor') return ['--yes'];
+		if (settings.aiTool === 'cursor') return ['--force'];
 		return [];
 	}
 

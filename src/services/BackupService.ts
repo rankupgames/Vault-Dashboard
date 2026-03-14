@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Vault-side JSON backup for plugin data protection across updates
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

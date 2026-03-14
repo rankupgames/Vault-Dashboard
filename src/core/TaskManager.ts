@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Task CRUD operations, subtask management, ordering, and state transitions
  * Created: 2026-03-07
  * Last Modified: 2026-03-07

@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Generic snapshot-based undo/redo stack
  * Created: 2026-03-08
  * Last Modified: 2026-03-09

@@ -1,10 +1,10 @@
 {
-	"id": "vault-welcome",
-	"name": "Vault Dashboard",
-	"version": "1.1.1031326",
-	"minAppVersion": "1.0.0",
-	"description": "Productivity home screen with a clock-aligned rollover timer, chunked task management, git-tree subtasks, heatmap tracker, AI dispatch, and a modular widget system.",
-	"author": "Miguel A. Lopez",
-	"authorUrl": "https://github.com/dudetru25",
-	"isDesktopOnly": false
+  "id": "vault-dashboard",
+  "name": "Vault Dashboard",
+  "version": "1.1.2031426",
+  "minAppVersion": "1.0.0",
+  "description": "Productivity home screen with a clock-aligned rollover timer, chunked task management, git-tree subtasks, heatmap tracker, AI dispatch, and a modular widget system.",
+  "author": "Miguel A. Lopez",
+  "authorUrl": "https://github.com/dudetru25",
+  "isDesktopOnly": false
 }

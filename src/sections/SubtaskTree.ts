@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard Welcome
+ * Project: Vault Dashboard
  * Description: Renders subtask branches in a git-style tree with toggle, rename, add, and remove
  * Created: 2026-03-07
  * Last Modified: 2026-03-09
