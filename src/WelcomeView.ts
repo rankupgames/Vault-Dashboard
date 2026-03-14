@@ -132,7 +132,10 @@ export class WelcomeView extends ItemView {
 				this.taskManager.assignTaskCategory(task.id, result.categoryId);
 			}
 			this.renderAll();
-		}, knownTags).open();
+		}, knownTags, this.taskManager, null, () => {
+			this.saveCallback();
+			this.renderAll();
+		}).open();
 	}
 
 	/** @override */
@@ -430,6 +433,7 @@ export class WelcomeView extends ItemView {
 				clearFinished: () => dispatcher.clearFinished(),
 				clearAll: () => dispatcher.clearAll(),
 				openTerminal: (path: string, app: 'ghostty' | 'terminal') => dispatcher.openTerminal(path, app),
+			openIDE: (cwd: string, ide: 'cursor' | 'vscode') => dispatcher.openIDE(cwd, ide),
 				completeTask: (taskId: string) => {
 					const records = dispatcher.getDispatches()
 						.filter((d) => d.taskId === taskId && d.status !== 'running')
@@ -453,36 +457,35 @@ export class WelcomeView extends ItemView {
 					this.saveCallback();
 					this.renderAll();
 				},
-				approvePlan: (planId: string) => {
-					const rec = dispatcher.getRecord(planId);
-					if (rec === undefined || rec.status !== 'plan-ready') return;
-					new PlanApprovalModal(
-						this.app,
-						rec,
-						async () => {
-							const execTask = rec.taskId ? this.taskManager.getTask(rec.taskId) : undefined;
-							await dispatcher.dispatchExecute(this.app, this.data.settings, planId, execTask);
-							if (rec.taskId) {
-								const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
-								const succeeded = execRec?.status === 'completed';
-								this.taskManager.updateTask(rec.taskId, {
-									delegationStatus: succeeded ? 'completed' : 'failed',
-									delegationFeedback: succeeded ? undefined : execRec?.error,
-								});
-								this.saveCallback();
-								this.renderAll();
-							}
-						},
-						() => {
-							dispatcher.rejectPlan(planId);
-							if (rec.taskId) {
-								this.taskManager.updateTask(rec.taskId, { delegationStatus: undefined, delegationFeedback: undefined });
-								this.saveCallback();
-								this.renderAll();
-							}
-						},
-					).open();
-				},
+			approvePlan: (planId: string) => {
+				const rec = dispatcher.getRecord(planId);
+				if (rec === undefined || rec.status !== 'plan-ready') return;
+				new PlanApprovalModal(
+					this.app,
+					rec,
+					async () => {
+						const execTask = rec.taskId ? this.taskManager.getTask(rec.taskId) : undefined;
+						await dispatcher.dispatchExecute(this.app, this.data.settings, planId, execTask);
+						const succeeded = rec.status === 'completed';
+						if (rec.taskId) {
+							this.taskManager.updateTask(rec.taskId, {
+								delegationStatus: succeeded ? 'completed' : 'failed',
+								delegationFeedback: succeeded ? undefined : rec.error,
+							});
+							this.saveCallback();
+							this.renderAll();
+						}
+					},
+					() => {
+						dispatcher.rejectPlan(planId);
+						if (rec.taskId) {
+							this.taskManager.updateTask(rec.taskId, { delegationStatus: undefined, delegationFeedback: undefined });
+							this.saveCallback();
+							this.renderAll();
+						}
+					},
+				).open();
+			},
 				rejectPlan: (planId: string) => {
 					dispatcher.rejectPlan(planId);
 					const rec = dispatcher.getRecord(planId);
@@ -495,64 +498,43 @@ export class WelcomeView extends ItemView {
 			previewPlan: (record: DispatchRecord) => {
 				new PlanApprovalModal(this.app, record, null, null).open();
 			},
-			retryDispatch: (recordId: string) => {
-				const rec = dispatcher.getRecord(recordId);
-				if (rec === undefined || rec.status !== 'failed') return;
-				const task = rec.taskId ? this.taskManager.getTask(rec.taskId) : undefined;
-				if (task === undefined) return;
+		retryDispatch: (recordId: string) => {
+			const rec = dispatcher.getRecord(recordId);
+			if (rec === undefined || rec.status !== 'failed') return;
+			const task = rec.taskId ? this.taskManager.getTask(rec.taskId) : undefined;
+			if (task === undefined) return;
 
-				dispatcher.removeRecord(recordId);
-				this.taskManager.updateTask(task.id, { delegationStatus: 'dispatched', delegationFeedback: undefined });
-				this.renderAll();
+			dispatcher.removeRecord(recordId);
+			this.taskManager.updateTask(task.id, { delegationStatus: 'dispatched', delegationFeedback: undefined });
+			this.renderAll();
 
-				const runRetry = async (): Promise<void> => {
-					const ctx = await gatherContext(this.taskManager, this.app);
-					const planId = await dispatcher.dispatchPlan(this.app, this.data.settings, ctx, task);
-					if (planId === '') {
-						this.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: 'Retry failed to start' });
+			const runRetry = async (): Promise<void> => {
+				const ctx = await gatherContext(this.taskManager, this.app);
+				const planId = await dispatcher.dispatchPlan(this.app, this.data.settings, ctx, task);
+				if (planId === '') {
+					this.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: 'Retry failed to start' });
+					this.renderAll();
+					return;
+				}
+
+				const unsub = dispatcher.onDispatchChange(() => {
+					const planRec = dispatcher.getRecord(planId);
+					if (planRec === undefined) return;
+					if (planRec.status === 'plan-ready') {
+						unsub();
+					} else if (planRec.status === 'failed') {
+						unsub();
+						this.taskManager.updateTask(task.id, {
+							delegationStatus: 'failed',
+							delegationFeedback: planRec.error ?? 'Plan generation failed',
+						});
+						this.saveCallback();
 						this.renderAll();
-						return;
 					}
-
-					const unsub = dispatcher.onDispatchChange(() => {
-						const planRec = dispatcher.getRecord(planId);
-						if (planRec === undefined) return;
-						if (planRec.status === 'plan-ready') {
-							unsub();
-							new PlanApprovalModal(
-								this.app,
-								planRec,
-								async () => {
-									await dispatcher.dispatchExecute(this.app, this.data.settings, planId, task);
-									const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
-									const succeeded = execRec?.status === 'completed';
-									this.taskManager.updateTask(task.id, {
-										delegationStatus: succeeded ? 'completed' : 'failed',
-										delegationFeedback: succeeded ? undefined : execRec?.error,
-									});
-									this.saveCallback();
-									this.renderAll();
-								},
-								() => {
-									dispatcher.rejectPlan(planId);
-									this.taskManager.updateTask(task.id, { delegationStatus: undefined, delegationFeedback: undefined });
-									this.saveCallback();
-									this.renderAll();
-								},
-							).open();
-						} else if (planRec.status === 'failed') {
-							unsub();
-							this.taskManager.updateTask(task.id, {
-								delegationStatus: 'failed',
-								delegationFeedback: planRec.error ?? 'Plan generation failed',
-							});
-							this.saveCallback();
-							this.renderAll();
-						}
-					});
-				};
-				runRetry();
-			},
+				});
+			};
+			runRetry();
+		},
 			};
 			this.moduleRegistry.register(new DispatchModule(this.data.settings, dispatchProvider));
 		}

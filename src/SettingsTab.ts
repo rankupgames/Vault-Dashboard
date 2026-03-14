@@ -311,6 +311,21 @@ export class SettingsTab extends PluginSettingTab {
 							await this.save();
 						}),
 				);
+
+			new Setting(el)
+				.setName('Post-dispatch IDE')
+				.setDesc('Automatically open the workspace in this IDE after a dispatch completes.')
+				.addDropdown((dd) =>
+					dd
+						.addOption('cursor', 'Cursor')
+						.addOption('vscode', 'VS Code')
+						.addOption('none', 'None')
+						.setValue(settings.postDispatchIDE)
+						.onChange(async (val) => {
+							settings.postDispatchIDE = val as 'cursor' | 'vscode' | 'none';
+							await this.save();
+						}),
+				);
 		}
 	}
 

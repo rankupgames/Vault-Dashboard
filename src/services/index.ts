@@ -11,3 +11,5 @@ export { BackupService } from './BackupService';
 export { TaskParser } from './TaskParser';
 export type { ParsedChecklistItem } from './TaskParser';
 export { ensureVaultFolder } from './VaultUtils';
+export { PopoutPositionTracker } from './PopoutPositionTracker';
+export type { ScreenPosition, DisplayBounds, PopoutWindowHandle, PopoutPositionTrackerOpts } from './PopoutPositionTracker';

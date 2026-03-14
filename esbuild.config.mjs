@@ -19,6 +19,7 @@ const CSS_ORDER = [
 	"modal.css",
 	"drag-drop.css",
 	"tooltip.css",
+	"board.css",
 	"responsive.css",
 ];
 

@@ -30,6 +30,7 @@ import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
 import { destroyTooltip } from './ui/Tooltip';
 import { BackupService } from './services/BackupService';
+import { PopoutPositionTracker } from './services/PopoutPositionTracker';
 
 /** Plugin entry point -- registers view, commands, and manages data persistence. */
 export default class VaultDashboardPlugin extends Plugin {
@@ -51,6 +52,7 @@ export default class VaultDashboardPlugin extends Plugin {
 	private lastDateStr = '';
 	private dayCheckInterval: number | null = null;
 	private hasGoneNegative = false;
+	private miniTimerTracker!: PopoutPositionTracker;
 
 	/** Loads plugin data, initializes services, registers views/commands, and restores timer state. */
 	async onload(): Promise<void> {
@@ -67,6 +69,19 @@ export default class VaultDashboardPlugin extends Plugin {
 		this.taskManager.autoArchiveStale(this.data.settings.autoArchiveDays);
 		this.audioService = new AudioService(this.data.settings, this.eventBus);
 		this.moduleRegistry = new ModuleRegistry();
+		this.miniTimerTracker = new PopoutPositionTracker({
+			initial: this.data.miniTimerPosition,
+			onChange: (pos) => {
+				this.data.miniTimerPosition = pos;
+				this.scheduleSave();
+			},
+			getDisplays: () => {
+				const remote = this.getElectronRemote();
+				if (remote?.screen === undefined) return [];
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any
+				return remote.screen.getAllDisplays().map((d: any) => d.bounds);
+			},
+		});
 
 		this.aiDispatcher = new AIDispatcher();
 		if (this.data.dispatchHistory.length > 0) {
@@ -303,6 +318,7 @@ export default class VaultDashboardPlugin extends Plugin {
 
 	/** Tears down services, saves data, clears intervals, and detaches welcome views. */
 	async onunload(): Promise<void> {
+		this.miniTimerTracker.release();
 		this.aiDispatcher.killAll();
 		this.timerEngine.destroy();
 		this.audioService.destroy();
@@ -326,8 +342,9 @@ export default class VaultDashboardPlugin extends Plugin {
 		return require('@electron/remote');
 	}
 
-	/** Opens a compact popout window with the mini timer view. */
+	/** Opens a compact popout window with the mini timer view, restoring last known position if valid. */
 	private async openMiniTimer(): Promise<void> {
+		this.miniTimerTracker.release();
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_MINI_TIMER);
 
 		const remote = this.getElectronRemote();
@@ -340,8 +357,7 @@ export default class VaultDashboardPlugin extends Plugin {
 
 		await new Promise(r => setTimeout(r, 150));
 
-		type BwHandle = { setOpacity: (v: number) => void; setAlwaysOnTop: (flag: boolean, level?: string) => void };
-		const popout: BwHandle | null = remote?.BrowserWindow?.getAllWindows()
+		const popout = remote?.BrowserWindow?.getAllWindows()
 			?.find((w: { id: number }) => existingIds.includes(w.id) === false) ?? null;
 		popout?.setOpacity(0);
 
@@ -360,8 +376,10 @@ export default class VaultDashboardPlugin extends Plugin {
 		if (win) win.resizeTo(120, 160);
 
 		if (popout) {
+			this.miniTimerTracker.restore(popout);
 			popout.setAlwaysOnTop(true, 'floating');
 			popout.setOpacity(1);
+			this.miniTimerTracker.track(popout);
 		}
 	}
 
@@ -524,6 +542,7 @@ export default class VaultDashboardPlugin extends Plugin {
 				timerState: { ...DEFAULT_DATA.timerState, ...saved.timerState },
 				lastDashboardOpenedAt: saved.lastDashboardOpenedAt ?? 0,
 				dispatchHistory: saved.dispatchHistory ?? [],
+				miniTimerPosition: saved.miniTimerPosition ?? null,
 			};
 		}
 	}
@@ -556,6 +575,9 @@ export default class VaultDashboardPlugin extends Plugin {
 
 		const validTerminals: string[] = ['ghostty', 'terminal'];
 		if (validTerminals.includes(s.terminalApp) === false) s.terminalApp = 'ghostty';
+
+		const validIDEs: string[] = ['cursor', 'vscode', 'none'];
+		if (validIDEs.includes(s.postDispatchIDE) === false) s.postDispatchIDE = 'cursor';
 	}
 
 	/** Clamps a numeric value (or coerces non-numbers) to the given range. */

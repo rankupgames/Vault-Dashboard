@@ -18,7 +18,7 @@ import { TimerSection } from './TimerSection';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
 import { isAIEnabled, gatherContext, composePrompt, parseJsonArray, type IAIDispatcher } from '../services/AIDispatcher';
-import { PlanApprovalModal } from '../modals/PlanApprovalModal';
+
 import { attachOverflowTooltip, renderTagPills } from '../ui/Tooltip';
 import { TaskFormatter } from '../core/TaskFormatter';
 import { DropZone } from '../ui/DropZone';
@@ -506,7 +506,10 @@ export class TaskTimeline implements SectionRenderer {
 						this.deps.taskManager.assignTaskCategory(task.id, result.categoryId);
 					}
 					this.deps.onRenderAll();
-				}, knownTags, this.deps.taskManager, this.deps.aiDispatcher).open();
+				}, knownTags, this.deps.taskManager, this.deps.aiDispatcher, () => {
+					this.deps.saveCallback();
+					this.deps.onRenderAll();
+				}).open();
 			});
 
 			const className = task.status === 'active' && state.isRunning ? 'vw-task-duration-allocated' : 'vw-task-duration';
@@ -644,39 +647,20 @@ export class TaskTimeline implements SectionRenderer {
 						const planId = await dispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
 						if (planId === '') return;
 
-						const unsub = dispatcher.onDispatchChange(() => {
-							const rec = dispatcher.getRecord(planId);
-							if (rec === undefined) return;
-							if (rec.status === 'plan-ready') {
-								unsub();
-								new PlanApprovalModal(
-									this.deps.app,
-									rec,
-									async () => {
-										await dispatcher.dispatchExecute(this.deps.app, this.deps.settings, planId, task);
-										const execRec = dispatcher.getDispatches().find((d) => d.parentPlanId === planId);
-										const succeeded = execRec?.status === 'completed';
-										this.deps.taskManager.updateTask(task.id, {
-											delegationStatus: succeeded ? 'completed' : 'failed',
-											delegationFeedback: succeeded ? undefined : execRec?.error,
-										});
-										this.deps.onRenderAll();
-									},
-									() => {
-										dispatcher.rejectPlan(planId);
-										this.deps.taskManager.updateTask(task.id, { delegationStatus: undefined, delegationFeedback: undefined });
-										this.deps.onRenderAll();
-									},
-								).open();
-							} else if (rec.status === 'failed') {
-								unsub();
-								this.deps.taskManager.updateTask(task.id, {
-									delegationStatus: 'failed',
-									delegationFeedback: rec.error ?? 'Plan generation failed',
-								});
-								this.deps.onRenderAll();
-							}
-						});
+					const unsub = dispatcher.onDispatchChange(() => {
+						const rec = dispatcher.getRecord(planId);
+						if (rec === undefined) return;
+						if (rec.status === 'plan-ready') {
+							unsub();
+						} else if (rec.status === 'failed') {
+							unsub();
+							this.deps.taskManager.updateTask(task.id, {
+								delegationStatus: 'failed',
+								delegationFeedback: rec.error ?? 'Plan generation failed',
+							});
+							this.deps.onRenderAll();
+						}
+					});
 					};
 					if (this.deps.settings.aiSkipPermissions) {
 						new ConfirmModal(

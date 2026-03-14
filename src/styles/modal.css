@@ -6,10 +6,45 @@
 	display: none;
 }
 
-.vw-task-edit-modal h3 {
+.vw-modal-header-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
 	margin: 0 0 12px;
+}
+
+.vw-modal-header-row h3 {
+	margin: 0;
 	font-size: 16px;
 	font-weight: 600;
+}
+
+.vw-modal-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+}
+
+.vw-modal-header-icon-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border-radius: 6px;
+	cursor: pointer;
+	color: var(--text-muted);
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vw-modal-header-icon-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.vw-modal-header-icon-btn svg {
+	width: 16px;
+	height: 16px;
 }
 
 .vw-edit-form {
@@ -650,6 +685,9 @@
 	cursor: pointer;
 	white-space: nowrap;
 	line-height: 1.4;
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
 	transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
@@ -669,42 +707,12 @@
 	opacity: 0.8;
 }
 
-/* -- Pending Tag Pills --------------------------------------------------- */
-
-.vw-pending-tags {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 4px;
-}
-
-.vw-tag-pill {
-	font-size: 10px;
-	padding: 2px 8px;
-	border-radius: 10px;
-	background: var(--interactive-accent);
-	color: var(--text-on-accent);
-	white-space: nowrap;
-	line-height: 1.4;
-	display: inline-flex;
-	align-items: center;
-	gap: 2px;
-}
-
-.vw-tag-pill-removable {
-	cursor: pointer;
-	transition: opacity 0.12s ease;
-}
-
-.vw-tag-pill-removable:hover {
-	opacity: 0.8;
-}
-
-.vw-tag-pill-x {
+.vw-tag-chip-x {
 	display: inline-flex;
 	align-items: center;
 }
 
-.vw-tag-pill-x svg {
+.vw-tag-chip-x svg {
 	width: 10px;
 	height: 10px;
 }

@@ -22,6 +22,7 @@ export interface DispatchProvider {
 	clearFinished(): void;
 	clearAll(): void;
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void;
+	openIDE(cwd: string, ide: 'cursor' | 'vscode'): void;
 	completeTask(taskId: string): void;
 	approvePlan(planId: string): void;
 	rejectPlan(planId: string): void;
@@ -258,6 +259,25 @@ export class DispatchModule implements ModuleRenderer {
 				e.stopPropagation();
 				const text = rec.output || rec.error || '';
 				navigator.clipboard.writeText(text).then(() => new Notice('Output copied'));
+			});
+		}
+
+		if (rec.status === 'completed' && this.settings.postDispatchIDE !== 'none') {
+			const ideBtn = actions.createDiv({ cls: 'vw-dispatch-action-btn' });
+			setIcon(ideBtn, 'external-link');
+			const ideLabel = this.settings.postDispatchIDE === 'cursor' ? 'Cursor' : 'VS Code';
+			ideBtn.setAttribute('aria-label', `Open in ${ideLabel}`);
+			ideBtn.setAttribute('tabindex', '0');
+			ideBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				this.provider.openIDE(rec.vaultPath, this.settings.postDispatchIDE as 'cursor' | 'vscode');
+			});
+			ideBtn.addEventListener('keydown', (e) => {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.stopPropagation();
+					e.preventDefault();
+					this.provider.openIDE(rec.vaultPath, this.settings.postDispatchIDE as 'cursor' | 'vscode');
+				}
 			});
 		}
 

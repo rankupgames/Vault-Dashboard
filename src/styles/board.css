@@ -3,20 +3,18 @@
    ========================================================================== */
 
 .vw-board-container {
-	display: flex;
-	gap: 12px;
-	overflow-x: auto;
-	padding: 8px 0 12px;
+	columns: 4;
+	column-gap: 12px;
+	overflow-y: auto;
+	padding: 8px 16px 12px;
 	min-height: 200px;
-	align-items: flex-start;
 }
 
 .vw-board-column {
 	display: flex;
 	flex-direction: column;
-	min-width: 250px;
-	max-width: 320px;
-	flex-shrink: 0;
+	break-inside: avoid;
+	margin-bottom: 12px;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: 8px;
 	background: var(--background-primary);
@@ -96,9 +94,7 @@
 	flex-direction: column;
 	gap: 4px;
 	padding: 6px;
-	max-height: 500px;
-	overflow-y: auto;
-	min-height: 60px;
+	min-height: 40px;
 }
 
 .vw-board-task-row {
@@ -154,9 +150,10 @@
 .vw-board-task-title {
 	font-size: 12px;
 	color: var(--text-normal);
-	white-space: nowrap;
 	overflow: hidden;
-	text-overflow: ellipsis;
+	display: -webkit-box;
+	-webkit-line-clamp: 2;
+	-webkit-box-orient: vertical;
 }
 
 .vw-board-task-meta {
@@ -204,11 +201,11 @@
 }
 
 .vw-board-column.vw-board-column-drop-before {
-	border-left: 3px solid var(--interactive-accent);
+	border-top: 3px solid var(--interactive-accent);
 }
 
 .vw-board-column.vw-board-column-drop-after {
-	border-right: 3px solid var(--interactive-accent);
+	border-bottom: 3px solid var(--interactive-accent);
 }
 
 .vw-board-empty {

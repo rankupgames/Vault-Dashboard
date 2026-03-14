@@ -11,7 +11,6 @@ import { App, Modal, Notice, Platform, setIcon, TFile, normalizePath } from 'obs
 import { Task, SubTask, PluginSettings, IMAGE_EXTENSIONS, isImageExtension } from '../core/types';
 import { attachOverflowTooltip } from '../ui/Tooltip';
 import { DropZone } from '../ui/DropZone';
-import { TagPills } from '../ui/TagPills';
 import { FileSuggestModal } from './FileSuggestModal';
 import { ConfirmModal } from './ConfirmModal';
 import { isAIEnabled, gatherContext, type IAIDispatcher } from '../services/AIDispatcher';
@@ -81,7 +80,7 @@ export class TaskModal extends Modal {
 	private wdPathEl: HTMLElement | null = null;
 	private durGetter: (() => number) | null = null;
 	private tmplCloseHandler: ((e: MouseEvent) => void) | null = null;
-	private tagPillsEl: TagPills | null = null;
+	private onArchive: (() => void) | null = null;
 
 	/**
 	 * @param app - Obsidian app instance
@@ -92,12 +91,13 @@ export class TaskModal extends Modal {
 	 * @param taskManager - Optional task manager for AI features
 	 * @param aiDispatcher - Optional AI dispatcher for context gathering
 	 */
-	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = [], taskManager: TaskManager | null = null, aiDispatcher: IAIDispatcher | null = null) {
+	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = [], taskManager: TaskManager | null = null, aiDispatcher: IAIDispatcher | null = null, onArchive: (() => void) | null = null) {
 		super(app);
 		this.task = task;
 		this.settings = settings;
 		this.knownTags = knownTags;
 		this.onSave = onSave;
+		this.onArchive = onArchive;
 
 		if (task?.subtasks) {
 			this.pendingSubtasks = cloneSubtasks(task.subtasks);
@@ -124,7 +124,36 @@ export class TaskModal extends Modal {
 		this.modalEl.querySelector('.modal-close-button')?.remove();
 
 		const isEdit = this.task !== null;
-		contentEl.createEl('h3', { text: isEdit ? 'Edit Task' : 'Add Task' });
+
+		const headerRow = contentEl.createDiv({ cls: 'vw-modal-header-row' });
+		headerRow.createEl('h3', { text: isEdit ? 'Edit Task' : 'Add Task' });
+
+		let tmplHeaderBtn: HTMLElement | null = null;
+		if (isEdit) {
+			const headerActions = headerRow.createDiv({ cls: 'vw-modal-header-actions' });
+
+			tmplHeaderBtn = headerActions.createDiv({ cls: 'vw-modal-header-icon-btn' });
+			setIcon(tmplHeaderBtn, 'bookmark');
+			tmplHeaderBtn.setAttribute('aria-label', 'Save as template');
+			tmplHeaderBtn.setAttribute('tabindex', '0');
+
+			if (this.taskManager !== null && this.task !== null) {
+				const archiveBtn = headerActions.createDiv({ cls: 'vw-modal-header-icon-btn vw-modal-header-icon-btn-danger' });
+				setIcon(archiveBtn, 'archive');
+				archiveBtn.setAttribute('aria-label', 'Archive task');
+				archiveBtn.setAttribute('tabindex', '0');
+				const taskId = this.task.id;
+				const taskTitle = this.task.title;
+				archiveBtn.addEventListener('click', () => {
+					new ConfirmModal(this.app, 'Archive Task', `Archive "${taskTitle}"?`, () => {
+						this.taskManager?.archiveTask(taskId);
+						this.saved = true;
+						this.onArchive?.();
+						this.close();
+					}).open();
+				});
+			}
+		}
 
 		const form = contentEl.createDiv({ cls: 'vw-edit-form' });
 
@@ -192,16 +221,6 @@ export class TaskModal extends Modal {
 			cls: 'vw-modal-subtask-input',
 			attr: { type: 'text', placeholder: 'Add tag (Enter to add)' },
 		});
-		this.tagPillsEl = new TagPills(tagInputWrap, {
-			tagColors: this.settings.tagColors,
-			removable: true,
-			onRemove: (tag) => {
-				this.pendingTags = this.pendingTags.filter((t) => t !== tag);
-				this.tagPillsEl?.update(this.pendingTags);
-				this.refreshTagSuggestions('');
-			},
-		});
-		this.tagPillsEl.update(this.pendingTags);
 
 		this.tagSuggestEl = tagInputWrap.createDiv({ cls: 'vw-tag-suggest' });
 
@@ -209,7 +228,6 @@ export class TaskModal extends Modal {
 			if (tag === '' || this.pendingTags.includes(tag)) return;
 			this.pendingTags.push(tag);
 			tagInput.value = '';
-			this.tagPillsEl?.update(this.pendingTags);
 			this.refreshTagSuggestions('');
 		};
 
@@ -466,10 +484,9 @@ export class TaskModal extends Modal {
 			}
 		});
 
-		if (isEdit) {
-			const tmplBtn = actionsLeft.createEl('button', { cls: 'vw-timer-btn', text: 'Save as Template' });
-			tmplBtn.addEventListener('click', (e) => {
-				e.preventDefault();
+		if (tmplHeaderBtn !== null) {
+			const btn = tmplHeaderBtn;
+			btn.addEventListener('click', () => {
 				const name = titleInput.value.trim();
 				if (name === '') return;
 				this.settings.templates.push({
@@ -479,8 +496,8 @@ export class TaskModal extends Modal {
 					subtasks: this.pendingSubtasks.length > 0 ? cloneSubtasks(this.pendingSubtasks) : undefined,
 					tags: this.pendingTags.length > 0 ? [...this.pendingTags] : undefined,
 				});
-				tmplBtn.setText('Saved!');
-				setTimeout(() => tmplBtn.setText('Save as Template'), 1500);
+				setIcon(btn, 'check');
+				setTimeout(() => setIcon(btn, 'bookmark'), 1500);
 			});
 		}
 
@@ -580,17 +597,20 @@ export class TaskModal extends Modal {
 		}
 		for (const dz of this.dropZones) dz.destroy();
 		this.dropZones = [];
-		this.tagPillsEl?.destroy();
-		this.tagPillsEl = null;
 		this.contentEl.empty();
 	}
 
-	/** Rebuilds the tag suggestion chips, filtering by the current input text. */
+	/** Rebuilds the unified tag chip list, filtering by the current input text. */
 	private refreshTagSuggestions(filter: string): void {
 		if (this.tagSuggestEl === null) return;
 		this.tagSuggestEl.empty();
 
-		const visible = this.knownTags.filter((t) => filter === '' || t.includes(filter));
+		const allTags = [...this.knownTags];
+		for (const t of this.pendingTags) {
+			if (allTags.includes(t) === false) allTags.push(t);
+		}
+
+		const visible = allTags.filter((t) => filter === '' || t.includes(filter));
 
 		if (visible.length === 0) {
 			this.tagSuggestEl.style.display = 'none';
@@ -602,8 +622,15 @@ export class TaskModal extends Modal {
 			const selected = this.pendingTags.includes(tag);
 			const chip = this.tagSuggestEl.createSpan({
 				cls: `vw-tag-suggest-chip${selected ? ' vw-tag-suggest-chip-active' : ''}`,
-				text: tag,
 			});
+
+			chip.createSpan({ text: tag });
+
+			if (selected) {
+				const xIcon = chip.createSpan({ cls: 'vw-tag-chip-x' });
+				setIcon(xIcon, 'x');
+			}
+
 			const color = this.settings.tagColors[tag];
 			if (selected && color) {
 				chip.style.backgroundColor = color;
@@ -617,7 +644,6 @@ export class TaskModal extends Modal {
 				} else {
 					this.pendingTags.push(tag);
 				}
-				this.tagPillsEl?.update(this.pendingTags);
 				this.refreshTagSuggestions(filter);
 			});
 		}

@@ -27,4 +27,8 @@
 	.vw-heatmap-bar {
 		display: none;
 	}
+
+	.vw-board-container {
+		columns: 2;
+	}
 }

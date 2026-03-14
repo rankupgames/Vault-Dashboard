@@ -229,6 +229,8 @@ export interface PluginSettings {
 	aiSkipPermissions: boolean;
 	/** Preferred terminal app for dispatch take-over. */
 	terminalApp: 'ghostty' | 'terminal';
+	/** IDE to open the workspace in after a dispatch completes. */
+	postDispatchIDE: 'cursor' | 'vscode' | 'none';
 	/** Allow filtering by multiple tags. */
 	enableMultiTagFilter: boolean;
 	/** Allow image attachments on tasks. */
@@ -290,6 +292,8 @@ export interface PluginData {
 	lastDashboardOpenedAt: number;
 	/** Persisted AI dispatch history. */
 	dispatchHistory: DispatchHistoryEntry[];
+	/** Last known screen position of the mini timer popout (null = use default). */
+	miniTimerPosition: { x: number; y: number } | null;
 }
 
 /** Default timer state when no session is active. */
@@ -352,6 +356,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	aiDelegation: false,
 	aiSkipPermissions: false,
 	terminalApp: 'ghostty',
+	postDispatchIDE: 'cursor',
 	enableMultiTagFilter: true,
 	enableImageAttachments: true,
 	showConfirmDialogs: true,
@@ -373,6 +378,7 @@ export const DEFAULT_DATA: PluginData = {
 	timerState: DEFAULT_TIMER_STATE,
 	lastDashboardOpenedAt: 0,
 	dispatchHistory: [],
+	miniTimerPosition: null,
 };
 
 /** Supported image file extensions for task attachments. */

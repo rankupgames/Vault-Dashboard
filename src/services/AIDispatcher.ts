@@ -81,6 +81,8 @@ export interface IAIDispatcher {
 	rejectPlan(planId: string): void;
 	/** Opens the configured terminal app at the given vault path. */
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void;
+	/** Opens a directory in the configured IDE. */
+	openIDE(cwd: string, ide: 'cursor' | 'vscode'): void;
 	/** Kills all running dispatch processes. */
 	killAll(): void;
 }
@@ -249,8 +251,23 @@ const SAFE_PATH_RE = /^[a-zA-Z0-9_/.\-~]+$/;
 export const validateToolPath = (path: string): boolean =>
 	path === '' || SAFE_PATH_RE.test(path);
 
-/** Allowlisted tool names that may be passed to `which` for path resolution. */
-const ALLOWED_TOOLS: readonly string[] = ['cursor', 'claude-code'];
+/**
+ * Resolves a CLI tool name to its full path via the user's login shell.
+ * GUI apps (like Obsidian) don't inherit terminal PATH, so bare command
+ * names fail. Falls back to the tool name itself if resolution fails.
+ */
+const resolveCommand = (tool: string): string => {
+	const { spawnSync } = require('child_process') as typeof import('child_process');
+	const userShell = process.env.SHELL || '/bin/zsh';
+	const result = spawnSync(userShell, ['-lic', `which '${tool}'`], { timeout: 5000, encoding: 'utf-8' });
+	return result.status === 0 ? (result.stdout as string).trim() || tool : tool;
+};
+
+/** Fire-and-forget spawn a process detached from Obsidian's lifecycle. */
+const launchDetached = (command: string, args: string[]): void => {
+	const { spawn } = require('child_process') as typeof import('child_process');
+	spawn(command, args, { detached: true, stdio: 'ignore' });
+};
 
 // ---------------------------------------------------------------------------
 // Concrete implementation (spawn-based dispatch via child_process)
@@ -599,8 +616,9 @@ export class AIDispatcher implements IAIDispatcher {
 	}
 
 	/**
-	 * Phase 2: dispatches the approved plan for execution. Uses spawn()
-	 * with explicit argv to prevent shell injection.
+	 * Phase 2: executes the approved plan by reusing the same dispatch record.
+	 * Transitions the plan record from plan-ready -> running -> completed/failed
+	 * so only a single row appears in the sidebar for the entire plan+execute flow.
 	 */
 	async dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void> {
 		const planRecord = this.dispatches.get(planId);
@@ -616,9 +634,6 @@ export class AIDispatcher implements IAIDispatcher {
 			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
 			return;
 		}
-
-		planRecord.status = 'plan-approved';
-		this.notifyListeners();
 
 		const executePrompt = EXECUTE_PHASE_PREFIX + planRecord.planText;
 
@@ -643,21 +658,11 @@ export class AIDispatcher implements IAIDispatcher {
 		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
 		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
 
-		const recordId = String(this.nextId++);
-		const record: DispatchRecord = {
-			id: recordId,
-			action: 'delegate',
-			label: `AI Execute: ${planRecord.taskTitle}`,
-			taskId: planRecord.taskId,
-			taskTitle: planRecord.taskTitle,
-			tool: settings.aiTool,
-			status: 'running',
-			startTime: Date.now(),
-			vaultPath,
-			parentPlanId: planId,
-			planText: planRecord.planText,
-		};
-		this.dispatches.set(recordId, record);
+		planRecord.label = `AI Execute: ${planRecord.taskTitle}`;
+		planRecord.status = 'running';
+		planRecord.endTime = undefined;
+		planRecord.error = undefined;
+		planRecord.output = undefined;
 		this.notifyListeners();
 
 		new Notice(`AI Execute: running ${settings.aiTool}...`);
@@ -666,7 +671,7 @@ export class AIDispatcher implements IAIDispatcher {
 		return new Promise<void>((resolve) => {
 			const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
 			this.trackProcess(child);
-			record.pid = child.pid;
+			planRecord.pid = child.pid;
 			this.notifyListeners();
 
 			const stdoutChunks: Buffer[] = [];
@@ -676,11 +681,11 @@ export class AIDispatcher implements IAIDispatcher {
 
 			child.on('error', (err: Error) => {
 				this.untrackProcess(child);
-				record.status = 'failed';
-				record.endTime = Date.now();
-				record.error = err.message;
+				planRecord.status = 'failed';
+				planRecord.endTime = Date.now();
+				planRecord.error = err.message;
 				this.notifyListeners();
-				this.notifyFinish(record);
+				this.notifyFinish(planRecord);
 				new Notice('AI Execute failed to start.');
 				console.error('[AIDispatcher] execute phase error', err);
 				resolve();
@@ -691,22 +696,22 @@ export class AIDispatcher implements IAIDispatcher {
 				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
 				const stderr = Buffer.concat(stderrChunks).toString('utf-8');
 				if (code !== 0) {
-					record.status = 'failed';
-					record.endTime = Date.now();
-					record.error = `Process exited with code ${code}`;
-					record.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
+					planRecord.status = 'failed';
+					planRecord.endTime = Date.now();
+					planRecord.error = `Process exited with code ${code}`;
+					planRecord.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
 					this.notifyListeners();
-					this.notifyFinish(record);
+					this.notifyFinish(planRecord);
 					new Notice(`AI Execute failed (exit ${code}).`);
 					console.error('[AIDispatcher] execute phase error, exit code', code, 'stderr:', stderr);
 					resolve();
 					return;
 				}
-				record.status = 'completed';
-				record.endTime = Date.now();
-				record.output = stdout || undefined;
+				planRecord.status = 'completed';
+				planRecord.endTime = Date.now();
+				planRecord.output = stdout || undefined;
 				this.notifyListeners();
-				this.notifyFinish(record);
+				this.notifyFinish(planRecord);
 				new Notice('AI Execute complete.');
 				resolve();
 			});
@@ -729,13 +734,22 @@ export class AIDispatcher implements IAIDispatcher {
 	}
 
 	/**
-	 * Focuses the user's preferred terminal app via macOS `open -a`.
-	 * Uses spawn with argv to avoid shell/AppleScript injection.
+	 * Opens a terminal window at the given path.
+	 * Ghostty requires its CLI with --working-directory; Terminal.app handles
+	 * folder arguments from `open -a` natively.
 	 */
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void {
-		const { spawn } = require('child_process') as typeof import('child_process');
-		const appName = terminalApp === 'ghostty' ? 'Ghostty' : 'Terminal';
-		spawn('open', ['-a', appName, vaultPath]);
+		if (terminalApp === 'ghostty') {
+			launchDetached(resolveCommand('ghostty'), ['--working-directory=' + vaultPath]);
+		} else {
+			launchDetached('open', ['-a', 'Terminal', vaultPath]);
+		}
+	}
+
+	/** Opens a directory in the configured IDE via its CLI command. */
+	openIDE(cwd: string, ide: 'cursor' | 'vscode'): void {
+		const tool = ide === 'cursor' ? 'cursor' : 'code';
+		launchDetached(resolveCommand(tool), [cwd]);
 	}
 
 	/** Sends SIGTERM to all tracked child processes. */
@@ -758,24 +772,9 @@ export class AIDispatcher implements IAIDispatcher {
 		return prompt;
 	}
 
-	/**
-	 * Resolves the full path of a CLI tool via the user's login shell.
-	 * GUI apps like Obsidian don't inherit the terminal PATH, so a bare
-	 * command name will fail. Falls back to the tool name if resolution fails.
-	 * Only allowlisted tool names are passed to `which`.
-	 */
+	/** Resolves a CLI tool name to its full path, returning a Promise for API compat. */
 	private resolveToolPath(tool: string): Promise<string> {
-		if (ALLOWED_TOOLS.includes(tool) === false) {
-			return Promise.resolve(tool);
-		}
-		const { spawnSync } = require('child_process') as typeof import('child_process');
-		const userShell = process.env.SHELL || '/bin/zsh';
-		const result = spawnSync(userShell, ['-lic', `which '${tool}'`], {
-			timeout: 5000,
-			encoding: 'utf-8',
-		});
-		const resolved = result.status === 0 ? (result.stdout as string).trim() : '';
-		return Promise.resolve(resolved || tool);
+		return Promise.resolve(resolveCommand(tool));
 	}
 
 	/** Resolves the effective working directory from task or vault root. */
