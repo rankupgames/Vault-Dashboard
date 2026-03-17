@@ -1106,7 +1106,7 @@ export class TaskModal extends Modal {
 			path = normalizePath(`${folder}/${baseName}-${Date.now().toString(36)}${ext}`);
 		}
 		const file = await this.app.vault.createBinary(path, data).catch((err: Error): null => {
-			console.warn(`vault-dashboard: failed to write attachment "${name}":`, err.message);
+			console.error(`vault-dashboard: failed to write attachment "${name}":`, err.message);
 			return null;
 		});
 		return file ? path : null;
@@ -1140,7 +1140,7 @@ export class TaskModal extends Modal {
 			const slug = trimmed.substring(0, 60).replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
 			const path = normalizePath(`${docsFolder}/${slug}.md`);
 			const created = await this.app.vault.create(path, text).catch((err: Error): null => {
-				console.warn(`vault-dashboard: failed to create document "${slug}":`, err.message);
+				console.error(`vault-dashboard: failed to create document "${slug}":`, err.message);
 				return null;
 			});
 			if (created === null) return;

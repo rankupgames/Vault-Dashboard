@@ -40,13 +40,15 @@ export class TimerEngine {
 		this.snapIntervalMs = settings.snapIntervalMinutes * 60 * 1000;
 		this.bus = bus ?? new EventBus();
 
-		this.boundVisibilityHandler = () => this.handleVisibilityChange();
-		document.addEventListener('visibilitychange', this.boundVisibilityHandler);
+		if (typeof document !== 'undefined') {
+			this.boundVisibilityHandler = () => this.handleVisibilityChange();
+			document.addEventListener('visibilitychange', this.boundVisibilityHandler);
+		}
 	}
 
 	/** Fires an immediate tick when the main window becomes visible to recover from throttling. */
 	private handleVisibilityChange(): void {
-		if (document.visibilityState !== 'visible') return;
+		if (typeof document === 'undefined' || document.visibilityState !== 'visible') return;
 		if (this.state.isRunning === false || this.state.isPaused) return;
 
 		const remaining = this.getRemaining();
@@ -404,7 +406,7 @@ export class TimerEngine {
 	/** Stops the interval and cleans up. */
 	destroy(): void {
 		this.stopInterval();
-		if (this.boundVisibilityHandler) {
+		if (this.boundVisibilityHandler && typeof document !== 'undefined') {
 			document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
 			this.boundVisibilityHandler = null;
 		}

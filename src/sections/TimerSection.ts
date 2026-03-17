@@ -299,7 +299,7 @@ export class TimerSection implements SectionRenderer {
 	}
 
 	/** Renders timer controls based on the composable control state. */
-	private renderControls(parent: HTMLElement, state: ReturnType<TimerEngine['getState']>): void {
+	private renderControls(parent: HTMLElement, _state: ReturnType<TimerEngine['getState']>): void {
 		const cs = getTimerControlState(this.deps.timerEngine, this.deps.onPopoutMiniTimer !== undefined);
 
 		if (cs.showGhostTask) {
