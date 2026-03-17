@@ -29,6 +29,7 @@ import { LastOpenedModule, QuickAccessModule } from './modules/DocumentModule';
 import { DispatchModule } from './modules/DispatchModule';
 import { isAIEnabled, gatherContext, type IAIDispatcher, type DispatchRecord } from './services/AIDispatcher';
 import { AudioService } from './core/AudioService';
+import { isGhostTaskId } from './core/ghost-task';
 import { ModuleCard } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { generateHeatmapShades, generateBranchShades } from './core/ColorUtils';
@@ -95,6 +96,7 @@ export class WelcomeView extends ItemView {
 
 	/** Opens the add-task modal and adds the result to the task manager. */
 	openAddTaskModal(): void {
+		const contextCat = this.activeCategoryId ?? undefined;
 		new TaskModal(this.app, null, this.data.settings, (result) => {
 			const task = this.taskManager.addTask(result.title, result.durationMinutes, result.tags);
 			if (result.subtasks) {
@@ -108,8 +110,9 @@ export class WelcomeView extends ItemView {
 			if (Object.keys(updates).length > 0) {
 				this.taskManager.updateTask(task.id, updates);
 			}
+			this.taskManager.assignTaskCategory(task.id, result.categoryId ?? this.activeCategoryId ?? 'default-general');
 			this.renderAll();
-		}).open();
+		}, [], null, null, null, contextCat).open();
 	}
 
 	/** Opens the edit-task modal for an existing task. */
@@ -176,7 +179,9 @@ export class WelcomeView extends ItemView {
 
 		this.timerEngine.onCompleteCallback((taskId) => {
 			this.audioService.playComplete();
-			this.taskManager.completeTask(taskId, Date.now());
+			if (isGhostTaskId(taskId) === false) {
+				this.taskManager.completeTask(taskId, Date.now());
+			}
 			this.saveCallback();
 			this.renderAll();
 		});

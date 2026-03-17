@@ -13,6 +13,8 @@ import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { EventBus } from './core/EventBus';
 import { TimerEvents, TimerTickPayload, TimerStateChangePayload } from './core/events';
+import { isGhostTaskId } from './core/ghost-task';
+import { getTimerControlState } from './core/timer-controls';
 import { createTimerRing, TimerRingHandle } from './ui/TimerRing';
 
 const HEADLESS_CLASS = 'vw-mini-headless';
@@ -34,6 +36,9 @@ export class MiniTimerView extends ItemView {
 	private lastControlKey = '';
 	private headlessObserver: MutationObserver | null = null;
 	private boundQuitHandler: ((e: KeyboardEvent) => void) | null = null;
+	private selfPollId: number | null = null;
+	private boundVisibilityHandler: (() => void) | null = null;
+	private boundFocusHandler: (() => void) | null = null;
 
 	/** Creates the mini timer view bound to the timer engine and event bus. */
 	constructor(
@@ -98,12 +103,14 @@ export class MiniTimerView extends ItemView {
 			}),
 		);
 
+		this.startSelfPoll();
 		this.watchHeadlessClass();
 		this.bindPopoutShortcuts();
 	}
 
 	/** @override */
 	async onClose(): Promise<void> {
+		this.stopSelfPoll();
 		for (const unsub of this.unsubscribers) unsub();
 		this.unsubscribers = [];
 		this.headlessObserver?.disconnect();
@@ -122,6 +129,56 @@ export class MiniTimerView extends ItemView {
 			this.displayEl.toggleClass('vw-mini-timer-negative', this.timerEngine.isNegative());
 		}
 		this.ringHandle?.update(this.timerEngine.getProgress(), this.timerEngine.isNegative());
+	}
+
+	/**
+	 * Runs an independent 250ms poll on the popout's own window so the display stays
+	 * live even when the main Obsidian window is throttled (minimized / unfocused).
+	 * Also hooks visibilitychange + focus for instant catch-up.
+	 */
+	private startSelfPoll(): void {
+		this.stopSelfPoll();
+		const doc = this.containerEl.ownerDocument;
+		const win = doc?.defaultView;
+		if (win === null || win === undefined) return;
+
+		this.selfPollId = win.setInterval(() => {
+			if (this.timerEngine.getState().isRunning) {
+				this.updateDisplay();
+			}
+		}, 250);
+
+		this.boundVisibilityHandler = () => {
+			if (doc.visibilityState === 'visible') {
+				this.syncVisibility();
+				this.updateDisplay();
+			}
+		};
+		this.boundFocusHandler = () => {
+			this.syncVisibility();
+			this.updateDisplay();
+		};
+
+		doc.addEventListener('visibilitychange', this.boundVisibilityHandler);
+		win.addEventListener('focus', this.boundFocusHandler);
+	}
+
+	/** Tears down the independent poll and its event listeners. */
+	private stopSelfPoll(): void {
+		const doc = this.containerEl.ownerDocument;
+		const win = doc?.defaultView;
+		if (this.selfPollId !== null && win) {
+			win.clearInterval(this.selfPollId);
+			this.selfPollId = null;
+		}
+		if (this.boundVisibilityHandler && doc) {
+			doc.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+			this.boundVisibilityHandler = null;
+		}
+		if (this.boundFocusHandler && win) {
+			win.removeEventListener('focus', this.boundFocusHandler);
+			this.boundFocusHandler = null;
+		}
 	}
 
 	/** Monitors the popout body and re-applies the headless class if Obsidian removes it. */
@@ -200,42 +257,50 @@ export class MiniTimerView extends ItemView {
 		this.updateTitle();
 	}
 
-	/** Updates the marquee text with the current task name or "Break". */
+	/** Updates the marquee text with the current task name, ghost name, or "Break". */
 	private updateTitle(): void {
 		if (this.titleEl === null) return;
 		const state = this.timerEngine.getState();
+		if (this.timerEngine.isOnBreak()) {
+			this.titleEl.setText('Break');
+			return;
+		}
+		if (isGhostTaskId(state.currentTaskId)) {
+			this.titleEl.setText(state.ghostTaskName ?? 'Quick Timer');
+			return;
+		}
 		const task = state.currentTaskId ? this.taskManager.getTask(state.currentTaskId) : null;
-		const text = this.timerEngine.isOnBreak() ? 'Break' : (task?.title ?? 'No Active Task');
-		this.titleEl.setText(text);
+		this.titleEl.setText(task?.title ?? 'No Active Task');
 	}
 
-	/** Rebuilds pause/resume/complete/skip buttons based on current timer state. */
+	/** Rebuilds pause/resume/complete/skip buttons based on composable control state. */
 	private rebuildControls(): void {
 		if (this.controlsEl === null) return;
 
 		const state = this.timerEngine.getState();
-		const key = `${state.isRunning}:${state.isPaused}:${this.timerEngine.isOnBreak()}`;
+		const ghost = isGhostTaskId(state.currentTaskId);
+		const key = `${state.isRunning}:${state.isPaused}:${this.timerEngine.isOnBreak()}:${ghost}`;
 		if (key === this.lastControlKey) return;
 		this.lastControlKey = key;
 
 		this.controlsEl.empty();
 		if (state.isRunning === false) return;
 
-		if (state.isPaused) {
+		const cs = getTimerControlState(this.timerEngine, false);
+
+		if (cs.showResume) {
 			this.addControlBtn(this.controlsEl, 'play', 'Resume', () => {
 				this.timerEngine.resume();
 			});
-		} else {
+		}
+
+		if (cs.showPause) {
 			this.addControlBtn(this.controlsEl, 'pause', 'Pause', () => {
 				this.timerEngine.pause();
 			});
 		}
 
-		if (this.timerEngine.isOnBreak()) {
-			this.addControlBtn(this.controlsEl, 'skip-forward', 'Skip break', () => {
-				this.timerEngine.completePomodoroBreak();
-			});
-		} else {
+		if (cs.showComplete) {
 			this.addControlBtn(this.controlsEl, 'check', 'Complete', () => {
 				if (this.timerEngine.isPomodoroMode()) {
 					this.timerEngine.completePomodoroWork();
@@ -243,6 +308,9 @@ export class MiniTimerView extends ItemView {
 					this.timerEngine.stop();
 				}
 			});
+		}
+
+		if (cs.showSkip) {
 			this.addControlBtn(this.controlsEl, 'skip-forward', 'Skip', () => {
 				const taskId = this.timerEngine.getState().currentTaskId;
 				if (taskId) {
@@ -250,6 +318,12 @@ export class MiniTimerView extends ItemView {
 					this.timerEngine.cancel();
 					this.saveCallback();
 				}
+			});
+		}
+
+		if (cs.showSkipBreak) {
+			this.addControlBtn(this.controlsEl, 'skip-forward', 'Skip break', () => {
+				this.timerEngine.completePomodoroBreak();
 			});
 		}
 	}

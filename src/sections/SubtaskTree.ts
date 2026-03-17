@@ -82,6 +82,7 @@ export class SubtaskTree {
 				e.stopPropagation();
 				if (this.onBeforeChange) this.onBeforeChange();
 				sub.status = sub.status === 'completed' ? 'pending' : 'completed';
+				this.cascadeStatus(sub.subtasks, sub.status);
 				if (this.onChanged) this.onChanged();
 			});
 
@@ -103,6 +104,15 @@ export class SubtaskTree {
 				const children = wrapper.createDiv({ cls: 'vw-git-branch-children' });
 				this.renderBranch(children, sub.subtasks!, depth + 1);
 			}
+		}
+	}
+
+	/** Recursively sets all descendants to the given status. */
+	private cascadeStatus(subs: SubTask[] | undefined, status: SubTask['status']): void {
+		if (subs === undefined) return;
+		for (const s of subs) {
+			s.status = status;
+			this.cascadeStatus(s.subtasks, status);
 		}
 	}
 }

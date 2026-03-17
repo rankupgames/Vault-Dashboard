@@ -9,6 +9,7 @@
 
 import { setIcon } from 'obsidian';
 import { ModuleConfig } from '../core/types';
+import { setupDragHold } from '../ui/setupDragHold';
 
 /** Contract for modules that render content inside a ModuleCard. */
 export interface ModuleRenderer {
@@ -141,40 +142,33 @@ export class ModuleCard {
 		const card = this.container!;
 		const moduleId = this.renderer.id;
 
-		header.addEventListener('mousedown', () => {
-			card.setAttribute('draggable', 'true');
-		});
+		setupDragHold({
+			grip: header,
+			draggable: card,
+			onDragStart: (e) => {
+				card.addClass('vw-dragging');
+				e.dataTransfer?.setData('text/plain', moduleId);
+				if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+				ModuleCard.draggedModuleId = moduleId;
 
-		header.addEventListener('mouseup', () => {
-			card.removeAttribute('draggable');
-		});
+				const ownerDoc = card.doc;
+				const preview = ownerDoc.createElement('div');
+				preview.className = 'vw-drag-preview';
+				preview.textContent = this.renderer.name;
+				ownerDoc.body.appendChild(preview);
+				e.dataTransfer?.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
+				requestAnimationFrame(() => preview.remove());
 
-		card.addEventListener('dragstart', (e: DragEvent) => {
-			if (card.getAttribute('draggable') !== 'true') { e.preventDefault(); return; }
-			card.addClass('vw-dragging');
-			e.dataTransfer?.setData('text/plain', moduleId);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-			ModuleCard.draggedModuleId = moduleId;
-
-			const ownerDoc = card.doc;
-			const preview = ownerDoc.createElement('div');
-			preview.className = 'vw-drag-preview';
-			preview.textContent = this.renderer.name;
-			ownerDoc.body.appendChild(preview);
-			e.dataTransfer?.setDragImage(preview, preview.offsetWidth / 2, preview.offsetHeight / 2);
-			requestAnimationFrame(() => preview.remove());
-
-			ownerDoc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.add('vw-module-remove-zone-visible'));
-		});
-
-		card.addEventListener('dragend', () => {
-			ModuleCard.draggedModuleId = null;
-			card.removeClass('vw-dragging');
-			card.removeAttribute('draggable');
-			card.parentElement?.querySelectorAll('.vw-drag-above, .vw-drag-below').forEach((el) => {
-				el.classList.remove('vw-drag-above', 'vw-drag-below');
-			});
-			card.doc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.remove('vw-module-remove-zone-visible', 'vw-module-remove-zone-over'));
+				ownerDoc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.add('vw-module-remove-zone-visible'));
+			},
+			onDragEnd: () => {
+				ModuleCard.draggedModuleId = null;
+				card.removeClass('vw-dragging');
+				card.parentElement?.querySelectorAll('.vw-drag-above, .vw-drag-below').forEach((el) => {
+					el.classList.remove('vw-drag-above', 'vw-drag-below');
+				});
+				card.doc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.remove('vw-module-remove-zone-visible', 'vw-module-remove-zone-over'));
+			},
 		});
 
 		card.addEventListener('dragover', (e: DragEvent) => {

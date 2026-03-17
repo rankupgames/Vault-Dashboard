@@ -46,6 +46,19 @@
 	height: 12px;
 }
 
+.vw-drag-ready {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+	border-radius: 6px;
+	animation: vw-drag-ready-pulse 0.8s ease-in-out infinite alternate;
+	cursor: grabbing;
+}
+
+@keyframes vw-drag-ready-pulse {
+	from { outline-color: var(--interactive-accent); }
+	to   { outline-color: color-mix(in srgb, var(--interactive-accent) 40%, transparent); }
+}
+
 .vw-dragging {
 	opacity: 0.25;
 }

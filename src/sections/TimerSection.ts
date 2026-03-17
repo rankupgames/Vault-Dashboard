@@ -9,11 +9,15 @@
 
 import { App, setIcon } from 'obsidian';
 import { ConfirmModal } from '../modals/ConfirmModal';
+import { GhostTaskModal } from '../modals/GhostTaskModal';
 import { Task, PluginSettings } from '../core/types';
 import { TimerEngine } from '../core/TimerEngine';
 import { TaskManager } from '../core/TaskManager';
 import { EventBus } from '../core/EventBus';
 import { TaskEvents, TaskStartPayload, TaskSkipPayload } from '../core/events';
+import { isGhostTaskId, createGhostTaskId } from '../core/ghost-task';
+import type { GhostTaskInfo } from '../core/ghost-task';
+import { getTimerControlState } from '../core/timer-controls';
 import { ConfirmStartModal } from '../modals/ConfirmStartModal';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 import { createTimerRing, TimerRingHandle } from '../ui/TimerRing';
@@ -131,8 +135,7 @@ export class TimerSection implements SectionRenderer {
 		const info = content.createDiv({ cls: 'vw-timer-info' });
 
 		const state = this.deps.timerEngine.getState();
-		const activeTask = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : null;
-		const titleText = activeTask ? activeTask.title : 'No Active Task';
+		const titleText = this.resolveActiveTitle(state);
 		info.createDiv({ cls: 'vw-timer-task-title', text: titleText });
 
 		if (state.isRunning) {
@@ -172,100 +175,16 @@ export class TimerSection implements SectionRenderer {
 
 
 		const controls = content.createDiv({ cls: 'vw-timer-controls' });
-
-		if (state.isRunning) {
-			if (state.isPaused) {
-				const resumeBtn = controls.createDiv({ cls: 'vw-timer-ctrl vw-timer-ctrl-primary' });
-				setIcon(resumeBtn, 'play');
-				resumeBtn.setAttribute('aria-label', 'Resume');
-				resumeBtn.setAttribute('tabindex', '0');
-				resumeBtn.addEventListener('click', () => {
-					this.deps.timerEngine.resume();
-					this.deps.onRenderAll();
-				});
-			} else {
-				const pauseBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
-				setIcon(pauseBtn, 'pause');
-				pauseBtn.setAttribute('aria-label', 'Pause');
-				pauseBtn.setAttribute('tabindex', '0');
-				pauseBtn.addEventListener('click', () => {
-					this.deps.timerEngine.pause();
-					this.deps.onRenderAll();
-				});
-			}
-
-			if (this.deps.timerEngine.isOnBreak()) {
-				const skipBreakBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
-				setIcon(skipBreakBtn, 'skip-forward');
-				skipBreakBtn.setAttribute('aria-label', 'Skip break');
-				skipBreakBtn.setAttribute('tabindex', '0');
-				skipBreakBtn.addEventListener('click', () => {
-					this.deps.timerEngine.completePomodoroBreak();
-					this.deps.onRenderAll();
-				});
-			} else {
-				const completeBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
-				setIcon(completeBtn, 'check');
-				completeBtn.setAttribute('aria-label', 'Complete');
-				completeBtn.setAttribute('tabindex', '0');
-				completeBtn.addEventListener('click', () => {
-					if (this.deps.timerEngine.isPomodoroMode()) {
-						this.deps.timerEngine.completePomodoroWork();
-					} else {
-						this.deps.timerEngine.stop();
-					}
-				});
-
-				const restartBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
-				setIcon(restartBtn, 'rotate-ccw');
-				restartBtn.setAttribute('aria-label', 'Restart');
-				restartBtn.setAttribute('tabindex', '0');
-				restartBtn.addEventListener('click', () => {
-					const state = this.deps.timerEngine.getState();
-					const task = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : undefined;
-					const label = task ? `"${task.title}"` : 'the active task';
-					new ConfirmModal(this.deps.app, 'Restart Task', `Restart ${label} from the beginning?`, () => {
-						this.handleRestartActive();
-					}).open();
-				});
-
-				const skipBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
-				setIcon(skipBtn, 'skip-forward');
-				skipBtn.setAttribute('aria-label', 'Skip');
-				skipBtn.setAttribute('tabindex', '0');
-				skipBtn.addEventListener('click', () => {
-					const state = this.deps.timerEngine.getState();
-					const task = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : undefined;
-					const label = task ? `"${task.title}"` : 'the active task';
-					new ConfirmModal(this.deps.app, 'Skip Task', `Skip ${label} and move to the next?`, () => {
-						this.handleSkipActive();
-					}).open();
-				});
-			}
-		}
-
-		if (this.deps.onPopoutMiniTimer) {
-			const popoutBtn = controls.createDiv({ cls: 'vw-timer-ctrl' });
-			setIcon(popoutBtn, 'picture-in-picture-2');
-			popoutBtn.setAttribute('aria-label', 'Pop out mini timer');
-			popoutBtn.setAttribute('tabindex', '0');
-			popoutBtn.addEventListener('click', () => this.deps.onPopoutMiniTimer?.());
-		}
+		this.renderControls(controls, state);
 
 		this.updateDisplay();
 	}
 
-	/** Restarts the currently active task from the beginning. */
+	/** Restarts the currently active timer from the beginning (reset + pause). */
 	handleRestartActive(): void {
 		const state = this.deps.timerEngine.getState();
 		if (state.isRunning === false || state.currentTaskId === null) return;
-
-		const task = this.deps.taskManager.getTask(state.currentTaskId);
-		if (task === undefined) return;
-
-		this.deps.timerEngine.cancel();
-		this.deps.timerEngine.resetRollover();
-		this.deps.taskManager.resetToPending(task.id);
+		this.deps.timerEngine.restart();
 		this.deps.saveCallback();
 		this.deps.onRenderAll();
 	}
@@ -300,7 +219,7 @@ export class TimerSection implements SectionRenderer {
 
 		if (state.isRunning && state.currentTaskId) {
 			const activeTask = this.deps.taskManager.getTask(state.currentTaskId);
-			const activeTitle = activeTask ? activeTask.title : 'Current task';
+			const activeTitle = activeTask?.title ?? state.ghostTaskName ?? 'Current task';
 
 			new ConfirmStartModal(this.deps.app, activeTitle, task.title, (choice) => {
 				if (choice === 'start-now') {
@@ -317,11 +236,29 @@ export class TimerSection implements SectionRenderer {
 		this.startTaskImmediate(task);
 	}
 
+	/** Starts a ghost task (timer-only, no task card). */
+	startGhostTask(info: GhostTaskInfo): void {
+		if (this.deps.timerEngine.getState().isRunning) return;
+
+		const ghostId = createGhostTaskId();
+
+		if (this.deps.timerEngine.isPomodoroMode()) {
+			this.deps.timerEngine.startPomodoro(ghostId, info.durationMinutes);
+		} else {
+			this.deps.timerEngine.start(ghostId, info.durationMinutes);
+		}
+		this.deps.timerEngine.setGhostTaskName(info.name);
+		this.deps.saveCallback();
+		this.deps.onRenderAll();
+	}
+
 	/** Cancels the current task, resets rollover, and starts the given task. */
 	private overrideAndStart(task: Task): void {
 		const state = this.deps.timerEngine.getState();
 		if (state.isRunning && state.currentTaskId) {
-			this.deps.taskManager.resetToPending(state.currentTaskId);
+			if (isGhostTaskId(state.currentTaskId) === false) {
+				this.deps.taskManager.resetToPending(state.currentTaskId);
+			}
 			this.deps.timerEngine.cancel();
 			this.deps.timerEngine.resetRollover();
 		}
@@ -340,6 +277,103 @@ export class TimerSection implements SectionRenderer {
 		}
 		this.deps.saveCallback();
 		this.deps.onRenderAll();
+	}
+
+	/** Resolves the display title for the currently active timer. */
+	private resolveActiveTitle(state: ReturnType<TimerEngine['getState']>): string {
+		if (isGhostTaskId(state.currentTaskId)) {
+			return state.ghostTaskName ?? 'Quick Timer';
+		}
+		const task = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : null;
+		return task?.title ?? 'No Active Task';
+	}
+
+	/** Resolves a human label for the active task (for confirm dialogs). */
+	private resolveActiveLabel(): string {
+		const state = this.deps.timerEngine.getState();
+		if (isGhostTaskId(state.currentTaskId)) {
+			return `"${state.ghostTaskName ?? 'Quick Timer'}"`;
+		}
+		const task = state.currentTaskId ? this.deps.taskManager.getTask(state.currentTaskId) : undefined;
+		return task ? `"${task.title}"` : 'the active task';
+	}
+
+	/** Renders timer controls based on the composable control state. */
+	private renderControls(parent: HTMLElement, state: ReturnType<TimerEngine['getState']>): void {
+		const cs = getTimerControlState(this.deps.timerEngine, this.deps.onPopoutMiniTimer !== undefined);
+
+		if (cs.showGhostTask) {
+			const ghostBtn = parent.createDiv({ cls: 'vw-timer-ctrl vw-timer-ghost-btn' });
+			setIcon(ghostBtn, 'timer');
+			ghostBtn.setAttribute('aria-label', 'Quick Timer');
+			ghostBtn.setAttribute('tabindex', '0');
+			ghostBtn.addEventListener('click', () => {
+				new GhostTaskModal(this.deps.app, (info) => this.startGhostTask(info)).open();
+			});
+		}
+
+		if (cs.showResume) {
+			this.addCtrl(parent, 'play', 'Resume', 'vw-timer-ctrl-primary', () => {
+				this.deps.timerEngine.resume();
+				this.deps.onRenderAll();
+			});
+		}
+
+		if (cs.showPause) {
+			this.addCtrl(parent, 'pause', 'Pause', '', () => {
+				this.deps.timerEngine.pause();
+				this.deps.onRenderAll();
+			});
+		}
+
+		if (cs.showComplete) {
+			this.addCtrl(parent, 'check', 'Complete', '', () => {
+				if (this.deps.timerEngine.isPomodoroMode()) {
+					this.deps.timerEngine.completePomodoroWork();
+				} else {
+					this.deps.timerEngine.stop();
+				}
+			});
+		}
+
+		if (cs.showRestart) {
+			this.addCtrl(parent, 'rotate-ccw', 'Restart', '', () => {
+				new ConfirmModal(this.deps.app, 'Restart Timer', `Restart ${this.resolveActiveLabel()} from the beginning?`, () => {
+					this.handleRestartActive();
+				}).open();
+			});
+		}
+
+		if (cs.showSkip) {
+			this.addCtrl(parent, 'skip-forward', 'Skip', '', () => {
+				new ConfirmModal(this.deps.app, 'Skip Task', `Skip ${this.resolveActiveLabel()} and move to the next?`, () => {
+					this.handleSkipActive();
+				}).open();
+			});
+		}
+
+		if (cs.showSkipBreak) {
+			this.addCtrl(parent, 'skip-forward', 'Skip break', '', () => {
+				this.deps.timerEngine.completePomodoroBreak();
+				this.deps.onRenderAll();
+			});
+		}
+
+		if (cs.showPopout) {
+			this.addCtrl(parent, 'picture-in-picture-2', 'Pop out mini timer', '', () => {
+				this.deps.onPopoutMiniTimer?.();
+			});
+		}
+	}
+
+	/** Creates an accessible icon button in the controls area. */
+	private addCtrl(parent: HTMLElement, icon: string, label: string, extraCls: string, onClick: () => void): void {
+		const cls = extraCls ? `vw-timer-ctrl ${extraCls}` : 'vw-timer-ctrl';
+		const btn = parent.createDiv({ cls });
+		setIcon(btn, icon);
+		btn.setAttribute('aria-label', label);
+		btn.setAttribute('tabindex', '0');
+		btn.addEventListener('click', onClick);
 	}
 
 	/** Refreshes the displayed time and ring progress. */

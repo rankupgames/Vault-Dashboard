@@ -18,17 +18,19 @@ import {
 	VIEW_TYPE_MINI_TIMER,
 } from './core/types';
 import { EventBus } from './core/EventBus';
-import { TaskEvents, TaskStartPayload, TaskSkipPayload } from './core/events';
+import { TaskEvents, TaskStartPayload, TaskSkipPayload, TimerEvents, TimerTickPayload } from './core/events';
 import { TimerEngine } from './core/TimerEngine';
 import { TaskManager } from './core/TaskManager';
 import { WelcomeView } from './WelcomeView';
 import { MiniTimerView } from './MiniTimerView';
 import { AudioService } from './core/AudioService';
+import { isGhostTaskId } from './core/ghost-task';
 import { AIDispatcher, validateToolPath, type IAIDispatcher } from './services/AIDispatcher';
 import { ModuleRenderer } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
 import { destroyTooltip } from './ui/Tooltip';
+import { closeAllModals } from './core/modal-tracker';
 import { BackupService } from './services/BackupService';
 import { PopoutPositionTracker } from './services/PopoutPositionTracker';
 
@@ -112,15 +114,16 @@ export default class VaultDashboardPlugin extends Plugin {
 		this.addSettingTab(new SettingsTab(this.app, this));
 
 		this.timerEngine.onStateChangeCallback(() => {
-			const remaining = this.timerEngine.getRemaining();
-			if (remaining < 0 && this.hasGoneNegative === false) {
+			this.scheduleSave();
+		});
+		this.eventBus.on<TimerTickPayload>(TimerEvents.Tick, (payload) => {
+			if (payload.isNegative && this.hasGoneNegative === false) {
 				this.hasGoneNegative = true;
 				this.audioService.playWarning();
 			}
-			if (remaining >= 0) {
+			if (payload.isNegative === false) {
 				this.hasGoneNegative = false;
 			}
-			this.scheduleSave();
 		});
 		this.taskManager.onChange(() => {
 			this.data.tasks = this.taskManager.toJSON();
@@ -227,6 +230,7 @@ export default class VaultDashboardPlugin extends Plugin {
 			callback: () => {
 				const state = this.timerEngine.getState();
 				if (state.isRunning === false || state.currentTaskId === null) return;
+				if (isGhostTaskId(state.currentTaskId)) return;
 				this.eventBus.emit<TaskSkipPayload>(TaskEvents.Skip, { taskId: state.currentTaskId });
 			},
 		});
@@ -318,6 +322,7 @@ export default class VaultDashboardPlugin extends Plugin {
 
 	/** Tears down services, saves data, clears intervals, and detaches welcome views. */
 	async onunload(): Promise<void> {
+		closeAllModals();
 		this.miniTimerTracker.release();
 		this.aiDispatcher.killAll();
 		this.timerEngine.destroy();
@@ -377,7 +382,8 @@ export default class VaultDashboardPlugin extends Plugin {
 
 		if (popout) {
 			this.miniTimerTracker.restore(popout);
-			popout.setAlwaysOnTop(true, 'floating');
+			popout.setAlwaysOnTop(true, 'screen-saver');
+			popout.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 			popout.setOpacity(1);
 			this.miniTimerTracker.track(popout);
 		}
@@ -518,6 +524,7 @@ export default class VaultDashboardPlugin extends Plugin {
 				mergedSettings.autoPinTab = saved.settings.autoPinTab;
 			}
 			if (saved.settings?.tagColors) mergedSettings.tagColors = saved.settings.tagColors;
+			if (saved.settings?.customTags) mergedSettings.customTags = saved.settings.customTags;
 			if (saved.settings?.templates) mergedSettings.templates = saved.settings.templates;
 			if (saved.settings?.audioEnabled !== undefined) mergedSettings.audioEnabled = saved.settings.audioEnabled;
 			if (saved.settings?.audioOnComplete !== undefined) mergedSettings.audioOnComplete = saved.settings.audioOnComplete;

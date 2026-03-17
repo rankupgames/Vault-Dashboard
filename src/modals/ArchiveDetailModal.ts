@@ -8,6 +8,7 @@
  */
 
 import { App, Modal, setIcon } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 import { Task, PluginSettings } from '../core/types';
 import { ConfirmModal } from './ConfirmModal';
 import { renderTagPills } from '../ui/Tooltip';
@@ -36,6 +37,7 @@ export class ArchiveDetailModal extends Modal {
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('vw-archive-detail-modal');
@@ -100,6 +102,7 @@ export class ArchiveDetailModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		this.contentEl.empty();
 	}
 }

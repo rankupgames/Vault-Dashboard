@@ -132,11 +132,27 @@
 	border: 2px solid var(--interactive-accent);
 	background: var(--interactive-accent);
 	animation: vw-pulse 1.5s infinite;
+	will-change: box-shadow;
 }
 
 .vw-board-task-dot-completed {
-	border: 2px solid var(--text-faint);
-	background: var(--text-faint);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-faint);
+}
+
+.vw-board-task-dot-completed svg {
+	width: 10px;
+	height: 10px;
+}
+
+.vw-board-task-completed .vw-board-task-title {
+	color: var(--text-faint);
+}
+
+.vw-board-task-completed .vw-board-task-meta {
+	opacity: 0.5;
 }
 
 .vw-board-task-info {

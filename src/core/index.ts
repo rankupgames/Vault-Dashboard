@@ -16,6 +16,11 @@ export { UndoManager } from './UndoManager';
 export { AudioService } from './AudioService';
 export { TaskFormatter } from './TaskFormatter';
 export { generateHeatmapShades, generateBranchShades } from './ColorUtils';
+export { GHOST_PREFIX, isGhostTaskId, createGhostTaskId } from './ghost-task';
+export { registerModal, unregisterModal, closeAllModals } from './modal-tracker';
+export type { GhostTaskInfo } from './ghost-task';
+export { getTimerControlState } from './timer-controls';
+export type { TimerControlState } from './timer-controls';
 export type {
 	SubTask,
 	Task,

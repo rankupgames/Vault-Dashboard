@@ -286,7 +286,7 @@
 	content: '';
 	position: absolute;
 	top: -50%;
-	left: -100%;
+	left: 0;
 	width: 60%;
 	height: 200%;
 	background: linear-gradient(
@@ -297,10 +297,11 @@
 	);
 	animation: vw-streak-shine 2.4s ease-in-out infinite;
 	pointer-events: none;
+	will-change: transform;
 }
 
 @keyframes vw-streak-shine {
-	0% { left: -100%; }
-	40% { left: 160%; }
-	100% { left: 160%; }
+	0% { transform: translateX(-166%); }
+	40% { transform: translateX(266%); }
+	100% { transform: translateX(266%); }
 }

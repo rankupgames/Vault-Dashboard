@@ -8,6 +8,7 @@
  */
 
 import { App, FuzzySuggestModal, TFile } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 
 /** Fuzzy file picker modal for linking vault documents or selecting files by extension. */
 export class FileSuggestModal extends FuzzySuggestModal<TFile> {
@@ -24,6 +25,18 @@ export class FileSuggestModal extends FuzzySuggestModal<TFile> {
 		this.onChoose = onChoose;
 		this.extensions = extensions;
 		this.setPlaceholder(extensions ? 'Search for a file...' : 'Search for a document to link...');
+	}
+
+	/** @override */
+	onOpen(): void {
+		super.onOpen();
+		registerModal(this);
+	}
+
+	/** @override */
+	onClose(): void {
+		unregisterModal(this);
+		super.onClose();
 	}
 
 	/** @override */

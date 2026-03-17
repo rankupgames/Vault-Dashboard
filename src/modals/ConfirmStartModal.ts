@@ -8,6 +8,7 @@
  */
 
 import { App, Modal } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 
 /** User choice when starting a task while another is active. */
 export type ConfirmStartChoice = 'start-now' | 'queue-next' | 'cancel';
@@ -33,6 +34,7 @@ export class ConfirmStartModal extends Modal {
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('vw-confirm-start-modal');
@@ -68,6 +70,7 @@ export class ConfirmStartModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		this.contentEl.empty();
 	}
 }

@@ -79,6 +79,7 @@
 	border-color: var(--interactive-accent);
 	box-shadow: 0 0 8px var(--interactive-accent);
 	animation: vw-pulse 2s ease-in-out infinite;
+	will-change: box-shadow;
 }
 
 @keyframes vw-pulse {

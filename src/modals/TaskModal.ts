@@ -8,6 +8,7 @@
  */
 
 import { App, Modal, Notice, Platform, setIcon, TFile, normalizePath } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 import { Task, SubTask, PluginSettings, IMAGE_EXTENSIONS, isImageExtension } from '../core/types';
 import { attachOverflowTooltip } from '../ui/Tooltip';
 import { DropZone } from '../ui/DropZone';
@@ -80,6 +81,7 @@ export class TaskModal extends Modal {
 	private wdPathEl: HTMLElement | null = null;
 	private durGetter: (() => number) | null = null;
 	private tmplCloseHandler: ((e: MouseEvent) => void) | null = null;
+	private catCloseHandler: ((e: MouseEvent) => void) | null = null;
 	private onArchive: (() => void) | null = null;
 
 	/**
@@ -90,12 +92,15 @@ export class TaskModal extends Modal {
 	 * @param knownTags - Known tags for suggestion dropdown
 	 * @param taskManager - Optional task manager for AI features
 	 * @param aiDispatcher - Optional AI dispatcher for context gathering
+	 * @param onArchive - Optional callback when task is archived from edit mode
+	 * @param defaultCategoryId - Category to pre-select in add mode (ignored in edit mode)
 	 */
-	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = [], taskManager: TaskManager | null = null, aiDispatcher: IAIDispatcher | null = null, onArchive: (() => void) | null = null) {
+	constructor(app: App, task: Task | null, settings: PluginSettings, onSave: (result: TaskModalResult) => void, knownTags: string[] = [], taskManager: TaskManager | null = null, aiDispatcher: IAIDispatcher | null = null, onArchive: (() => void) | null = null, defaultCategoryId?: string) {
 		super(app);
 		this.task = task;
 		this.settings = settings;
-		this.knownTags = knownTags;
+		const custom = settings.customTags ?? [];
+		this.knownTags = Array.from(new Set([...knownTags, ...custom])).sort();
 		this.onSave = onSave;
 		this.onArchive = onArchive;
 
@@ -112,13 +117,18 @@ export class TaskModal extends Modal {
 			this.pendingImages = [...task.images];
 		}
 		this.pendingWorkingDir = task?.workingDirectory ?? '';
-		this.pendingCategoryId = task?.categoryId;
+		if (task) {
+			this.pendingCategoryId = task.categoryId;
+		} else if (defaultCategoryId && settings.taskCategories.some((c) => c.id === defaultCategoryId)) {
+			this.pendingCategoryId = defaultCategoryId;
+		}
 		this.taskManager = taskManager;
 		this.aiDispatcher = aiDispatcher;
 	}
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.addClass('vw-task-edit-modal');
 		this.modalEl.querySelector('.modal-close-button')?.remove();
@@ -214,13 +224,32 @@ export class TaskModal extends Modal {
 		buildStepper(minsDisplay, 'm', (d) => stepMins(d * 5));
 		updateDurDisplay();
 
-		form.createDiv({ cls: 'vw-edit-label', text: 'Tags' });
+		const tagHeaderRow = form.createDiv({ cls: 'vw-tag-header-row' });
+		tagHeaderRow.createSpan({ cls: 'vw-edit-label', text: 'Tags' });
+		const tagAddIcon = tagHeaderRow.createSpan({ cls: 'vw-tag-add-icon' });
+		setIcon(tagAddIcon, 'search');
+		const tagInput = tagHeaderRow.createEl('input', {
+			cls: 'vw-tag-inline-input vw-hidden',
+			attr: { type: 'text', placeholder: 'Find Tag (or press enter to add)' },
+		});
+
+		const showTagInput = (): void => {
+			tagAddIcon.classList.add('vw-hidden');
+			tagInput.classList.remove('vw-hidden');
+			tagInput.focus();
+		};
+
+		const hideTagInput = (): void => {
+			tagInput.classList.add('vw-hidden');
+			tagInput.value = '';
+			tagAddIcon.classList.remove('vw-hidden');
+			this.refreshTagSuggestions('');
+		};
+
+		tagAddIcon.addEventListener('click', showTagInput);
+		tagInput.addEventListener('blur', hideTagInput);
 
 		const tagInputWrap = form.createDiv({ cls: 'vw-tag-input-wrap' });
-		const tagInput = tagInputWrap.createEl('input', {
-			cls: 'vw-modal-subtask-input',
-			attr: { type: 'text', placeholder: 'Add tag (Enter to add)' },
-		});
 
 		this.tagSuggestEl = tagInputWrap.createDiv({ cls: 'vw-tag-suggest' });
 
@@ -245,20 +274,6 @@ export class TaskModal extends Modal {
 		});
 
 		this.refreshTagSuggestions('');
-
-		if (this.settings.taskCategories.length > 0) {
-			form.createDiv({ cls: 'vw-edit-label', text: 'Category' });
-			const catSelect = form.createEl('select', { cls: 'vw-edit-input' });
-			const noneOpt = catSelect.createEl('option', { text: 'None', attr: { value: '' } });
-			if (this.pendingCategoryId === undefined) noneOpt.selected = true;
-			for (const cat of this.settings.taskCategories) {
-				const opt = catSelect.createEl('option', { text: cat.name, attr: { value: cat.id } });
-				if (this.pendingCategoryId === cat.id) opt.selected = true;
-			}
-			catSelect.addEventListener('change', () => {
-				this.pendingCategoryId = catSelect.value || undefined;
-			});
-		}
 
 		const attachSection = form.createDiv({ cls: 'vw-modal-docs-section' });
 		attachSection.createDiv({ cls: 'vw-edit-label', text: 'Attachments' });
@@ -415,6 +430,70 @@ export class TaskModal extends Modal {
 				}
 			};
 			document.addEventListener('click', this.tmplCloseHandler);
+		}
+
+		if (this.settings.taskCategories.length > 0) {
+			const catWrap = actionsLeft.createDiv({ cls: 'vw-cat-wrap' });
+			const catBtn = catWrap.createEl('button', {
+				cls: 'vw-icon-btn vw-cat-trigger',
+				attr: { 'aria-label': 'Select category', tabindex: '0' },
+			});
+			const catBtnIcon = catBtn.createSpan({ cls: 'vw-btn-icon' });
+			setIcon(catBtnIcon, 'layout-grid');
+			const catLabel = catBtn.createSpan({ cls: 'vw-cat-label' });
+
+			const catDropdown = catWrap.createDiv({ cls: 'vw-cat-dropdown' });
+
+			const updateCatLabel = (): void => {
+				const active = this.settings.taskCategories.find((c) => c.id === this.pendingCategoryId);
+				catLabel.setText(active?.name ?? 'None');
+			};
+
+			const buildCatOptions = (): void => {
+				catDropdown.empty();
+				const noneOpt = catDropdown.createDiv({
+					cls: `vw-cat-option${this.pendingCategoryId === undefined ? ' vw-cat-option-active' : ''}`,
+				});
+				noneOpt.createSpan({ text: 'None' });
+				noneOpt.addEventListener('click', () => {
+					this.pendingCategoryId = undefined;
+					updateCatLabel();
+					catDropdown.classList.remove('vw-cat-dropdown-open');
+				});
+				for (const cat of this.settings.taskCategories) {
+					const isActive = this.pendingCategoryId === cat.id;
+					const opt = catDropdown.createDiv({
+						cls: `vw-cat-option${isActive ? ' vw-cat-option-active' : ''}`,
+					});
+					if (cat.color) {
+						const dot = opt.createSpan({ cls: 'vw-cat-option-dot' });
+						dot.style.backgroundColor = cat.color;
+					}
+					opt.createSpan({ text: cat.name });
+					opt.addEventListener('click', () => {
+						this.pendingCategoryId = cat.id;
+						updateCatLabel();
+						catDropdown.classList.remove('vw-cat-dropdown-open');
+					});
+				}
+			};
+
+			updateCatLabel();
+			buildCatOptions();
+
+			catBtn.addEventListener('click', (e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				if (catDropdown.classList.contains('vw-cat-dropdown-open') === false) buildCatOptions();
+				catDropdown.classList.toggle('vw-cat-dropdown-open');
+			});
+
+			this.catCloseHandler = (e: MouseEvent) => {
+				if (catWrap.contains(e.target as Node) === false) {
+					catDropdown.classList.remove('vw-cat-dropdown-open');
+				}
+			};
+			document.addEventListener('click', this.catCloseHandler);
 		}
 
 		if (isAIEnabled(this.settings) && this.taskManager) {
@@ -591,9 +670,14 @@ export class TaskModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		if (this.tmplCloseHandler) {
 			document.removeEventListener('click', this.tmplCloseHandler);
 			this.tmplCloseHandler = null;
+		}
+		if (this.catCloseHandler) {
+			document.removeEventListener('click', this.catCloseHandler);
+			this.catCloseHandler = null;
 		}
 		for (const dz of this.dropZones) dz.destroy();
 		this.dropZones = [];
@@ -625,11 +709,6 @@ export class TaskModal extends Modal {
 			});
 
 			chip.createSpan({ text: tag });
-
-			if (selected) {
-				const xIcon = chip.createSpan({ cls: 'vw-tag-chip-x' });
-				setIcon(xIcon, 'x');
-			}
 
 			const color = this.settings.tagColors[tag];
 			if (selected && color) {
@@ -677,8 +756,10 @@ export class TaskModal extends Modal {
 				: 'vw-git-sub-dot';
 			const dot = row.createDiv({ cls: subDotCls });
 			dot.style.cursor = 'pointer';
-			dot.addEventListener('click', () => {
+			dot.addEventListener('click', (e) => {
+				e.stopPropagation();
 				sub.status = sub.status === 'completed' ? 'pending' : 'completed';
+				this.cascadeSubtaskStatus(sub.subtasks, sub.status);
 				this.refreshSubtaskList();
 			});
 
@@ -1029,6 +1110,15 @@ export class TaskModal extends Modal {
 			return null;
 		});
 		return file ? path : null;
+	}
+
+	/** Recursively sets all descendants to the given status. */
+	private cascadeSubtaskStatus(subs: SubTask[] | undefined, status: SubTask['status']): void {
+		if (subs === undefined) return;
+		for (const s of subs) {
+			s.status = status;
+			this.cascadeSubtaskStatus(s.subtasks, status);
+		}
 	}
 
 	/**

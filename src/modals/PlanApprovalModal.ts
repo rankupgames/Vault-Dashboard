@@ -8,6 +8,7 @@
  */
 
 import { App, Component, MarkdownRenderer, Modal } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 import type { DispatchRecord } from '../services/AIDispatcher';
 
 /** Modal that renders an AI plan and lets the user approve or reject it. */
@@ -35,6 +36,7 @@ export class PlanApprovalModal extends Modal {
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('vw-plan-modal');
@@ -73,6 +75,7 @@ export class PlanApprovalModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		this.renderComponent.unload();
 		this.contentEl.empty();
 	}

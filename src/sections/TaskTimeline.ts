@@ -22,6 +22,7 @@ import { isAIEnabled, gatherContext, composePrompt, parseJsonArray, type IAIDisp
 import { attachOverflowTooltip, renderTagPills } from '../ui/Tooltip';
 import { TaskFormatter } from '../core/TaskFormatter';
 import { DropZone } from '../ui/DropZone';
+import { setupDragHold } from '../ui/setupDragHold';
 import { TaskParser } from '../services/TaskParser';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
@@ -29,6 +30,8 @@ import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer
 export interface TimelineViewState {
 	/** Task IDs whose subtask branches are collapsed. */
 	collapsedTaskIds: Set<string>;
+	/** Completed/skipped task IDs the user manually expanded. */
+	expandedDoneTaskIds: Set<string>;
 	/** Whether all expandable tasks are collapsed. */
 	allCollapsed: boolean;
 	/** Whether the archive section is visible. */
@@ -44,6 +47,7 @@ export interface TimelineViewState {
 export function createTimelineViewState(): TimelineViewState {
 	return {
 		collapsedTaskIds: new Set<string>(),
+		expandedDoneTaskIds: new Set<string>(),
 		allCollapsed: false,
 		showArchive: false,
 		activeTagFilters: [],
@@ -127,8 +131,13 @@ export class TaskTimeline implements SectionRenderer {
 			toggleBtn.addEventListener('click', () => {
 				if (this.vs.allCollapsed) {
 					this.vs.collapsedTaskIds.clear();
+					for (const t of tasks) {
+						const done = t.status === 'completed' || t.status === 'skipped';
+						if (done && t.subtasks && t.subtasks.length > 0) this.vs.expandedDoneTaskIds.add(t.id);
+					}
 					this.vs.allCollapsed = false;
 				} else {
+					this.vs.expandedDoneTaskIds.clear();
 					for (const t of tasks) {
 						if (t.subtasks && t.subtasks.length > 0) this.vs.collapsedTaskIds.add(t.id);
 					}
@@ -153,6 +162,7 @@ export class TaskTimeline implements SectionRenderer {
 		setIcon(addBtn, 'plus');
 		addBtn.createSpan({ text: ' Add Task' });
 		addBtn.addEventListener('click', () => {
+			const contextCat = this.deps.categoryFilter ?? undefined;
 			new TaskModal(this.deps.app, null, this.deps.settings, (result) => {
 				const newTask = this.deps.taskManager.addTask(result.title, result.durationMinutes, result.tags);
 				if (result.subtasks) {
@@ -166,12 +176,9 @@ export class TaskTimeline implements SectionRenderer {
 						workingDirectory: result.workingDirectory,
 					});
 				}
-				const catId = result.categoryId !== undefined ? result.categoryId : this.deps.categoryFilter;
-				if (catId) {
-					this.deps.taskManager.assignTaskCategory(newTask.id, catId);
-				}
+				this.deps.taskManager.assignTaskCategory(newTask.id, result.categoryId ?? this.deps.categoryFilter ?? 'default-general');
 				this.deps.onRenderAll();
-			}, allTags, this.deps.taskManager, this.deps.aiDispatcher).open();
+			}, allTags, this.deps.taskManager, this.deps.aiDispatcher, null, contextCat).open();
 		});
 
 		const headerActions = header.createDiv({ cls: 'vw-tasks-header-actions' });
@@ -226,11 +233,13 @@ export class TaskTimeline implements SectionRenderer {
 		importBtn.setAttribute('tabindex', '0');
 		importBtn.addEventListener('click', () => {
 			new ImportModal(this.deps.app, (results) => {
+				const importCat = this.deps.categoryFilter ?? 'default-general';
 				for (const r of results) {
 					const task = this.deps.taskManager.addTask(r.title, r.durationMinutes);
 					if (r.subtasks) {
 						this.deps.taskManager.replaceSubtasks(task.id, r.subtasks);
 					}
+					this.deps.taskManager.assignTaskCategory(task.id, importCat);
 				}
 				this.deps.onRenderAll();
 			}).open();
@@ -286,6 +295,7 @@ export class TaskTimeline implements SectionRenderer {
 			accept: { text: true },
 			callbacks: {
 				onText: async (text) => {
+					const dropCat = this.deps.categoryFilter ?? 'default-general';
 					const lines = text.split('\n');
 					const parsed = TaskParser.parseLines(lines);
 					if (parsed.length > 0) {
@@ -294,10 +304,14 @@ export class TaskTimeline implements SectionRenderer {
 							if (item.subtasks.length > 0) {
 								this.deps.taskManager.replaceSubtasks(task.id, item.subtasks);
 							}
+							this.deps.taskManager.assignTaskCategory(task.id, dropCat);
 						}
 					} else {
 						const title = text.trim();
-						if (title !== '') this.deps.taskManager.addTask(title, 30);
+						if (title !== '') {
+							const task = this.deps.taskManager.addTask(title, 30);
+							this.deps.taskManager.assignTaskCategory(task.id, dropCat);
+						}
 					}
 					this.deps.saveCallback();
 					this.deps.onRenderAll();
@@ -450,7 +464,9 @@ export class TaskTimeline implements SectionRenderer {
 			const node = tree.createDiv({ cls: 'vw-git-node' });
 			const hasSubtasks = task.subtasks && task.subtasks.length > 0;
 			const isDone = task.status === 'completed' || task.status === 'skipped';
-			const isCollapsed = isDone || this.vs.collapsedTaskIds.has(task.id);
+			const isCollapsed = isDone
+				? this.vs.expandedDoneTaskIds.has(task.id) === false
+				: this.vs.collapsedTaskIds.has(task.id);
 
 			const leftControls = node.createDiv({ cls: 'vw-task-left-controls' });
 
@@ -552,18 +568,24 @@ export class TaskTimeline implements SectionRenderer {
 
 			if (hasSubtasks) {
 				setIcon(leftControls, isCollapsed ? 'chevron-right' : 'chevron-down');
-				if (isDone === false) {
-					leftControls.addEventListener('click', (e) => {
-						e.stopPropagation();
+				leftControls.addEventListener('click', (e) => {
+					e.stopPropagation();
+					if (isDone) {
+						if (this.vs.expandedDoneTaskIds.has(task.id)) {
+							this.vs.expandedDoneTaskIds.delete(task.id);
+						} else {
+							this.vs.expandedDoneTaskIds.add(task.id);
+						}
+					} else {
 						if (this.vs.collapsedTaskIds.has(task.id)) {
 							this.vs.collapsedTaskIds.delete(task.id);
 						} else {
 							this.vs.collapsedTaskIds.add(task.id);
 						}
-						this.vs.allCollapsed = false;
-						this.deps.onRenderAll();
-					});
-				}
+					}
+					this.vs.allCollapsed = false;
+					this.deps.onRenderAll();
+				});
 
 				if (isCollapsed === false) {
 					this.subtaskTree.renderBranch(content, task.subtasks!, 1);
@@ -574,27 +596,27 @@ export class TaskTimeline implements SectionRenderer {
 
 	/** Wires drag-start, drag-over, and drop handlers for task reordering. */
 	private setupTaskDrag(node: HTMLElement, handle: HTMLElement, taskId: string, tree: HTMLElement): void {
-		handle.addEventListener('mousedown', (e: MouseEvent) => {
-			const target = e.target as HTMLElement;
-			if (target.closest('.vw-task-actions') || target.closest('.vw-task-docs-badge')) return;
-			node.setAttribute('draggable', 'true');
-		});
-
-		node.addEventListener('dragstart', (e: DragEvent) => {
-			if (node.getAttribute('draggable') !== 'true') { e.preventDefault(); return; }
-			this.draggedTaskId = taskId;
-			node.addClass('vw-dragging');
-			e.dataTransfer?.setData('text/plain', taskId);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-		});
-
-		node.addEventListener('dragend', () => {
-			this.draggedTaskId = null;
-			node.removeClass('vw-dragging');
-			node.removeAttribute('draggable');
-			tree.querySelectorAll('.vw-drag-above, .vw-drag-below').forEach((el) => {
-				el.classList.remove('vw-drag-above', 'vw-drag-below');
-			});
+		setupDragHold({
+			grip: handle,
+			draggable: node,
+			shouldStart: (e) => {
+				const target = e.target as HTMLElement;
+				if (target.closest('.vw-task-actions') || target.closest('.vw-task-docs-badge')) return false;
+				return true;
+			},
+			onDragStart: (e) => {
+				this.draggedTaskId = taskId;
+				node.addClass('vw-dragging');
+				e.dataTransfer?.setData('text/plain', taskId);
+				if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+			},
+			onDragEnd: () => {
+				this.draggedTaskId = null;
+				node.removeClass('vw-dragging');
+				tree.querySelectorAll('.vw-drag-above, .vw-drag-below').forEach((el) => {
+					el.classList.remove('vw-drag-above', 'vw-drag-below');
+				});
+			},
 		});
 
 		node.addEventListener('dragover', (e: DragEvent) => {

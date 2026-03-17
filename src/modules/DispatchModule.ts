@@ -98,13 +98,20 @@ export class DispatchModule implements ModuleRenderer {
 		this.bodyEl = null;
 	}
 
-	/** Starts a 1-second interval that refreshes elapsed time badges for running dispatches. */
+	/** Starts a 1-second interval that refreshes elapsed time badges while dispatches are active. */
 	private startElapsedTimer(): void {
 		if (this.timerHandle) clearInterval(this.timerHandle);
+		const dispatches = this.provider.getDispatches();
+		if (dispatches.some((d) => d.status === 'running' || d.status === 'plan-pending') === false) return;
+
 		this.timerHandle = setInterval(() => {
 			if (this.bodyEl === null) return;
-			const dispatches = this.provider.getDispatches();
-			if (dispatches.some((d) => d.status === 'running' || d.status === 'plan-pending') === false) return;
+			const current = this.provider.getDispatches();
+			if (current.some((d) => d.status === 'running' || d.status === 'plan-pending') === false) {
+				clearInterval(this.timerHandle!);
+				this.timerHandle = null;
+				return;
+			}
 			this.bodyEl.querySelectorAll('.vw-dispatch-elapsed').forEach((el) => {
 				const start = Number(el.getAttribute('data-start'));
 				if (start) el.textContent = this.formatElapsed(Date.now() - start);

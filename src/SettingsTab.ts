@@ -7,7 +7,7 @@
  * Last Modified: 2026-03-10
  */
 
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, PluginSettingTab, setIcon, Setting } from 'obsidian';
 import type VaultDashboardPlugin from './main';
 import { DEFAULT_SETTINGS } from './core/types';
 import { AnalyticsExporter } from './services/AnalyticsExporter';
@@ -35,6 +35,7 @@ export class SettingsTab extends PluginSettingTab {
 		this.renderAudioSection(containerEl);
 		this.renderAISection(containerEl);
 		this.renderTaskSection(containerEl);
+		this.renderTagsSection(containerEl);
 		this.renderTaskTreeSection(containerEl);
 		this.renderHeatmapSection(containerEl);
 		this.renderReportsSection(containerEl);
@@ -378,6 +379,73 @@ export class SettingsTab extends PluginSettingTab {
 						await this.save();
 					}),
 			);
+	}
+
+	/** Renders tag management section: input bar at top, pills in a wrapped row below. */
+	private renderTagsSection(el: HTMLElement): void {
+		el.createEl('h2', { text: 'Tags' });
+
+		const settings = this.plugin.data.settings;
+		const taskTags = this.plugin.taskManager.getAllTags();
+		const allTags = Array.from(new Set([...settings.customTags, ...taskTags])).sort();
+
+		const inputRow = el.createDiv({ cls: 'vw-settings-tag-input-row' });
+		const tagInput = inputRow.createEl('input', {
+			cls: 'vw-settings-tag-input',
+			attr: { type: 'text', placeholder: 'Add new tag (Enter to add)' },
+		});
+
+		tagInput.addEventListener('keydown', async (e: KeyboardEvent) => {
+			if (e.key !== 'Enter') return;
+			e.preventDefault();
+			const val = tagInput.value.trim().toLowerCase();
+			if (val === '' || allTags.includes(val)) return;
+			settings.customTags.push(val);
+			await this.save();
+			this.display();
+		});
+
+		const pillWrap = el.createDiv({ cls: 'vw-settings-tag-pills' });
+
+		for (const tag of allTags) {
+			const color = settings.tagColors[tag];
+			const pill = pillWrap.createDiv({ cls: 'vw-settings-tag-pill' });
+			if (color) {
+				pill.style.borderColor = color;
+			}
+
+			const dot = pill.createSpan({ cls: 'vw-settings-tag-dot' });
+			dot.style.backgroundColor = color ?? '#888888';
+
+			const hiddenPicker = pill.createEl('input', {
+				cls: 'vw-settings-color-hidden',
+				attr: { type: 'color', value: color ?? '#888888' },
+			});
+			dot.addEventListener('click', (e) => {
+				e.stopPropagation();
+				hiddenPicker.click();
+			});
+			hiddenPicker.addEventListener('input', async () => {
+				const newColor = hiddenPicker.value;
+				settings.tagColors[tag] = newColor;
+				dot.style.backgroundColor = newColor;
+				pill.style.borderColor = newColor;
+				await this.save();
+			});
+
+			pill.createSpan({ cls: 'vw-settings-tag-name', text: tag });
+
+			const xBtn = pill.createSpan({ cls: 'vw-settings-tag-x' });
+			setIcon(xBtn, 'x');
+			xBtn.addEventListener('click', async (e) => {
+				e.stopPropagation();
+				settings.customTags = settings.customTags.filter((t) => t !== tag);
+				delete settings.tagColors[tag];
+				this.plugin.taskManager.removeTagGlobally(tag);
+				await this.save();
+				this.display();
+			});
+		}
 	}
 
 	/** Renders heatmap settings: daily notes folder, tag filter, and base color picker. */

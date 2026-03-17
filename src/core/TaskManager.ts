@@ -193,7 +193,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
-	/** Marks a task as completed and computes actual duration. */
+	/** Marks a task as completed, computes actual duration, and cascades completion to all subtasks. */
 	completeTask(id: string, actualEndTime?: number): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
@@ -211,7 +211,7 @@ export class TaskManager {
 		this.emitChange();
 	}
 
-	/** Reverts a completed or skipped task to pending. */
+	/** Reverts a completed or skipped task to pending and resets all subtasks. */
 	uncompleteTask(id: string): void {
 		const task = this.getTask(id);
 		if (task === undefined) return;
@@ -414,6 +414,18 @@ export class TaskManager {
 	/** Returns tasks that have the given tag. */
 	getTaggedTasks(tag: string): Task[] {
 		return this.getTasks().filter((t) => t.tags?.includes(tag));
+	}
+
+	/** Strips a tag from every active and archived task. */
+	removeTagGlobally(tag: string): void {
+		this.pushUndo();
+		for (const task of this.tasks) {
+			if (task.tags) task.tags = task.tags.filter((t) => t !== tag);
+		}
+		for (const task of this.archivedTasks) {
+			if (task.tags) task.tags = task.tags.filter((t) => t !== tag);
+		}
+		this.emitChange();
 	}
 
 	/** Returns all unique tags from active and archived tasks. */

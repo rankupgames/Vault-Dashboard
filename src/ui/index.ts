@@ -5,3 +5,5 @@ export { createTimerRing } from './TimerRing';
 export type { TimerRingConfig, TimerRingHandle } from './TimerRing';
 export { TagPills } from './TagPills';
 export type { TagPillsConfig } from './TagPills';
+export { setupDragHold } from './setupDragHold';
+export type { DragHoldOpts } from './setupDragHold';

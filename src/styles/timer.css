@@ -216,3 +216,41 @@
 	background: var(--background-modifier-hover);
 }
 
+.vw-timer-ghost-btn {
+	color: var(--text-muted);
+}
+
+.vw-timer-ghost-btn:hover {
+	color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.vw-timer-ctrl-disabled {
+	opacity: 0.3;
+	pointer-events: none;
+}
+
+.modal:has(> .modal-content > .vw-ghost-modal) {
+	max-width: 360px;
+	height: auto;
+	max-height: none;
+}
+
+.vw-ghost-title {
+	margin: 0 0 8px;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.vw-ghost-modal .vw-edit-form {
+	gap: 2px;
+}
+
+.vw-ghost-modal .vw-edit-label {
+	margin-top: 6px;
+}
+
+.vw-ghost-modal .vw-edit-label:first-child {
+	margin-top: 0;
+}
+

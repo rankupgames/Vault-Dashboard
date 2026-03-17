@@ -8,6 +8,7 @@
  */
 
 import { App, Modal, setIcon } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 
 interface FeatureItem {
 	icon: string;
@@ -73,6 +74,7 @@ export class WelcomeModal extends Modal {
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('vw-welcome-modal');
@@ -101,6 +103,7 @@ export class WelcomeModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		this.contentEl.empty();
 		this.onDismiss();
 	}

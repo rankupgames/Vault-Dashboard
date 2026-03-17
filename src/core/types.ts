@@ -117,6 +117,8 @@ export interface TimerState {
 	pomodoroCount: number;
 	/** Whether currently on a pomodoro break. */
 	isBreak: boolean;
+	/** Display name for the active ghost task, or null when running a real task. */
+	ghostTaskName: string | null;
 }
 
 /** A report source with folder path and filename pattern. */
@@ -231,6 +233,8 @@ export interface PluginSettings {
 	terminalApp: 'ghostty' | 'terminal';
 	/** IDE to open the workspace in after a dispatch completes. */
 	postDispatchIDE: 'cursor' | 'vscode' | 'none';
+	/** User-defined tags that persist regardless of task usage. */
+	customTags: string[];
 	/** Allow filtering by multiple tags. */
 	enableMultiTagFilter: boolean;
 	/** Allow image attachments on tasks. */
@@ -308,6 +312,7 @@ export const DEFAULT_TIMER_STATE: TimerState = {
 	pausedRemaining: null,
 	pomodoroCount: 0,
 	isBreak: false,
+	ghostTaskName: null,
 };
 
 /** Default plugin settings. */
@@ -357,6 +362,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	aiSkipPermissions: false,
 	terminalApp: 'ghostty',
 	postDispatchIDE: 'cursor',
+	customTags: [],
 	enableMultiTagFilter: true,
 	enableImageAttachments: true,
 	showConfirmDialogs: true,

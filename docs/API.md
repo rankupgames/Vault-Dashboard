@@ -126,10 +126,10 @@ unsub();
 
 | Event | Payload | Description |
 |-------|---------|-------------|
-| `timer:tick` | `{ remaining: number, isNegative: boolean }` | Fires every 250ms while the timer runs |
+| `timer:tick` | `{ remaining: number, isNegative: boolean }` | Fires every 250ms while the timer runs (display-only) |
 | `timer:complete` | `{ taskId: string, rollover: number }` | Timer finished or task completed |
 | `timer:break-complete` | `{ isLongBreak: boolean }` | Pomodoro break ended |
-| `timer:state-change` | `{ state: TimerState }` | Any timer state mutation |
+| `timer:state-change` | `{ state: TimerState }` | Timer state transition (start/stop/pause/resume -- not on every tick) |
 | `task:start` | `{ task: Task }` | Request to start a task |
 | `task:skip` | `{ taskId: string }` | Request to skip the active task |
 | `task:complete` | `{ taskId: string }` | Task marked complete |
@@ -186,17 +186,11 @@ interface SubTask {
 
 ```typescript
 interface TaskCategory {
-  /** Unique identifier. */
   id: string;
-  /** Display name. */
   name: string;
-  /** Sort order. */
   order: number;
-  /** Optional hex color for the category column accent. */
   color?: string;
-  /** When true, this category cannot be deleted by the user. */
   isDefault?: boolean;
-  /** When true, tasks in this category are cleared on day change. */
   dailyReset?: boolean;
 }
 ```
@@ -227,6 +221,8 @@ interface TimerState {
   pausedRemaining: number | null;
   pomodoroCount: number;
   isBreak: boolean;
+  /** Display name for the active ghost task, or null when running a real task. */
+  ghostTaskName: string | null;
 }
 ```
 
@@ -295,6 +291,8 @@ interface PluginData {
   timerState: TimerState;
   lastDashboardOpenedAt: number;
   dispatchHistory: DispatchHistoryEntry[];
+  /** Last known screen position of the mini timer popout. */
+  miniTimerPosition: { x: number; y: number } | null;
 }
 ```
 

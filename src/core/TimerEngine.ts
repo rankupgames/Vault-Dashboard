@@ -31,6 +31,7 @@ export class TimerEngine {
 	private snapIntervalMs: number;
 	private settings: PluginSettings;
 	private bus: EventBus;
+	private boundVisibilityHandler: (() => void) | null = null;
 
 	/** Initializes the timer engine with saved state, settings, and optional event bus. */
 	constructor(state: TimerState, settings: PluginSettings, bus?: EventBus) {
@@ -38,6 +39,21 @@ export class TimerEngine {
 		this.settings = settings;
 		this.snapIntervalMs = settings.snapIntervalMinutes * 60 * 1000;
 		this.bus = bus ?? new EventBus();
+
+		this.boundVisibilityHandler = () => this.handleVisibilityChange();
+		document.addEventListener('visibilitychange', this.boundVisibilityHandler);
+	}
+
+	/** Fires an immediate tick when the main window becomes visible to recover from throttling. */
+	private handleVisibilityChange(): void {
+		if (document.visibilityState !== 'visible') return;
+		if (this.state.isRunning === false || this.state.isPaused) return;
+
+		const remaining = this.getRemaining();
+		const isNeg = remaining < 0;
+		if (this.onTick) this.onTick(remaining, isNeg);
+		this.bus.emit<TimerTickPayload>(TimerEvents.Tick, { remaining, isNegative: isNeg });
+		this.emitStateChange();
 	}
 
 	/** Returns the EventBus used for timer events. */
@@ -65,6 +81,11 @@ export class TimerEngine {
 	addRollover(minutes: number): void {
 		this.state.rolloverBalance += minutes;
 		this.emitStateChange();
+	}
+
+	/** Sets the display name for the active ghost task on the internal state. */
+	setGhostTaskName(name: string | null): void {
+		this.state.ghostTaskName = name;
 	}
 
 	/** Sets the snap interval for clock-aligned boundaries (minutes). */
@@ -287,6 +308,19 @@ export class TimerEngine {
 		}
 	}
 
+	/** Resets the timer to its original duration and pauses immediately. Preserves the active task. */
+	restart(): void {
+		if (this.state.isRunning === false) return;
+		this.stopInterval();
+		const durationMs = this.state.baseDurationMinutes * 60_000;
+		this.state.startTime = Date.now();
+		this.state.endTime = Date.now() + durationMs;
+		this.state.isPaused = true;
+		this.state.pausedRemaining = durationMs;
+		this.state.rolloverBalance = 0;
+		this.emitStateChange();
+	}
+
 	/** Cancels the timer without invoking completion callback. */
 	cancel(): void {
 		this.reset();
@@ -370,9 +404,13 @@ export class TimerEngine {
 	/** Stops the interval and cleans up. */
 	destroy(): void {
 		this.stopInterval();
+		if (this.boundVisibilityHandler) {
+			document.removeEventListener('visibilitychange', this.boundVisibilityHandler);
+			this.boundVisibilityHandler = null;
+		}
 	}
 
-	/** Starts the 250ms tick interval that drives display updates and state changes. */
+	/** Starts the 250ms tick interval that drives display updates only. */
 	private beginInterval(): void {
 		this.stopInterval();
 		this.intervalId = window.setInterval(() => {
@@ -383,8 +421,6 @@ export class TimerEngine {
 				this.onTick(remaining, isNeg);
 			}
 			this.bus.emit<TimerTickPayload>(TimerEvents.Tick, { remaining, isNegative: isNeg });
-
-			this.emitStateChange();
 		}, 250);
 	}
 
@@ -406,6 +442,7 @@ export class TimerEngine {
 		this.state.isRunning = false;
 		this.state.isPaused = false;
 		this.state.pausedRemaining = null;
+		this.state.ghostTaskName = null;
 	}
 
 	/** Invokes the state-change callback and emits the StateChange event on the bus. */

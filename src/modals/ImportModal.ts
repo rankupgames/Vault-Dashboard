@@ -8,6 +8,7 @@
  */
 
 import { App, Modal, TFile, FuzzySuggestModal } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 import { TaskImporter, TaskImportItem } from '../services/TaskImporter';
 import { SubTask } from '../core/types';
 
@@ -36,6 +37,7 @@ export class ImportModal extends Modal {
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.addClass('vw-task-edit-modal');
 		contentEl.createEl('h3', { text: 'Import Tasks from Note' });
@@ -89,6 +91,7 @@ export class ImportModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		this.contentEl.empty();
 	}
 
@@ -123,6 +126,18 @@ class ImportFilePicker extends FuzzySuggestModal<TFile> {
 		super(app);
 		this.onChoose_ = onChoose;
 		this.setPlaceholder('Search for a note to import tasks from...');
+	}
+
+	/** @override */
+	onOpen(): void {
+		super.onOpen();
+		registerModal(this);
+	}
+
+	/** @override */
+	onClose(): void {
+		unregisterModal(this);
+		super.onClose();
 	}
 
 	getItems(): TFile[] {

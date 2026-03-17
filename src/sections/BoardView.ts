@@ -13,6 +13,7 @@ import { TaskManager } from '../core/TaskManager';
 import { TaskFormatter } from '../core/TaskFormatter';
 import { TaskModal } from '../modals/TaskModal';
 import { CategoryModal } from '../modals/CategoryModal';
+import { setupDragHold } from '../ui/setupDragHold';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { attachOverflowTooltip } from '../ui/Tooltip';
 import type { IAIDispatcher } from '../services/AIDispatcher';
@@ -173,10 +174,10 @@ export class BoardView implements SectionRenderer {
 						workingDirectory: result.workingDirectory,
 					});
 				}
-				this.deps.taskManager.assignTaskCategory(task.id, result.categoryId ?? cat.id);
+				this.deps.taskManager.assignTaskCategory(task.id, result.categoryId ?? cat.id ?? 'default-general');
 				this.deps.saveCallback();
 				this.deps.onRenderAll();
-			}, knownTags, this.deps.taskManager, this.deps.aiDispatcher).open();
+			}, knownTags, this.deps.taskManager, this.deps.aiDispatcher, null, cat.id).open();
 		});
 
 		if (cat.isDefault === false || cat.isDefault === undefined) {
@@ -254,28 +255,37 @@ export class BoardView implements SectionRenderer {
 	/** Renders a draggable task card inside a board column. */
 	private renderTaskRow(body: HTMLElement, task: Task): void {
 		const row = body.createDiv({ cls: 'vw-board-task-row' });
-		row.setAttribute('draggable', 'true');
 
-		row.addEventListener('dragstart', (e: DragEvent) => {
-			this.draggedTaskId = task.id;
-			row.classList.add('vw-board-dragging');
-			e.dataTransfer?.setData('text/plain', task.id);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-		});
-		row.addEventListener('dragend', () => {
-			this.draggedTaskId = null;
-			row.classList.remove('vw-board-dragging');
-			body.doc.querySelectorAll('.vw-board-drop-target').forEach((el) => {
-				el.classList.remove('vw-board-drop-target');
-			});
+		setupDragHold({
+			grip: row,
+			draggable: row,
+			onDragStart: (e) => {
+				this.draggedTaskId = task.id;
+				row.classList.add('vw-board-dragging');
+				e.dataTransfer?.setData('text/plain', task.id);
+				if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+			},
+			onDragEnd: () => {
+				this.draggedTaskId = null;
+				row.classList.remove('vw-board-dragging');
+				body.doc.querySelectorAll('.vw-board-drop-target').forEach((el) => {
+					el.classList.remove('vw-board-drop-target');
+				});
+			},
 		});
 
-		const dotCls = task.status === 'active'
-			? 'vw-board-task-dot vw-board-task-dot-active'
-			: (task.status === 'completed' || task.status === 'skipped')
-				? 'vw-board-task-dot vw-board-task-dot-completed'
+		const isDone = task.status === 'completed' || task.status === 'skipped';
+		if (isDone) row.addClass('vw-board-task-completed');
+
+		if (isDone) {
+			const dot = row.createDiv({ cls: 'vw-board-task-dot vw-board-task-dot-completed' });
+			setIcon(dot, 'check');
+		} else {
+			const dotCls = task.status === 'active'
+				? 'vw-board-task-dot vw-board-task-dot-active'
 				: 'vw-board-task-dot vw-board-task-dot-pending';
-		row.createDiv({ cls: dotCls });
+			row.createDiv({ cls: dotCls });
+		}
 
 		const info = row.createDiv({ cls: 'vw-board-task-info' });
 		const titleEl = info.createSpan({ cls: 'vw-board-task-title', text: task.title });

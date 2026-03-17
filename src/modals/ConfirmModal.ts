@@ -8,6 +8,7 @@
  */
 
 import { App, Modal } from 'obsidian';
+import { registerModal, unregisterModal } from '../core/modal-tracker';
 
 /** Generic confirmation modal for destructive actions. */
 export class ConfirmModal extends Modal {
@@ -33,6 +34,7 @@ export class ConfirmModal extends Modal {
 
 	/** @override */
 	onOpen(): void {
+		registerModal(this);
 		const { contentEl } = this;
 		contentEl.empty();
 		contentEl.addClass('vw-confirm-modal');
@@ -54,6 +56,7 @@ export class ConfirmModal extends Modal {
 
 	/** @override */
 	onClose(): void {
+		unregisterModal(this);
 		this.contentEl.empty();
 	}
 }
