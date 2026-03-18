@@ -257,6 +257,18 @@ export class TimerEngine {
 		if (this.state.isRunning === false || this.state.isPaused === false) return;
 		if (this.state.pausedRemaining === null || this.state.endTime === null) return;
 
+		if (this.state.needsRealign && this.settings.timerMode === 'clock-aligned') {
+			this.state.startTime = Date.now();
+			this.state.endTime = this.computeAlignedEnd(this.state.baseDurationMinutes, 0);
+			this.state.isPaused = false;
+			this.state.pausedRemaining = null;
+			this.state.needsRealign = false;
+
+			this.emitStateChange();
+			this.beginInterval();
+			return;
+		}
+
 		const pauseStart = this.state.endTime - this.state.pausedRemaining;
 		const pauseDuration = Date.now() - pauseStart;
 
@@ -267,6 +279,7 @@ export class TimerEngine {
 		this.state.endTime = Date.now() + this.state.pausedRemaining;
 		this.state.isPaused = false;
 		this.state.pausedRemaining = null;
+		this.state.needsRealign = false;
 
 		this.emitStateChange();
 		this.beginInterval();
@@ -314,12 +327,17 @@ export class TimerEngine {
 	restart(): void {
 		if (this.state.isRunning === false) return;
 		this.stopInterval();
-		const durationMs = this.state.baseDurationMinutes * 60_000;
+
+		const durationMinutes = this.state.baseDurationMinutes;
+		const durationMs = durationMinutes * 60_000;
+
 		this.state.startTime = Date.now();
-		this.state.endTime = Date.now() + durationMs;
+		this.state.endTime = this.computeAlignedEnd(durationMinutes, 0);
 		this.state.isPaused = true;
 		this.state.pausedRemaining = durationMs;
 		this.state.rolloverBalance = 0;
+		this.state.needsRealign = true;
+
 		this.emitStateChange();
 	}
 
@@ -339,6 +357,62 @@ export class TimerEngine {
 			if (this.onComplete) this.onComplete(taskId, 0);
 			this.bus.emit<TimerCompletePayload>(TimerEvents.Complete, { taskId, rollover: 0 });
 		}
+	}
+
+	/** Suspends the current real task so a ghost task can take over. */
+	suspendCurrentTask(): void {
+		if (this.state.isRunning === false || this.state.currentTaskId === null) return;
+
+		this.state.suspendedTaskId = this.state.currentTaskId;
+		this.state.suspendedBaseDuration = this.state.baseDurationMinutes;
+
+		this.stopInterval();
+		this.state.currentTaskId = null;
+		this.state.startTime = null;
+		this.state.endTime = null;
+		this.state.baseDurationMinutes = 0;
+		this.state.isRunning = false;
+		this.state.isPaused = false;
+		this.state.pausedRemaining = null;
+		this.state.ghostTaskName = null;
+		this.state.needsRealign = false;
+	}
+
+	/** Returns true when a real task is waiting to be restored after a ghost task. */
+	hasSuspendedTask(): boolean {
+		return this.state.suspendedTaskId !== null;
+	}
+
+	/** Returns the suspended task ID, or null. */
+	getSuspendedTaskId(): string | null {
+		return this.state.suspendedTaskId;
+	}
+
+	/**
+	 * Restores the suspended task and starts a fresh timer for it.
+	 * @returns The restored task ID, or null if nothing was suspended.
+	 */
+	resumeSuspendedTask(): string | null {
+		const taskId = this.state.suspendedTaskId;
+		const duration = this.state.suspendedBaseDuration;
+		if (taskId === null) return null;
+
+		this.state.suspendedTaskId = null;
+		this.state.suspendedBaseDuration = 0;
+
+		if (this.settings.timerMode === 'pomodoro') {
+			this.startPomodoro(taskId, duration);
+		} else {
+			this.start(taskId, duration);
+		}
+
+		return taskId;
+	}
+
+	/** Clears suspension state without restoring. */
+	clearSuspension(): void {
+		this.state.suspendedTaskId = null;
+		this.state.suspendedBaseDuration = 0;
 	}
 
 	/** Returns remaining milliseconds (negative if overrun). */
@@ -434,7 +508,7 @@ export class TimerEngine {
 		}
 	}
 
-	/** Resets all running state without triggering callbacks. */
+	/** Resets all running state without triggering callbacks. Preserves suspension so callbacks can restore. */
 	private reset(): void {
 		this.stopInterval();
 		this.state.currentTaskId = null;
@@ -445,6 +519,7 @@ export class TimerEngine {
 		this.state.isPaused = false;
 		this.state.pausedRemaining = null;
 		this.state.ghostTaskName = null;
+		this.state.needsRealign = false;
 	}
 
 	/** Invokes the state-change callback and emits the StateChange event on the bus. */

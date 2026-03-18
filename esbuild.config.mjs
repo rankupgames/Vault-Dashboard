@@ -53,7 +53,7 @@ const concatCssPlugin = {
 	},
 };
 
-const context = await esbuild.context({
+const buildOptions = {
 	entryPoints: ["src/main.ts"],
 	bundle: true,
 	external: [
@@ -80,11 +80,11 @@ const context = await esbuild.context({
 	treeShaking: true,
 	outfile: "main.js",
 	plugins: [concatCssPlugin],
-});
+};
 
 if (prod) {
-	await context.rebuild();
-	process.exit(0);
+	await esbuild.build(buildOptions);
 } else {
+	const context = await esbuild.context(buildOptions);
 	await context.watch();
 }

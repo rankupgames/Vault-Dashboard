@@ -14,6 +14,10 @@ const makeState = (overrides?: Partial<TimerState>): TimerState => ({
 	rolloverBalance: 0,
 	isBreak: false,
 	pomodoroCount: 0,
+	ghostTaskName: null,
+	needsRealign: false,
+	suspendedTaskId: null,
+	suspendedBaseDuration: 0,
 	...overrides,
 });
 

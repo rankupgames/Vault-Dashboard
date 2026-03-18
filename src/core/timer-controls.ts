@@ -40,7 +40,7 @@ export const getTimerControlState = (engine: TimerEngine, hasPopout: boolean): T
 		showRestart: running && onBreak === false,
 		showSkip: running && onBreak === false && ghost === false,
 		showSkipBreak: running && onBreak,
-		showGhostTask: running === false,
+		showGhostTask: running === false || (running && ghost === false && onBreak === false),
 		showPopout: hasPopout,
 	};
 };

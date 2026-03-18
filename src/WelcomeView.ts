@@ -182,6 +182,14 @@ export class WelcomeView extends ItemView {
 			if (isGhostTaskId(taskId) === false) {
 				this.taskManager.completeTask(taskId, Date.now());
 			}
+
+			if (isGhostTaskId(taskId) && this.timerEngine.hasSuspendedTask()) {
+				const restoredId = this.timerEngine.resumeSuspendedTask();
+				if (restoredId) {
+					this.taskManager.startTask(restoredId, 0);
+				}
+			}
+
 			this.saveCallback();
 			this.renderAll();
 		});

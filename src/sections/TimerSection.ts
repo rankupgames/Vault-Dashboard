@@ -236,9 +236,15 @@ export class TimerSection implements SectionRenderer {
 		this.startTaskImmediate(task);
 	}
 
-	/** Starts a ghost task (timer-only, no task card). */
+	/** Starts a ghost task, suspending the active real task if one is running. */
 	startGhostTask(info: GhostTaskInfo): void {
-		if (this.deps.timerEngine.getState().isRunning) return;
+		const state = this.deps.timerEngine.getState();
+
+		if (state.isRunning && isGhostTaskId(state.currentTaskId) === false) {
+			this.deps.timerEngine.suspendCurrentTask();
+		} else if (state.isRunning) {
+			return;
+		}
 
 		const ghostId = createGhostTaskId();
 
@@ -267,6 +273,7 @@ export class TimerSection implements SectionRenderer {
 
 	/** Starts a task timer immediately using either pomodoro or clock-aligned mode. */
 	private startTaskImmediate(task: Task): void {
+		this.deps.timerEngine.clearSuspension();
 		if (this.deps.timerEngine.isPomodoroMode()) {
 			this.deps.taskManager.startTask(task.id, 0);
 			this.deps.timerEngine.startPomodoro(task.id);

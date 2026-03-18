@@ -119,6 +119,12 @@ export interface TimerState {
 	isBreak: boolean;
 	/** Display name for the active ghost task, or null when running a real task. */
 	ghostTaskName: string | null;
+	/** When true, the next resume should re-compute clock-aligned end time. */
+	needsRealign: boolean;
+	/** Task ID that was suspended when a ghost task interrupted it. */
+	suspendedTaskId: string | null;
+	/** Base duration of the suspended task (minutes) for restarting. */
+	suspendedBaseDuration: number;
 }
 
 /** A report source with folder path and filename pattern. */
@@ -313,6 +319,9 @@ export const DEFAULT_TIMER_STATE: TimerState = {
 	pomodoroCount: 0,
 	isBreak: false,
 	ghostTaskName: null,
+	needsRealign: false,
+	suspendedTaskId: null,
+	suspendedBaseDuration: 0,
 };
 
 /** Default plugin settings. */
