@@ -1,4 +1,4 @@
-name: Scheduled Weekly Release
+name: Weekly Release
 
 on:
   schedule:
@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  weekly-release:
+  release:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -21,55 +21,112 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Check if release is needed
-        id: check
+      - name: Check for non-bot changes since last release
+        id: changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          version=$(node -p "require('./manifest.json').version")
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-
-          if gh release view "$version" &>/dev/null; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::Skipping — release $version already exists"
-          else
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Will create release $version"
+            echo "::notice::Manual trigger — building regardless"
+            exit 0
           fi
 
+          LAST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
+
+          if [ -z "$LAST_TAG" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No previous release found — will release"
+            exit 0
+          fi
+
+          echo "::notice::Comparing against last release $LAST_TAG"
+
+          BOT_EMAIL="github-actions[bot]@users.noreply.github.com"
+          REAL_COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%ae' | grep -cv "$BOT_EMAIL" || true)
+
+          if [ "$REAL_COMMITS" -eq 0 ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::No non-bot changes since $LAST_TAG — skipping"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Found $REAL_COMMITS non-bot commit(s) since $LAST_TAG"
+          fi
+
+      - name: Bump version
+        if: steps.changes.outputs.skip != 'true'
+        id: bump
+        run: |
+          NEW_VERSION=$(node -e "
+            const fs = require('fs');
+            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            const [major, minor, patch] = m.version.split('.');
+            const buildNum = patch.length > 6 ? parseInt(patch.slice(0, -6), 10) : 0;
+            const next = (isNaN(buildNum) ? 0 : buildNum) + 1;
+            const d = new Date();
+            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const dd = String(d.getUTCDate()).padStart(2, '0');
+            const yy = String(d.getUTCFullYear()).slice(-2);
+            process.stdout.write(major + '.' + minor + '.' + next + mm + dd + yy);
+          ")
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "::notice::Bumped version to $NEW_VERSION"
+
+          node -e "
+            const fs = require('fs');
+            const v = process.argv[1];
+            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
+            m.version = v;
+            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
+          " "$NEW_VERSION"
+
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: steps.check.outputs.skip != 'true'
+        if: steps.changes.outputs.skip != 'true'
         with:
           node-version: "20.x"
 
       - name: Install dependencies
-        if: steps.check.outputs.skip != 'true'
+        if: steps.changes.outputs.skip != 'true'
         run: npm ci
 
       - name: Lint
-        if: steps.check.outputs.skip != 'true'
+        if: steps.changes.outputs.skip != 'true'
         run: npm run lint
 
       - name: Test
-        if: steps.check.outputs.skip != 'true'
+        if: steps.changes.outputs.skip != 'true'
         run: npm test
 
       - name: Build
-        if: steps.check.outputs.skip != 'true'
+        if: steps.changes.outputs.skip != 'true'
         run: npm run build
 
       - name: Tag and release
-        if: steps.check.outputs.skip != 'true'
+        if: steps.changes.outputs.skip != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.check.outputs.version }}
+          VERSION: ${{ steps.bump.outputs.version }}
         run: |
           node -e "
             const fs = require('fs');
+            const v = process.env.VERSION;
+
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = v;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+
+            const lockPath = 'package-lock.json';
+            if (fs.existsSync(lockPath)) {
+              const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+              lock.version = v;
+              if (lock.packages && lock.packages['']) lock.packages[''].version = v;
+              fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+            }
+
             const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
             const versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
-            if (versions[process.env.VERSION] === undefined) {
-              versions[process.env.VERSION] = manifest.minAppVersion;
+            if (versions[v] === undefined) {
+              versions[v] = manifest.minAppVersion;
               fs.writeFileSync('versions.json', JSON.stringify(versions, null, '\t') + '\n');
             }
           "
@@ -77,9 +134,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if ! git diff --quiet versions.json 2>/dev/null; then
-            git add versions.json
-            git commit -m "chore: sync versions.json for $VERSION"
+          git add manifest.json package.json package-lock.json versions.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: bump version to $VERSION"
             git push origin HEAD
           fi
 
