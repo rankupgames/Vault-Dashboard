@@ -17,6 +17,8 @@ export interface DocumentEntry {
 	name: string;
 	/** True if the file exists in the vault. */
 	exists: boolean;
+	/** File creation timestamp when available. */
+	createdAt?: number;
 }
 
 /** Tracks recently opened files and quick access pinned documents. */
@@ -44,6 +46,19 @@ export class DocumentTracker {
 	/** Returns DocumentEntry for each path, with existence checked. */
 	getQuickAccess(paths: string[]): DocumentEntry[] {
 		return paths.map((p) => this.toEntry(p));
+	}
+
+	/** Returns the newest markdown files by vault creation time. */
+	getLatestMarkdown(limit: number = 12): DocumentEntry[] {
+		return [...this.app.vault.getMarkdownFiles()]
+			.sort((a, b) => b.stat.ctime - a.stat.ctime)
+			.slice(0, limit)
+			.map((file) => ({
+				path: file.path,
+				name: file.basename,
+				exists: true,
+				createdAt: file.stat.ctime,
+			}));
 	}
 
 	/** Opens the file in a new tab if it exists. */

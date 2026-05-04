@@ -26,9 +26,29 @@
 	color: var(--interactive-accent);
 }
 
+.vw-doc-row-with-action {
+	gap: 8px;
+}
+
+.vw-doc-info {
+	display: flex;
+	flex: 1;
+	min-width: 0;
+	flex-direction: column;
+	gap: 1px;
+}
+
 .vw-doc-link {
 	font-size: 12px;
 	flex: 1;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-doc-meta {
+	font-size: 10px;
+	color: var(--text-faint);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -61,6 +81,39 @@
 
 .vw-doc-remove:hover {
 	color: #e05252;
+}
+
+.vw-doc-pin {
+	width: 20px;
+	height: 20px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 4px;
+	color: var(--text-faint);
+	cursor: pointer;
+	flex-shrink: 0;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.vw-doc-pin svg {
+	width: 13px;
+	height: 13px;
+}
+
+.vw-doc-pin:hover {
+	color: var(--interactive-accent);
+	background: var(--background-modifier-hover);
+}
+
+.vw-doc-pinned {
+	color: var(--interactive-accent);
+	cursor: default;
+	opacity: 0.9;
+}
+
+.vw-doc-pinned:hover {
+	background: transparent;
 }
 
 /* -- Quick Access Toolbar ------------------------------------------------- */

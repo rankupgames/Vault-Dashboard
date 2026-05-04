@@ -25,7 +25,7 @@ import { WelcomeModal } from './modals/WelcomeModal';
 import { TaskModal } from './modals/TaskModal';
 import { ReportScanner } from './services/ReportScanner';
 import { DailyReportModule, WeeklyReportModule } from './modules/ReportModule';
-import { LastOpenedModule, QuickAccessModule } from './modules/DocumentModule';
+import { LastOpenedModule, LatestMarkdownModule, QuickAccessModule } from './modules/DocumentModule';
 import { DispatchModule } from './modules/DispatchModule';
 import { isAIEnabled, gatherContext, type IAIDispatcher, type DispatchRecord } from './services/AIDispatcher';
 import { AudioService } from './core/AudioService';
@@ -430,6 +430,14 @@ export class WelcomeView extends ItemView {
 			this.saveCallback();
 		});
 		this.moduleRegistry.register(this.quickAccessModule);
+		this.moduleRegistry.register(new LatestMarkdownModule(
+			this.app,
+			cfgFor('latest-markdown'),
+			this.data.settings.quickAccessPaths,
+			(path) => {
+				this.quickAccessModule?.addPath(path);
+			},
+		));
 
 		const scanner = this.reportScanner ?? new ReportScanner(this.app, 0);
 		const reportBase = this.data.settings.reportBasePath;

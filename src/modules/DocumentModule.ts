@@ -72,6 +72,83 @@ export class LastOpenedModule implements ModuleRenderer {
 	}
 }
 
+/** Module that displays newly created markdown files with quick-access pinning. */
+export class LatestMarkdownModule implements ModuleRenderer {
+	readonly id = 'latest-markdown';
+	readonly name = 'Latest Markdown Files';
+	readonly showRefresh = true;
+
+	private tracker: DocumentTracker;
+	private quickAccessPaths: string[];
+	private onPinPath: (path: string) => void;
+
+	constructor(app: App, _config: ModuleConfig, quickAccessPaths: string[], onPinPath: (path: string) => void) {
+		this.tracker = new DocumentTracker(app);
+		this.quickAccessPaths = quickAccessPaths;
+		this.onPinPath = onPinPath;
+	}
+
+	/** Renders the latest markdown file list into the given element. */
+	renderContent(el: HTMLElement): void {
+		const docs = this.tracker.getLatestMarkdown(12);
+		if (docs.length === 0) {
+			el.createDiv({ cls: 'vw-module-empty', text: 'No markdown files found' });
+			return;
+		}
+
+		const list = el.createDiv({ cls: 'vw-doc-list' });
+		for (const doc of docs) {
+			const row = list.createDiv({ cls: 'vw-doc-row vw-doc-row-with-action' });
+			const info = row.createDiv({ cls: 'vw-doc-info' });
+			info.createSpan({ cls: 'vw-doc-link', text: doc.name });
+			info.createSpan({ cls: 'vw-doc-meta', text: this.formatAddedAt(doc.createdAt) });
+
+			const openIcon = row.createDiv({ cls: 'vw-doc-open-icon' });
+			setDocIcon(openIcon);
+			row.addEventListener('click', () => this.tracker.openFile(doc.path));
+
+			const isPinned = this.quickAccessPaths.includes(doc.path);
+			const pinBtn = row.createSpan({ cls: `vw-doc-pin ${isPinned ? 'vw-doc-pinned' : ''}` });
+			setIcon(pinBtn, isPinned ? 'check' : 'pin');
+			pinBtn.setAttribute('aria-label', isPinned ? 'Already in quick access' : 'Add to quick access');
+			pinBtn.setAttribute('title', isPinned ? 'Already in quick access' : 'Add to quick access');
+			pinBtn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				if (this.quickAccessPaths.includes(doc.path)) return;
+				this.onPinPath(doc.path);
+				if (this.quickAccessPaths.includes(doc.path) === false) {
+					this.quickAccessPaths.push(doc.path);
+				}
+				this.refreshRow(pinBtn);
+			});
+		}
+	}
+
+	/** Marks the pin action as complete without forcing the full dashboard to rebuild. */
+	private refreshRow(pinBtn: HTMLElement): void {
+		pinBtn.addClass('vw-doc-pinned');
+		pinBtn.empty();
+		setIcon(pinBtn, 'check');
+		pinBtn.setAttribute('aria-label', 'Already in quick access');
+		pinBtn.setAttribute('title', 'Already in quick access');
+	}
+
+	/** Formats a creation timestamp for compact module display. */
+	private formatAddedAt(createdAt: number | undefined): string {
+		if (createdAt === undefined) return 'Added recently';
+		const diffMs = Date.now() - createdAt;
+		const minute = 60_000;
+		const hour = 60 * minute;
+		const day = 24 * hour;
+
+		if (diffMs < minute) return 'Added just now';
+		if (diffMs < hour) return `Added ${Math.floor(diffMs / minute)}m ago`;
+		if (diffMs < day) return `Added ${Math.floor(diffMs / hour)}h ago`;
+		if (diffMs < 7 * day) return `Added ${Math.floor(diffMs / day)}d ago`;
+		return `Added ${new Date(createdAt).toLocaleDateString()}`;
+	}
+}
+
 /** Module that displays pinned quick-access documents with add/remove controls. */
 export class QuickAccessModule implements ModuleRenderer {
 	readonly id = 'quick-access';

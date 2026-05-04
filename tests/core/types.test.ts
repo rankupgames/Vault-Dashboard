@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { IMAGE_EXTENSIONS, isImageExtension } from '../../src/core/types';
+import { DEFAULT_SETTINGS, IMAGE_EXTENSIONS, isImageExtension } from '../../src/core/types';
 
 describe('IMAGE_EXTENSIONS', () => {
 	it('contains expected formats', () => {
@@ -38,5 +38,14 @@ describe('isImageExtension', () => {
 		expect(isImageExtension('pdf')).toBe(false);
 		expect(isImageExtension('ts')).toBe(false);
 		expect(isImageExtension('')).toBe(false);
+	});
+});
+
+describe('DEFAULT_SETTINGS modules', () => {
+	it('includes latest markdown files near quick access', () => {
+		const ids = DEFAULT_SETTINGS.modules.map((module) => module.id);
+		expect(ids.indexOf('latest-markdown')).toBeGreaterThan(ids.indexOf('quick-access'));
+		expect(ids.indexOf('latest-markdown')).toBeLessThan(ids.indexOf('daily-reports'));
+		expect(DEFAULT_SETTINGS.modules.find((module) => module.id === 'latest-markdown')?.enabled).toBe(true);
 	});
 });
