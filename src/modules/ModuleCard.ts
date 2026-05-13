@@ -4,7 +4,7 @@
  * Project: Vault Dashboard
  * Description: Composition-based module card that renders chrome (header, collapse, refresh) around a ModuleRenderer
  * Created: 2026-03-07
- * Last Modified: 2026-03-07
+ * Last Modified: 2026-05-13
  */
 
 import { setIcon } from 'obsidian';
@@ -34,6 +34,7 @@ export class ModuleCard {
 	private container: HTMLElement | null = null;
 	private onCollapseChange: ((id: string, collapsed: boolean) => void) | null = null;
 	private onDragReorder: ((fromId: string, toId: string, before: boolean) => void) | null = null;
+	private suppressNextHeaderClick = false;
 
 	constructor(renderer: ModuleRenderer, config: ModuleConfig) {
 		this.renderer = renderer;
@@ -103,7 +104,13 @@ export class ModuleCard {
 		const collapseBtn = actions.createDiv({ cls: 'vw-module-collapse' });
 		setIcon(collapseBtn, this.config.collapsed ? 'chevron-right' : 'chevron-down');
 
-		header.addEventListener('click', () => {
+		header.addEventListener('click', (event) => {
+			if (this.suppressNextHeaderClick) {
+				event.preventDefault();
+				this.suppressNextHeaderClick = false;
+				return;
+			}
+			if (this.isHeaderActionClick(event.target) && this.isCollapseClick(event.target) === false) return;
 			this.config.collapsed = this.config.collapsed === false;
 			this.updateCollapseState(collapseBtn);
 			if (this.onCollapseChange) {
@@ -145,7 +152,9 @@ export class ModuleCard {
 		setupDragHold({
 			grip: header,
 			draggable: card,
+			shouldStart: (event) => this.isHeaderActionClick(event.target) === false,
 			onDragStart: (e) => {
+				this.suppressNextHeaderClick = true;
 				card.addClass('vw-dragging');
 				e.dataTransfer?.setData('text/plain', moduleId);
 				if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
@@ -168,6 +177,9 @@ export class ModuleCard {
 					el.classList.remove('vw-drag-above', 'vw-drag-below');
 				});
 				card.doc.querySelectorAll('.vw-module-remove-zone').forEach((z) => z.classList.remove('vw-module-remove-zone-visible', 'vw-module-remove-zone-over'));
+				window.setTimeout(() => {
+					this.suppressNextHeaderClick = false;
+				}, 250);
 			},
 		});
 
@@ -202,6 +214,14 @@ export class ModuleCard {
 
 	/** ID of the module currently being dragged, or null. */
 	static draggedModuleId: string | null = null;
+
+	private isHeaderActionClick(target: EventTarget | null): boolean {
+		return target instanceof HTMLElement && target.closest('.vw-module-header-actions') !== null;
+	}
+
+	private isCollapseClick(target: EventTarget | null): boolean {
+		return target instanceof HTMLElement && target.closest('.vw-module-collapse') !== null;
+	}
 
 	/** Syncs the card body visibility and button icon with the collapsed flag. */
 	private updateCollapseState(btn: HTMLElement): void {

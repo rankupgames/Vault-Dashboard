@@ -24,10 +24,12 @@ import { createSubtreeViewState, SubtreeViewState } from './sections/SubtaskTree
 import { WelcomeModal } from './modals/WelcomeModal';
 import { TaskModal } from './modals/TaskModal';
 import { ReportScanner } from './services/ReportScanner';
-import { DailyReportModule, WeeklyReportModule } from './modules/ReportModule';
+import { DailyReportModule, GmailIntelligenceModule, WeeklyReportModule } from './modules/ReportModule';
+import { CronModule } from './modules/CronModule';
 import { LastOpenedModule, LatestMarkdownModule, QuickAccessModule } from './modules/DocumentModule';
 import { DispatchModule } from './modules/DispatchModule';
 import { isAIEnabled, gatherContext, type IAIDispatcher, type DispatchRecord } from './services/AIDispatcher';
+import type { PromptDispatchProvider } from './modules/PromptDispatchProvider';
 import { AudioService } from './core/AudioService';
 import { isGhostTaskId } from './core/ghost-task';
 import { ModuleCard } from './modules/ModuleCard';
@@ -442,7 +444,31 @@ export class WelcomeView extends ItemView {
 		const scanner = this.reportScanner ?? new ReportScanner(this.app, 0);
 		const reportBase = this.data.settings.reportBasePath;
 		const reportConfigs = this.data.settings.reportSources;
+		const promptDispatchProvider: PromptDispatchProvider | undefined = isAIEnabled(this.data.settings)
+			? {
+				dispatchPrompt: (title: string, prompt: string, workingDirectory?: string) => {
+					const task: Task = {
+						id: '',
+						title,
+						durationMinutes: 15,
+						status: 'pending',
+						order: 0,
+						createdAt: Date.now(),
+						workingDirectory,
+					};
+					return this.aiDispatcher.dispatch(this.app, this.data.settings, 'delegate', prompt, task);
+				},
+			}
+			: undefined;
 		this.moduleRegistry.register(new DailyReportModule(this.app, cfgFor('daily-reports'), scanner, reportBase, reportConfigs));
+		this.moduleRegistry.register(new GmailIntelligenceModule(
+			this.app,
+			cfgFor('gmail-intelligence'),
+			scanner,
+			this.data.settings.gmailDigest,
+			promptDispatchProvider,
+		));
+		this.moduleRegistry.register(new CronModule(this.app, cfgFor('crons'), scanner, this.data.settings, this.saveCallback));
 		this.moduleRegistry.register(new WeeklyReportModule(this.app, cfgFor('weekly-reports'), scanner, reportBase, reportConfigs));
 		this.moduleRegistry.register(new LastOpenedModule(this.app, cfgFor('last-opened')));
 

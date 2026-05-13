@@ -101,6 +101,46 @@
 	outline: none;
 }
 
+.vw-cron-edit-modal {
+	width: min(860px, 92vw);
+}
+
+.vw-cron-prompt-input {
+	min-height: 220px;
+	border-radius: 18px;
+	font-size: 15px;
+	line-height: 1.45;
+}
+
+.vw-cron-command-bar {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: -2px;
+	padding: 8px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-top: none;
+	border-radius: 0 0 14px 14px;
+	background: var(--background-secondary);
+}
+
+.vw-cron-command-pill {
+	font-size: 13px;
+	color: var(--text-muted);
+	padding: 4px 8px;
+	border-radius: 8px;
+}
+
+.vw-cron-command-pill-right {
+	margin-left: auto;
+}
+
+.vw-cron-schedule-grid {
+	display: grid;
+	grid-template-columns: 1fr 1fr 1fr;
+	gap: 10px;
+}
+
 .vw-edit-actions {
 	display: flex;
 	justify-content: space-between;

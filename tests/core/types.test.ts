@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SETTINGS, IMAGE_EXTENSIONS, isImageExtension } from '../../src/core/types';
+import { CRON_FREQUENCY, DEFAULT_SETTINGS, IMAGE_EXTENSIONS, isImageExtension } from '../../src/core/types';
 
 describe('IMAGE_EXTENSIONS', () => {
 	it('contains expected formats', () => {
@@ -47,5 +47,37 @@ describe('DEFAULT_SETTINGS modules', () => {
 		expect(ids.indexOf('latest-markdown')).toBeGreaterThan(ids.indexOf('quick-access'));
 		expect(ids.indexOf('latest-markdown')).toBeLessThan(ids.indexOf('daily-reports'));
 		expect(DEFAULT_SETTINGS.modules.find((module) => module.id === 'latest-markdown')?.enabled).toBe(true);
+	});
+
+	it('includes the crons module before weekly reports', () => {
+		const ids = DEFAULT_SETTINGS.modules.map((module) => module.id);
+		expect(ids.indexOf('crons')).toBeGreaterThan(ids.indexOf('gmail-intelligence'));
+		expect(ids.indexOf('crons')).toBeLessThan(ids.indexOf('weekly-reports'));
+		expect(DEFAULT_SETTINGS.modules.find((module) => module.id === 'crons')?.enabled).toBe(true);
+	});
+
+	it('uses date-scoped patterns for built-in report sources', () => {
+		for (const source of DEFAULT_SETTINGS.reportSources) {
+			expect(source.patternStr).toContain('(\\d{4}-\\d{2}-\\d{2})');
+		}
+	});
+
+	it('uses consolidated daily and weekly report sources', () => {
+		expect(DEFAULT_SETTINGS.reportSources.map((source) => source.id)).toEqual(['daily-report', 'weekly-report']);
+	});
+
+	it('includes dashboard-managed default cron jobs', () => {
+		expect(DEFAULT_SETTINGS.cronJobs.map((job) => job.id)).toEqual(['daily-report', 'weekly-report']);
+		expect(DEFAULT_SETTINGS.cronJobs[0].frequency).toBe(CRON_FREQUENCY.DAILY);
+		expect(DEFAULT_SETTINGS.cronJobs[1].frequency).toBe(CRON_FREQUENCY.WEEKLY);
+	});
+
+	it('keeps Gmail digest paths user-configurable by default', () => {
+		expect(DEFAULT_SETTINGS.gmailDigest.pythonPath).toBe('');
+		expect(DEFAULT_SETTINGS.gmailDigest.scriptPath).toBe('');
+		expect(DEFAULT_SETTINGS.gmailDigest.workingDirectory).toBe('');
+		expect(DEFAULT_SETTINGS.gmailDigest.query).toBe('in:anywhere newer_than:7d');
+		expect(DEFAULT_SETTINGS.gmailDigest.limit).toBe(500);
+		expect(DEFAULT_SETTINGS.gmailDigest.digestDate).toBe('today');
 	});
 });

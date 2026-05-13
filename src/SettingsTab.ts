@@ -4,7 +4,7 @@
  * Project: Vault Dashboard
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
- * Last Modified: 2026-03-10
+ * Last Modified: 2026-05-13
  */
 
 import { App, Notice, PluginSettingTab, setIcon, Setting } from 'obsidian';
@@ -34,6 +34,7 @@ export class SettingsTab extends PluginSettingTab {
 		this.renderTimerSection(containerEl);
 		this.renderAudioSection(containerEl);
 		this.renderAISection(containerEl);
+		this.renderGmailIntelligenceSection(containerEl);
 		this.renderTaskSection(containerEl);
 		this.renderTagsSection(containerEl);
 		this.renderTaskTreeSection(containerEl);
@@ -328,6 +329,96 @@ export class SettingsTab extends PluginSettingTab {
 						}),
 				);
 		}
+	}
+
+	/** Renders read-only Gmail digest command settings used by the dashboard buttons and prompts. */
+	private renderGmailIntelligenceSection(el: HTMLElement): void {
+		el.createEl('h2', { text: 'Gmail Intelligence' });
+
+		const gmailSettings = this.plugin.data.settings.gmailDigest;
+
+		new Setting(el)
+			.setName('Python path')
+			.setDesc('Leave blank to use the local gmail-vault-digest virtual environment.')
+			.addText((text) =>
+				text
+					.setPlaceholder('~/.local/share/gmail-vault-digest/venv/bin/python3')
+					.setValue(gmailSettings.pythonPath)
+					.onChange(async (value) => {
+						gmailSettings.pythonPath = value.trim();
+						await this.save();
+					}),
+			);
+
+		new Setting(el)
+			.setName('Digest script path')
+			.setDesc('Leave blank to resolve Tools/gmail-vault-digest/gmail_vault_digest.py next to the Vault repo.')
+			.addText((text) =>
+				text
+					.setPlaceholder('<repo-root>/Tools/gmail-vault-digest/gmail_vault_digest.py')
+					.setValue(gmailSettings.scriptPath)
+					.onChange(async (value) => {
+						gmailSettings.scriptPath = value.trim();
+						await this.save();
+					}),
+			);
+
+		new Setting(el)
+			.setName('Working directory')
+			.setDesc('Leave blank to use the repository folder next to the Vault.')
+			.addText((text) =>
+				text
+					.setPlaceholder('<repo-root>')
+					.setValue(gmailSettings.workingDirectory)
+					.onChange(async (value) => {
+						gmailSettings.workingDirectory = value.trim();
+						await this.save();
+					}),
+			);
+
+		new Setting(el)
+			.setName('Default Gmail query')
+			.setDesc('Read-only Gmail search query used for manual reviews and the 8 AM digest.')
+			.addText((text) =>
+				text
+					.setPlaceholder('in:anywhere newer_than:7d')
+					.setValue(gmailSettings.query)
+					.onChange(async (value) => {
+						gmailSettings.query = value.trim() || 'in:anywhere newer_than:7d';
+						await this.save();
+					}),
+			);
+
+		new Setting(el)
+			.setName('Thread limit')
+			.setDesc('Maximum Gmail threads to sync before generating an analysis digest.')
+			.addText((text) =>
+				text
+					.setPlaceholder('500')
+					.setValue(String(gmailSettings.limit))
+					.onChange(async (value) => {
+						const parsedLimit = parseInt(value, 10);
+						gmailSettings.limit = Number.isNaN(parsedLimit) ? 500 : Math.max(1, Math.min(5000, parsedLimit));
+						await this.save();
+					}),
+			);
+
+		new Setting(el)
+			.setName('Digest date')
+			.setDesc('Use "today" for the local date, or provide YYYY-MM-DD for a specific digest.')
+			.addText((text) =>
+				text
+					.setPlaceholder('today')
+					.setValue(gmailSettings.digestDate)
+					.onChange(async (value) => {
+						gmailSettings.digestDate = value.trim() || 'today';
+						await this.save();
+					}),
+			);
+
+		new Setting(el)
+			.setName('Credential safety')
+			.setDesc('OAuth credentials, tokens, and sqlite state stay outside the Vault and repository. This module only lists generated analysis markdown.');
 	}
 
 	/** Renders task behavior settings: multi-tag filter, images, confirmations, auto-archive. */

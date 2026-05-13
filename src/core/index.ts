@@ -29,6 +29,7 @@ export type {
 	TimerState,
 	ReportSource,
 	ReportSourceConfig,
+	GmailDigestSettings,
 	ModuleConfig,
 	PluginSettings,
 	PluginData,
@@ -37,6 +38,7 @@ export type {
 } from './types';
 export {
 	DEFAULT_TIMER_STATE,
+	DEFAULT_GMAIL_DIGEST_SETTINGS,
 	DEFAULT_SETTINGS,
 	DEFAULT_DATA,
 	VIEW_TYPE_WELCOME,

@@ -9,7 +9,6 @@
     "lint": "eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
-    "worktree:setup": "bash /Users/dudetru25/Documents/GitHub/scripts/worktree-setup.sh",
     "deploy": "node esbuild.config.mjs production && node deploy.mjs"
   },
   "keywords": [

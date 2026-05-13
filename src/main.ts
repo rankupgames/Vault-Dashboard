@@ -4,7 +4,7 @@
  * Project: Vault Dashboard
  * Description: Plugin entry point -- registers view, commands, and manages data persistence
  * Created: 2026-03-07
- * Last Modified: 2026-03-07
+ * Last Modified: 2026-05-13
  */
 
 import { Notice, Plugin, WorkspaceLeaf, TFile } from 'obsidian';
@@ -12,8 +12,14 @@ import {
 	PluginData,
 	PluginSettings,
 	ModuleConfig,
+	CronJobConfig,
+	CronFrequency,
+	CronWeekday,
+	GmailDigestSettings,
 	DEFAULT_DATA,
 	DEFAULT_SETTINGS,
+	CRON_FREQUENCY,
+	CRON_WEEKDAY,
 	VIEW_TYPE_WELCOME,
 	VIEW_TYPE_MINI_TIMER,
 } from './core/types';
@@ -517,6 +523,8 @@ export default class VaultDashboardPlugin extends Plugin {
 				return { ...def };
 			});
 
+			const legacyGmailSettings = this.findModuleSettings(saved.settings?.modules, 'gmail-intelligence');
+
 			if (saved.settings?.autoOpenOnStartup !== undefined) {
 				mergedSettings.autoOpenOnStartup = saved.settings.autoOpenOnStartup;
 			}
@@ -536,7 +544,9 @@ export default class VaultDashboardPlugin extends Plugin {
 			if (saved.settings?.pomodoroLongBreakInterval !== undefined) mergedSettings.pomodoroLongBreakInterval = saved.settings.pomodoroLongBreakInterval;
 			if (saved.settings?.hasSeenOnboarding !== undefined) mergedSettings.hasSeenOnboarding = saved.settings.hasSeenOnboarding;
 			if (saved.settings?.moduleOrder) mergedSettings.moduleOrder = saved.settings.moduleOrder;
-			if (saved.settings?.reportSources) mergedSettings.reportSources = saved.settings.reportSources;
+			mergedSettings.reportSources = this.normalizeReportSources(saved.settings?.reportSources);
+			mergedSettings.cronJobs = this.normalizeCronJobs(saved.settings?.cronJobs);
+			mergedSettings.gmailDigest = this.normalizeGmailDigestSettings(saved.settings?.gmailDigest, legacyGmailSettings);
 			if (saved.settings?.taskCategories) mergedSettings.taskCategories = saved.settings.taskCategories;
 			if (saved.settings?.activeCategoryId !== undefined) mergedSettings.activeCategoryId = saved.settings.activeCategoryId;
 
@@ -572,13 +582,9 @@ export default class VaultDashboardPlugin extends Plugin {
 		s.pomodoroLongBreakInterval = this.clamp(s.pomodoroLongBreakInterval, 2, 8);
 		s.autoArchiveDays = Math.max(0, Math.floor(s.autoArchiveDays || 0));
 
-		if (Array.isArray(s.reportSources)) {
-			for (const src of s.reportSources) {
-				if (typeof src.patternStr !== 'string' || src.patternStr.length === 0 || src.patternStr.length > 200) {
-					src.patternStr = '^(.+)\\.(md|html)$';
-				}
-			}
-		}
+		s.reportSources = this.normalizeReportSources(s.reportSources);
+		s.cronJobs = this.normalizeCronJobs(s.cronJobs);
+		s.gmailDigest = this.normalizeGmailDigestSettings(s.gmailDigest);
 
 		const validTerminals: string[] = ['ghostty', 'terminal'];
 		if (validTerminals.includes(s.terminalApp) === false) s.terminalApp = 'ghostty';
@@ -591,6 +597,162 @@ export default class VaultDashboardPlugin extends Plugin {
 	private clamp(val: unknown, min: number, max: number): number {
 		const n = typeof val === 'number' ? val : min;
 		return Math.max(min, Math.min(max, Math.floor(n)));
+	}
+
+	private normalizeGmailDigestSettings(savedSettings: unknown, legacyModuleSettings?: Record<string, unknown>): GmailDigestSettings {
+		const defaults = DEFAULT_SETTINGS.gmailDigest;
+		const saved = this.asRecord(savedSettings);
+		const legacy = legacyModuleSettings ?? {};
+		return {
+			pythonPath: this.stringSetting(saved.pythonPath, this.stringSetting(legacy.pythonPath, defaults.pythonPath)),
+			scriptPath: this.stringSetting(saved.scriptPath, this.stringSetting(legacy.scriptPath, defaults.scriptPath)),
+			workingDirectory: this.stringSetting(
+				saved.workingDirectory,
+				this.stringSetting(legacy.workingDirectory, this.stringSetting(legacy.workingDir, defaults.workingDirectory)),
+			),
+			query: this.nonEmptyString(saved.query, this.nonEmptyString(legacy.query, defaults.query)),
+			limit: this.boundedInteger(saved.limit, this.boundedInteger(legacy.limit, defaults.limit, 1, 5000), 1, 5000),
+			digestDate: this.nonEmptyString(saved.digestDate, this.nonEmptyString(legacy.digestDate, defaults.digestDate)),
+		};
+	}
+
+	private findModuleSettings(modules: unknown, moduleId: string): Record<string, unknown> | undefined {
+		if (Array.isArray(modules) === false) return undefined;
+		for (const moduleConfig of modules) {
+			if (typeof moduleConfig !== 'object' || moduleConfig === null) continue;
+			const candidate = moduleConfig as Partial<ModuleConfig>;
+			if (candidate.id === moduleId && typeof candidate.settings === 'object' && candidate.settings !== null) {
+				return candidate.settings;
+			}
+		}
+		return undefined;
+	}
+
+	private asRecord(value: unknown): Record<string, unknown> {
+		return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
+	}
+
+	private stringSetting(value: unknown, fallback: string): string {
+		return typeof value === 'string' ? value.trim() : fallback;
+	}
+
+	private boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+		const parsed = typeof value === 'number'
+			? value
+			: typeof value === 'string'
+				? parseInt(value, 10)
+				: fallback;
+		if (Number.isNaN(parsed)) return fallback;
+		return Math.max(min, Math.min(max, Math.floor(parsed)));
+	}
+
+	private normalizeReportSources(savedSources: unknown): PluginSettings['reportSources'] {
+		const retiredBuiltInIds = new Set([
+			'interview-prep',
+			'daily-trends',
+			'local-leads',
+			'app-store-intel',
+			'weekly-jobs',
+			'competitor-watch',
+		]);
+		const defaultIds = new Set(DEFAULT_SETTINGS.reportSources.map((source) => source.id));
+		const normalized = DEFAULT_SETTINGS.reportSources.map((source) => ({ ...source }));
+		if (Array.isArray(savedSources) === false) return normalized;
+
+		for (const source of savedSources) {
+			if (typeof source !== 'object' || source === null) continue;
+			const candidate = source as Partial<PluginSettings['reportSources'][number]>;
+			if (typeof candidate.id !== 'string') continue;
+			if (retiredBuiltInIds.has(candidate.id) || defaultIds.has(candidate.id)) continue;
+			if (typeof candidate.label !== 'string' || typeof candidate.folder !== 'string') continue;
+			normalized.push({
+				id: candidate.id,
+				label: candidate.label,
+				folder: candidate.folder,
+				patternStr: typeof candidate.patternStr === 'string' && candidate.patternStr.length > 0 && candidate.patternStr.length <= 200
+					? candidate.patternStr
+					: '^(.+)\\.(md|html)$',
+				frequency: candidate.frequency === 'weekly' ? 'weekly' : 'daily',
+				enabled: candidate.enabled === true,
+			});
+		}
+		return normalized;
+	}
+
+	private normalizeCronJobs(savedJobs: unknown): CronJobConfig[] {
+		const defaults = DEFAULT_SETTINGS.cronJobs.map((job) => ({ ...job }));
+		if (Array.isArray(savedJobs) === false) return defaults;
+
+		const savedById = new Map<string, Partial<CronJobConfig>>();
+		for (const job of savedJobs) {
+			if (typeof job !== 'object' || job === null) continue;
+			const candidate = job as Partial<CronJobConfig>;
+			if (typeof candidate.id === 'string' && candidate.id.length > 0) {
+				savedById.set(candidate.id, candidate);
+			}
+		}
+
+		const normalized = defaults.map((job) => this.mergeCronJob(job, savedById.get(job.id)));
+		const defaultIds = new Set(defaults.map((job) => job.id));
+		for (const [id, job] of savedById) {
+			if (defaultIds.has(id)) continue;
+			const fallback = this.mergeCronJob({
+				id,
+				title: id,
+				description: '',
+				prompt: '',
+				frequency: CRON_FREQUENCY.MANUAL,
+				time: '08:00',
+				weekday: CRON_WEEKDAY.MONDAY,
+				outputFolder: `WorkspaceVault/Personal/ClaudeCRON/${id}`,
+				filePrefix: id.replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || id,
+				configPath: `WorkspaceVault/Personal/ClaudeCRON/Configs/${id}.md`,
+				workingDirectory: '',
+				enabled: false,
+				createdAt: 0,
+				updatedAt: 0,
+			}, job);
+			normalized.push(fallback);
+		}
+		return normalized;
+	}
+
+	private mergeCronJob(base: CronJobConfig, saved: Partial<CronJobConfig> | undefined): CronJobConfig {
+		if (saved === undefined) return { ...base };
+		return {
+			id: base.id,
+			title: this.nonEmptyString(saved.title, base.title),
+			description: this.nonEmptyString(saved.description, base.description),
+			prompt: this.nonEmptyString(saved.prompt, base.prompt),
+			frequency: this.validCronFrequency(saved.frequency, base.frequency),
+			time: this.validTime(saved.time, base.time),
+			weekday: this.validCronWeekday(saved.weekday, base.weekday),
+			outputFolder: this.nonEmptyString(saved.outputFolder, base.outputFolder),
+			filePrefix: this.nonEmptyString(saved.filePrefix, base.filePrefix),
+			configPath: this.nonEmptyString(saved.configPath, base.configPath),
+			workingDirectory: typeof saved.workingDirectory === 'string' ? saved.workingDirectory : base.workingDirectory,
+			enabled: typeof saved.enabled === 'boolean' ? saved.enabled : base.enabled,
+			createdAt: typeof saved.createdAt === 'number' ? saved.createdAt : base.createdAt,
+			updatedAt: typeof saved.updatedAt === 'number' ? saved.updatedAt : base.updatedAt,
+		};
+	}
+
+	private nonEmptyString(value: unknown, fallback: string): string {
+		return typeof value === 'string' && value.trim().length > 0 ? value.trim() : fallback;
+	}
+
+	private validTime(value: unknown, fallback: string): string {
+		return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value) ? value : fallback;
+	}
+
+	private validCronFrequency(value: unknown, fallback: CronFrequency): CronFrequency {
+		const values = Object.values(CRON_FREQUENCY) as CronFrequency[];
+		return values.includes(value as CronFrequency) ? value as CronFrequency : fallback;
+	}
+
+	private validCronWeekday(value: unknown, fallback: CronWeekday): CronWeekday {
+		const values = Object.values(CRON_WEEKDAY) as CronWeekday[];
+		return values.includes(value as CronWeekday) ? value as CronWeekday : fallback;
 	}
 
 	/** Persists all plugin data to Obsidian storage and writes a vault-side backup. */
