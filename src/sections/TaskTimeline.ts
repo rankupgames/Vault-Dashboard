@@ -4,17 +4,17 @@
  * Project: Vault Dashboard
  * Description: Task list with git-style tree, duration display, actions, and subtask rendering
  * Created: 2026-03-07
- * Last Modified: 2026-03-09
+ * Last Modified: 2026-05-16
  */
 
-import { App, setIcon, TFile, Notice } from 'obsidian';
-import { Task, PluginSettings } from '../core/types';
-import { TimerEngine } from '../core/TimerEngine';
-import { TaskManager } from '../core/TaskManager';
-import { SubtaskTree, SubtreeViewState } from './SubtaskTree';
+import { Notice, setIcon, TFile, type App } from 'obsidian';
+import type { PluginSettings, Task } from '../core/types';
+import type { TimerEngine } from '../core/TimerEngine';
+import type { TaskManager } from '../core/TaskManager';
+import { SubtaskTree, type SubtreeViewState } from './SubtaskTree';
 import { TaskModal } from '../modals/TaskModal';
 import { ImportModal } from '../modals/ImportModal';
-import { TimerSection } from './TimerSection';
+import type { TimerSection } from './TimerSection';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { ArchiveDetailModal } from '../modals/ArchiveDetailModal';
 import { isAIEnabled, gatherContext, composePrompt, parseJsonArray, type IAIDispatcher } from '../services/AIDispatcher';
@@ -669,26 +669,26 @@ export class TaskTimeline implements SectionRenderer {
 						const planId = await dispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
 						if (planId === '') return;
 
-					const unsub = dispatcher.onDispatchChange(() => {
-						const rec = dispatcher.getRecord(planId);
-						if (rec === undefined) return;
-						if (rec.status === 'plan-ready') {
-							unsub();
-						} else if (rec.status === 'failed') {
-							unsub();
-							this.deps.taskManager.updateTask(task.id, {
-								delegationStatus: 'failed',
-								delegationFeedback: rec.error ?? 'Plan generation failed',
-							});
-							this.deps.onRenderAll();
-						}
-					});
+						const unsubscribe = dispatcher.onDispatchChange(() => {
+							const record = dispatcher.getRecord(planId);
+							if (record === undefined) return;
+							if (record.status === 'plan-ready') {
+								unsubscribe();
+							} else if (record.status === 'failed') {
+								unsubscribe();
+								this.deps.taskManager.updateTask(task.id, {
+									delegationStatus: 'failed',
+									delegationFeedback: record.error ?? 'Plan generation failed',
+								});
+								this.deps.onRenderAll();
+							}
+						});
 					};
 					if (this.deps.settings.aiSkipPermissions) {
 						new ConfirmModal(
 							this.deps.app,
 							'Unrestricted Permissions',
-							'This dispatch will run with --dangerously-skip-permissions. The AI tool will have unrestricted filesystem and shell access. Continue?',
+							'This dispatch will bypass AI tool permission prompts. The selected local AI tool will have broad filesystem and shell access. Continue?',
 							() => { runDelegate(); },
 							'Continue',
 						).open();

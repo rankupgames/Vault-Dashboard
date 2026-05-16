@@ -1,11 +1,22 @@
+/*
+ * Author: Miguel A. Lopez
+ * Company: Rank Up Games LLC
+ * Project: Vault Dashboard
+ * Description: Bundles the Obsidian plugin entry point and concatenates scoped CSS
+ * Created: 2026-03-07
+ * Last Modified: 2026-05-16
+ */
+
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
 import { readdir, readFile, writeFile } from "fs/promises";
 import { join } from "path";
 
+/** True when building release artifacts without inline source maps. */
 const prod = process.argv[2] === "production";
 
+/** CSS files concatenated in dependency order before appending any extras. */
 const CSS_ORDER = [
 	"root.css",
 	"timer.css",
@@ -23,6 +34,7 @@ const CSS_ORDER = [
 	"responsive.css",
 ];
 
+/** Esbuild plugin that writes Obsidian's single styles.css artifact. */
 const concatCssPlugin = {
 	name: "concat-css",
 	setup(build) {
@@ -53,6 +65,7 @@ const concatCssPlugin = {
 	},
 };
 
+/** Shared esbuild options for watch and production builds. */
 const buildOptions = {
 	entryPoints: ["src/main.ts"],
 	bundle: true,
@@ -60,6 +73,7 @@ const buildOptions = {
 		"obsidian",
 		"electron",
 		"@electron/remote",
+		"@cursor/sdk",
 		"@codemirror/autocomplete",
 		"@codemirror/collab",
 		"@codemirror/commands",

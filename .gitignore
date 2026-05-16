@@ -4,3 +4,10 @@ styles.css
 data.json
 .DS_Store
 .deploy-target
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.sqlite
+*.db

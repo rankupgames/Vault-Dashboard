@@ -4,7 +4,7 @@
  * Project: Vault Dashboard
  * Description: Shared types, interfaces, and default data for the plugin
  * Created: 2026-03-07
- * Last Modified: 2026-05-13
+ * Last Modified: 2026-05-16
  */
 
 /** A named category for grouping tasks in the board view. */
@@ -225,6 +225,92 @@ export interface GmailDigestSettings {
 	digestDate: string;
 }
 
+/** Supported AI providers for dashboard dispatch workflows. */
+export const AI_TOOL = {
+	NONE: 'none',
+	CURSOR_SDK: 'cursor-sdk',
+	CODEX_CLI: 'codex-cli',
+	CLAUDE_CODE: 'claude-code',
+	OPENROUTER: 'openrouter',
+} as const;
+
+/** AI provider identifier selected in plugin settings. */
+export type AITool = (typeof AI_TOOL)[keyof typeof AI_TOOL];
+
+/** macOS Keychain lookup coordinates for a provider secret. */
+export interface AIKeychainRef {
+	/** macOS Keychain service name. */
+	service: string;
+	/** macOS Keychain account name. */
+	account: string;
+}
+
+/** One model option returned by a provider catalog. */
+export interface AIModelOption {
+	/** Provider model slug. */
+	id: string;
+	/** Human-readable model name. */
+	name: string;
+}
+
+/** Cursor SDK provider settings stored without the secret value. */
+export interface CursorSdkProviderSettings {
+	/** Keychain item used to load the Cursor API key at dispatch time. */
+	apiKey: AIKeychainRef;
+	/** Selected Cursor model identifier. */
+	model: string;
+	/** Cached model catalog for settings dropdowns. */
+	models: AIModelOption[];
+	/** Timestamp in ms when the model catalog was last refreshed. */
+	modelsUpdatedAt: number;
+}
+
+/** Codex CLI provider settings stored without the optional API key override value. */
+export interface CodexCliProviderSettings {
+	/** Keychain item used to set OPENAI_API_KEY for Codex dispatches. */
+	apiKey: AIKeychainRef;
+	/** Optional explicit path to the codex executable. */
+	cliPath: string;
+	/** Optional model override passed to the Codex CLI. */
+	model: string;
+}
+
+/** Claude Code provider settings stored without the optional API key override value. */
+export interface ClaudeCodeProviderSettings {
+	/** Keychain item used to set ANTHROPIC_API_KEY for Claude Code dispatches. */
+	apiKey: AIKeychainRef;
+	/** Optional explicit path to the claude executable. */
+	cliPath: string;
+	/** Optional model override passed to Claude Code. */
+	model: string;
+}
+
+/** OpenRouter provider settings stored without the API key value. */
+export interface OpenRouterProviderSettings {
+	/** Keychain item used to load the OpenRouter API key at request time. */
+	apiKey: AIKeychainRef;
+	/** HTTPS API base URL for OpenRouter-compatible chat and model requests. */
+	baseUrl: string;
+	/** Selected OpenRouter model identifier. */
+	model: string;
+	/** Cached model catalog for settings dropdowns. */
+	models: AIModelOption[];
+	/** Timestamp in ms when the model catalog was last refreshed. */
+	modelsUpdatedAt: number;
+}
+
+/** Provider-specific AI configuration grouped under plugin settings. */
+export interface AIProviderSettings {
+	/** Cursor SDK configuration. */
+	cursorSdk: CursorSdkProviderSettings;
+	/** Codex CLI configuration. */
+	codexCli: CodexCliProviderSettings;
+	/** Claude Code configuration. */
+	claudeCode: ClaudeCodeProviderSettings;
+	/** OpenRouter configuration. */
+	openRouter: OpenRouterProviderSettings;
+}
+
 /** Configuration for a dashboard module. */
 export interface ModuleConfig {
 	/** Unique identifier. */
@@ -296,9 +382,11 @@ export interface PluginSettings {
 	/** Read-only Gmail digest command settings. */
 	gmailDigest: GmailDigestSettings;
 	/** AI tool integration. */
-	aiTool: 'cursor' | 'claude-code' | 'none';
-	/** Path to AI tool executable. */
+	aiTool: AITool;
+	/** Legacy path to AI tool executable. New provider config lives in aiProviders. */
 	aiToolPath: string;
+	/** Per-provider AI configuration. Secret values are stored in macOS Keychain. */
+	aiProviders: AIProviderSettings;
 	/** AI auto-organize tasks. */
 	aiAutoOrganize: boolean;
 	/** AI auto-order tasks. */
@@ -476,6 +564,36 @@ export const DEFAULT_GMAIL_DIGEST_SETTINGS: GmailDigestSettings = {
 	digestDate: 'today',
 };
 
+/** Shared Keychain service name for provider secrets managed by this plugin. */
+const DEFAULT_AI_KEYCHAIN_SERVICE = 'vault-dashboard.ai';
+
+/** Default AI provider configuration. */
+export const DEFAULT_AI_PROVIDERS: AIProviderSettings = {
+	cursorSdk: {
+		apiKey: { service: 'orbit', account: 'cursor-api-key' },
+		model: 'composer-latest',
+		models: [],
+		modelsUpdatedAt: 0,
+	},
+	codexCli: {
+		apiKey: { service: DEFAULT_AI_KEYCHAIN_SERVICE, account: 'codex-cli:api-key' },
+		cliPath: '',
+		model: '',
+	},
+	claudeCode: {
+		apiKey: { service: DEFAULT_AI_KEYCHAIN_SERVICE, account: 'claude-code:api-key' },
+		cliPath: '',
+		model: '',
+	},
+	openRouter: {
+		apiKey: { service: DEFAULT_AI_KEYCHAIN_SERVICE, account: 'openrouter:api-key' },
+		baseUrl: 'https://openrouter.ai/api/v1',
+		model: '',
+		models: [],
+		modelsUpdatedAt: 0,
+	},
+};
+
 /** Default plugin settings. */
 export const DEFAULT_SETTINGS: PluginSettings = {
 	snapIntervalMinutes: 30,
@@ -516,8 +634,14 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	],
 	cronJobs: DEFAULT_CRON_JOBS,
 	gmailDigest: { ...DEFAULT_GMAIL_DIGEST_SETTINGS },
-	aiTool: 'none',
+	aiTool: AI_TOOL.NONE,
 	aiToolPath: '',
+	aiProviders: {
+		cursorSdk: { ...DEFAULT_AI_PROVIDERS.cursorSdk, apiKey: { ...DEFAULT_AI_PROVIDERS.cursorSdk.apiKey }, models: [] },
+		codexCli: { ...DEFAULT_AI_PROVIDERS.codexCli, apiKey: { ...DEFAULT_AI_PROVIDERS.codexCli.apiKey } },
+		claudeCode: { ...DEFAULT_AI_PROVIDERS.claudeCode, apiKey: { ...DEFAULT_AI_PROVIDERS.claudeCode.apiKey } },
+		openRouter: { ...DEFAULT_AI_PROVIDERS.openRouter, apiKey: { ...DEFAULT_AI_PROVIDERS.openRouter.apiKey }, models: [] },
+	},
 	aiAutoOrganize: false,
 	aiAutoOrder: false,
 	aiDelegation: false,

@@ -4,22 +4,28 @@
  * Project: Vault Dashboard
  * Description: Plugin entry point -- registers view, commands, and manages data persistence
  * Created: 2026-03-07
- * Last Modified: 2026-05-13
+ * Last Modified: 2026-05-16
  */
 
 import { Notice, Plugin, WorkspaceLeaf, TFile } from 'obsidian';
 import {
-	PluginData,
-	PluginSettings,
-	ModuleConfig,
-	CronJobConfig,
-	CronFrequency,
-	CronWeekday,
-	GmailDigestSettings,
-	DEFAULT_DATA,
-	DEFAULT_SETTINGS,
+	AI_TOOL,
 	CRON_FREQUENCY,
 	CRON_WEEKDAY,
+	DEFAULT_AI_PROVIDERS,
+	DEFAULT_DATA,
+	DEFAULT_SETTINGS,
+	type AIKeychainRef,
+	type AIModelOption,
+	type AIProviderSettings,
+	type AITool,
+	type CronFrequency,
+	type CronJobConfig,
+	type CronWeekday,
+	type GmailDigestSettings,
+	type ModuleConfig,
+	type PluginData,
+	type PluginSettings,
 	VIEW_TYPE_WELCOME,
 	VIEW_TYPE_MINI_TIMER,
 } from './core/types';
@@ -31,14 +37,66 @@ import { WelcomeView } from './WelcomeView';
 import { MiniTimerView } from './MiniTimerView';
 import { AudioService } from './core/AudioService';
 import { isGhostTaskId } from './core/ghost-task';
-import { AIDispatcher, validateToolPath, type IAIDispatcher } from './services/AIDispatcher';
+import { AIDispatcher, normalizeOpenRouterBaseUrl, validateToolPath, type IAIDispatcher } from './services/AIDispatcher';
 import { ModuleRenderer } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { SettingsTab } from './SettingsTab';
 import { destroyTooltip } from './ui/Tooltip';
 import { closeAllModals } from './core/modal-tracker';
 import { BackupService } from './services/BackupService';
-import { PopoutPositionTracker } from './services/PopoutPositionTracker';
+import { PopoutPositionTracker, type PopoutWindowHandle } from './services/PopoutPositionTracker';
+
+/** Minimal Electron display shape used to restore popout placement. */
+interface ElectronDisplayBounds {
+	/** Left coordinate of the display. */
+	x: number;
+	/** Top coordinate of the display. */
+	y: number;
+	/** Display width in pixels. */
+	width: number;
+	/** Display height in pixels. */
+	height: number;
+}
+
+/** Minimal Electron display wrapper returned by @electron/remote. */
+interface ElectronDisplay {
+	/** Bounds used by PopoutPositionTracker. */
+	bounds: ElectronDisplayBounds;
+}
+
+/** Minimal BrowserWindow methods used for the mini timer popout. */
+interface ElectronBrowserWindow extends PopoutWindowHandle {
+	/** Electron window identifier. */
+	id: number;
+	/** Reports whether the popout window has already been destroyed. */
+	isDestroyed(): boolean;
+	/** Returns current window coordinates. */
+	getPosition(): number[];
+	/** Moves the window to screen coordinates. */
+	setPosition(x: number, y: number): void;
+	/** Subscribes to Electron window events used by position tracking. */
+	on(event: string, callback: () => void): void;
+	/** Changes window opacity while the view initializes. */
+	setOpacity(opacity: number): void;
+	/** Keeps the mini timer above normal application windows. */
+	setAlwaysOnTop(flag: boolean, level?: string): void;
+	/** Shows the mini timer on all macOS workspaces. */
+	setVisibleOnAllWorkspaces(flag: boolean, options?: { visibleOnFullScreen?: boolean }): void;
+}
+
+/** Minimal @electron/remote shape consumed by the plugin. */
+interface ElectronRemoteLike {
+	/** Screen API used to enumerate displays. */
+	screen?: {
+		/** Returns all connected displays. */
+		getAllDisplays(): ElectronDisplay[];
+	};
+	/** BrowserWindow API used to find and configure popout windows. */
+	BrowserWindow?: {
+		/** Returns all active Electron browser windows. */
+		getAllWindows(): ElectronBrowserWindow[];
+	};
+}
 
 /** Plugin entry point -- registers view, commands, and manages data persistence. */
 export default class VaultDashboardPlugin extends Plugin {
@@ -56,10 +114,15 @@ export default class VaultDashboardPlugin extends Plugin {
 	moduleRegistry!: ModuleRegistry;
 	/** AI dispatch service for CLI tool integration. */
 	aiDispatcher!: IAIDispatcher;
+	/** Pending debounce handle for plugin data writes. */
 	private saveTimeout: number | null = null;
+	/** Last local date observed by the daily reset poller. */
 	private lastDateStr = '';
+	/** Timer handle for detecting local day changes. */
 	private dayCheckInterval: number | null = null;
+	/** Tracks whether the current timer has already played its overtime warning. */
 	private hasGoneNegative = false;
+	/** Persists and restores the mini timer popout position. */
 	private miniTimerTracker!: PopoutPositionTracker;
 
 	/** Loads plugin data, initializes services, registers views/commands, and restores timer state. */
@@ -86,8 +149,7 @@ export default class VaultDashboardPlugin extends Plugin {
 			getDisplays: () => {
 				const remote = this.getElectronRemote();
 				if (remote?.screen === undefined) return [];
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any
-				return remote.screen.getAllDisplays().map((d: any) => d.bounds);
+				return remote.screen.getAllDisplays().map((display) => display.bounds);
 			},
 		});
 
@@ -346,11 +408,11 @@ export default class VaultDashboardPlugin extends Plugin {
 		this.app.workspace.detachLeavesOfType(VIEW_TYPE_MINI_TIMER);
 	}
 
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private getElectronRemote(): any | null {
+	/** Loads @electron/remote only when the desktop Electron runtime is available. */
+	private getElectronRemote(): ElectronRemoteLike | null {
 		if (typeof process === 'undefined' || !process.versions?.electron) return null;
 		// eslint-disable-next-line @typescript-eslint/no-require-imports
-		return require('@electron/remote');
+		return require('@electron/remote') as ElectronRemoteLike;
 	}
 
 	/** Opens a compact popout window with the mini timer view, restoring last known position if valid. */
@@ -445,9 +507,9 @@ export default class VaultDashboardPlugin extends Plugin {
 		if ('children' in parent) {
 			const children = (parent as unknown as { children: WorkspaceLeaf[] }).children;
 			if (Array.isArray(children)) {
-				const idx = children.indexOf(welcomeLeaf);
-				if (idx > 0) {
-					children.splice(idx, 1);
+				const leafIndex = children.indexOf(welcomeLeaf);
+				if (leafIndex > 0) {
+					children.splice(leafIndex, 1);
 					children.unshift(welcomeLeaf);
 				}
 			}
@@ -507,6 +569,7 @@ export default class VaultDashboardPlugin extends Plugin {
 		}
 		if (saved) {
 			const mergedSettings = { ...DEFAULT_DATA.settings, ...saved.settings };
+			const savedSettingsRecord = this.asRecord(saved.settings);
 
 			mergedSettings.modules = DEFAULT_SETTINGS.modules.map((def) => {
 				const savedMod = (saved.settings?.modules as ModuleConfig[] | undefined)
@@ -547,6 +610,12 @@ export default class VaultDashboardPlugin extends Plugin {
 			mergedSettings.reportSources = this.normalizeReportSources(saved.settings?.reportSources);
 			mergedSettings.cronJobs = this.normalizeCronJobs(saved.settings?.cronJobs);
 			mergedSettings.gmailDigest = this.normalizeGmailDigestSettings(saved.settings?.gmailDigest, legacyGmailSettings);
+			mergedSettings.aiTool = this.normalizeAITool(savedSettingsRecord.aiTool);
+			mergedSettings.aiProviders = this.normalizeAIProviders(
+				savedSettingsRecord.aiProviders,
+				savedSettingsRecord.aiTool,
+				savedSettingsRecord.aiToolPath,
+			);
 			if (saved.settings?.taskCategories) mergedSettings.taskCategories = saved.settings.taskCategories;
 			if (saved.settings?.activeCategoryId !== undefined) mergedSettings.activeCategoryId = saved.settings.activeCategoryId;
 
@@ -566,9 +635,9 @@ export default class VaultDashboardPlugin extends Plugin {
 
 	/** Sanitizes loaded settings against expected types and ranges. */
 	private validateSettings(s: PluginSettings): void {
-		const validAITools: string[] = ['cursor', 'claude-code', 'none'];
-		if (validAITools.includes(s.aiTool) === false) s.aiTool = 'none';
+		s.aiTool = this.normalizeAITool(s.aiTool);
 		if (validateToolPath(s.aiToolPath) === false) s.aiToolPath = '';
+		s.aiProviders = this.normalizeAIProviders(s.aiProviders, s.aiTool, s.aiToolPath);
 
 		const validSnaps = [15, 30, 60];
 		if (validSnaps.includes(s.snapIntervalMinutes) === false) s.snapIntervalMinutes = 30;
@@ -594,11 +663,12 @@ export default class VaultDashboardPlugin extends Plugin {
 	}
 
 	/** Clamps a numeric value (or coerces non-numbers) to the given range. */
-	private clamp(val: unknown, min: number, max: number): number {
-		const n = typeof val === 'number' ? val : min;
-		return Math.max(min, Math.min(max, Math.floor(n)));
+	private clamp(value: unknown, min: number, max: number): number {
+		const parsedValue = typeof value === 'number' ? value : min;
+		return Math.max(min, Math.min(max, Math.floor(parsedValue)));
 	}
 
+	/** Normalizes persisted Gmail tool settings while preserving legacy module-level values. */
 	private normalizeGmailDigestSettings(savedSettings: unknown, legacyModuleSettings?: Record<string, unknown>): GmailDigestSettings {
 		const defaults = DEFAULT_SETTINGS.gmailDigest;
 		const saved = this.asRecord(savedSettings);
@@ -616,6 +686,7 @@ export default class VaultDashboardPlugin extends Plugin {
 		};
 	}
 
+	/** Finds legacy settings stored inside a module configuration. */
 	private findModuleSettings(modules: unknown, moduleId: string): Record<string, unknown> | undefined {
 		if (Array.isArray(modules) === false) return undefined;
 		for (const moduleConfig of modules) {
@@ -628,14 +699,17 @@ export default class VaultDashboardPlugin extends Plugin {
 		return undefined;
 	}
 
+	/** Converts unknown persisted data into a safe object record. */
 	private asRecord(value: unknown): Record<string, unknown> {
 		return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
 	}
 
+	/** Returns a trimmed string setting or a fallback when the persisted value is not a string. */
 	private stringSetting(value: unknown, fallback: string): string {
 		return typeof value === 'string' ? value.trim() : fallback;
 	}
 
+	/** Parses and clamps integer settings loaded from persisted plugin data. */
 	private boundedInteger(value: unknown, fallback: number, min: number, max: number): number {
 		const parsed = typeof value === 'number'
 			? value
@@ -644,6 +718,94 @@ export default class VaultDashboardPlugin extends Plugin {
 				: fallback;
 		if (Number.isNaN(parsed)) return fallback;
 		return Math.max(min, Math.min(max, Math.floor(parsed)));
+	}
+
+	/** Maps legacy and current AI provider IDs to the supported provider constants. */
+	private normalizeAITool(value: unknown): AITool {
+		if (value === 'cursor') return AI_TOOL.CURSOR_SDK;
+		const values = Object.values(AI_TOOL) as AITool[];
+		return values.includes(value as AITool) ? value as AITool : AI_TOOL.NONE;
+	}
+
+	/** Normalizes provider-specific AI settings without ever storing secret values in plugin data. */
+	private normalizeAIProviders(savedSettings: unknown, legacyTool?: unknown, legacyPath?: unknown): AIProviderSettings {
+		const saved = this.asRecord(savedSettings);
+		const legacyToolName = typeof legacyTool === 'string' ? legacyTool : '';
+		const legacyCliPath = typeof legacyPath === 'string' && validateToolPath(legacyPath) ? legacyPath.trim() : '';
+		const codex = this.asRecord(saved.codexCli);
+		const claude = this.asRecord(saved.claudeCode);
+		const cursor = this.asRecord(saved.cursorSdk);
+		const openRouter = this.asRecord(saved.openRouter);
+
+		return {
+			cursorSdk: {
+				apiKey: this.normalizeKeychainRef(cursor.apiKey, DEFAULT_AI_PROVIDERS.cursorSdk.apiKey),
+				model: this.nonEmptyString(cursor.model, DEFAULT_AI_PROVIDERS.cursorSdk.model),
+				models: this.normalizeModelOptions(cursor.models),
+				modelsUpdatedAt: this.boundedInteger(cursor.modelsUpdatedAt, 0, 0, Number.MAX_SAFE_INTEGER),
+			},
+			codexCli: {
+				apiKey: this.normalizeKeychainRef(codex.apiKey, DEFAULT_AI_PROVIDERS.codexCli.apiKey),
+				cliPath: this.normalizeCliPath(codex.cliPath, legacyToolName === 'codex-cli' ? legacyCliPath : DEFAULT_AI_PROVIDERS.codexCli.cliPath),
+				model: this.stringSetting(codex.model, DEFAULT_AI_PROVIDERS.codexCli.model),
+			},
+			claudeCode: {
+				apiKey: this.normalizeKeychainRef(claude.apiKey, DEFAULT_AI_PROVIDERS.claudeCode.apiKey),
+				cliPath: this.normalizeCliPath(claude.cliPath, legacyToolName === 'claude-code' ? legacyCliPath : DEFAULT_AI_PROVIDERS.claudeCode.cliPath),
+				model: this.stringSetting(claude.model, DEFAULT_AI_PROVIDERS.claudeCode.model),
+			},
+			openRouter: {
+				apiKey: this.normalizeKeychainRef(openRouter.apiKey, DEFAULT_AI_PROVIDERS.openRouter.apiKey),
+				baseUrl: this.normalizeOpenRouterBaseUrl(openRouter.baseUrl),
+				model: this.stringSetting(openRouter.model, DEFAULT_AI_PROVIDERS.openRouter.model),
+				models: this.normalizeModelOptions(openRouter.models),
+				modelsUpdatedAt: this.boundedInteger(openRouter.modelsUpdatedAt, 0, 0, Number.MAX_SAFE_INTEGER),
+			},
+		};
+	}
+
+	/** Normalizes CLI paths to the safe character subset accepted by spawn-based dispatch. */
+	private normalizeCliPath(value: unknown, fallback: string): string {
+		const path = this.stringSetting(value, fallback);
+		return validateToolPath(path) ? path : fallback;
+	}
+
+	/** Falls back to the default OpenRouter endpoint when persisted data is malformed or unsafe. */
+	private normalizeOpenRouterBaseUrl(value: unknown): string {
+		const candidate = this.nonEmptyString(value, DEFAULT_AI_PROVIDERS.openRouter.baseUrl);
+		try {
+			return normalizeOpenRouterBaseUrl(candidate);
+		} catch {
+			return DEFAULT_AI_PROVIDERS.openRouter.baseUrl;
+		}
+	}
+
+	/** Normalizes Keychain lookup coordinates while preserving provider defaults. */
+	private normalizeKeychainRef(value: unknown, fallback: AIKeychainRef): AIKeychainRef {
+		const record = this.asRecord(value);
+		return {
+			service: this.nonEmptyString(record.service, fallback.service),
+			account: this.nonEmptyString(record.account, fallback.account),
+		};
+	}
+
+	/** Normalizes cached provider model catalogs and caps their stored size. */
+	private normalizeModelOptions(value: unknown): AIModelOption[] {
+		if (Array.isArray(value) === false) return [];
+		const normalized: AIModelOption[] = [];
+		const seen = new Set<string>();
+		for (const item of value) {
+			const record = this.asRecord(item);
+			const id = this.stringSetting(record.id, '');
+			if (id.length === 0 || id.length > 256 || seen.has(id)) continue;
+			seen.add(id);
+			normalized.push({
+				id,
+				name: this.nonEmptyString(record.name, id),
+			});
+			if (normalized.length >= 300) break;
+		}
+		return normalized;
 	}
 
 	private normalizeReportSources(savedSources: unknown): PluginSettings['reportSources'] {

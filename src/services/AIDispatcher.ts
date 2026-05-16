@@ -2,15 +2,24 @@
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
  * Project: Vault Dashboard
- * Description: AI context assembler and terminal dispatcher for Cursor/Claude Code CLI
+ * Description: AI context assembler and provider dispatcher for local and remote AI tools
  * Created: 2026-03-08
- * Last Modified: 2026-03-11
+ * Last Modified: 2026-05-16
  */
 
 import { App, TFile, normalizePath, Notice } from 'obsidian';
-import { Task, PluginSettings, DispatchHistoryEntry, DispatchStatus } from '../core/types';
+import {
+	AI_TOOL,
+	type AIModelOption,
+	type AITool,
+	type DispatchHistoryEntry,
+	type DispatchStatus,
+	type PluginSettings,
+	type Task,
+} from '../core/types';
 import { TaskManager } from '../core/TaskManager';
 import { ensureVaultFolder } from './VaultUtils';
+import { getKeychainSecret } from './KeychainSecrets';
 
 /** Actions the AI dispatcher can perform on task context. */
 export type AIAction =
@@ -77,6 +86,10 @@ export interface IAIDispatcher {
 	dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string>;
 	/** Executes an approved plan by its record ID. */
 	dispatchExecute(app: App, settings: PluginSettings, planId: string, task?: Task): Promise<void>;
+	/** Refreshes model options for providers that expose a model catalog. */
+	refreshModels(settings: PluginSettings): Promise<AIModelOption[]>;
+	/** Returns true when an optional provider can be loaded in the current runtime. */
+	isProviderAvailable(tool: AITool): boolean;
 	/** Marks a plan-ready record as rejected. */
 	rejectPlan(planId: string): void;
 	/** Opens the configured terminal app at the given vault path. */
@@ -93,7 +106,7 @@ export interface IAIDispatcher {
 
 /** Returns true if an AI tool is configured in settings. */
 export const isAIEnabled = (settings: PluginSettings): boolean =>
-	settings.aiTool !== 'none';
+	settings.aiTool !== AI_TOOL.NONE;
 
 /** Extracts a JSON array of strings from mixed AI output text via regex. */
 export const parseJsonArray = (output: string): string[] | null => {
@@ -101,9 +114,9 @@ export const parseJsonArray = (output: string): string[] | null => {
 	if (match === null) return null;
 	const items: string[] = [];
 	const itemRegex = /"((?:[^"\\]|\\.)*)"/g;
-	let m: RegExpExecArray | null;
-	while ((m = itemRegex.exec(match[0])) !== null) {
-		items.push(m[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
+	let matchResult: RegExpExecArray | null;
+	while ((matchResult = itemRegex.exec(match[0])) !== null) {
+		items.push(matchResult[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\'));
 	}
 	return items.length > 0 ? items : null;
 };
@@ -226,9 +239,154 @@ const ACTION_LABELS: Record<AIAction, string> = {
 	delegate: 'AI Delegate',
 };
 
+/** Human-readable labels for configured AI providers. */
+const AI_TOOL_LABELS: Record<AITool, string> = {
+	[AI_TOOL.NONE]: 'None',
+	[AI_TOOL.CURSOR_SDK]: 'Cursor SDK',
+	[AI_TOOL.CODEX_CLI]: 'Codex CLI',
+	[AI_TOOL.CLAUDE_CODE]: 'Claude Code',
+	[AI_TOOL.OPENROUTER]: 'OpenRouter',
+};
+
+/** Default HTTPS endpoint used when no OpenRouter-compatible base URL is configured. */
+const DEFAULT_OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
+
+/** Maximum persisted provider error text retained in dispatch records. */
+const MAX_PROVIDER_ERROR_TEXT_LENGTH = 4000;
+
+/** Dispatch phases used to choose provider permissions and output handling. */
+export const AI_DISPATCH_PHASE = {
+	DISPATCH: 'dispatch',
+	PLAN: 'plan',
+	EXECUTE: 'execute',
+} as const;
+
+/** Runtime phase for a provider request. */
+export type AIDispatchPhase = (typeof AI_DISPATCH_PHASE)[keyof typeof AI_DISPATCH_PHASE];
+
+/** Callback invoked when the dispatch list changes. */
 type DispatchListener = () => void;
+/** Callback invoked when one dispatch reaches a terminal state. */
 type DispatchFinishListener = (record: DispatchRecord) => void;
 
+/** Prompt payload and execution paths shared by provider runners. */
+interface PromptFileInfo {
+	/** Absolute vault root used for terminal and IDE handoff. */
+	vaultPath: string;
+	/** Markdown prompt sent directly to the selected provider. */
+	promptContent: string;
+	/** Working directory used by local provider processes. */
+	execCwd: string;
+}
+
+/** Provider output captured after a successful request. */
+interface ProviderRunResult {
+	/** Text returned by the provider for UI display or plan review. */
+	output?: string;
+}
+
+/** Cursor SDK model selector accepted by the Agent API. */
+interface CursorSdkModelSelection {
+	/** Provider model identifier. */
+	id: string;
+}
+
+/** Cursor SDK sandbox settings for local agent execution. */
+interface CursorSdkSandboxOptions {
+	/** Whether the SDK sandbox should block direct local changes. */
+	enabled: boolean;
+}
+
+/** Cursor SDK local execution options. */
+interface CursorSdkLocalOptions {
+	/** Working directory where the SDK agent should run. */
+	cwd?: string | string[];
+	/** Sandbox control passed to the SDK during agent creation. */
+	sandboxOptions?: CursorSdkSandboxOptions;
+	/** Whether the SDK should skip its local confirmation prompt. */
+	force?: boolean;
+}
+
+/** Cursor SDK agent creation arguments. */
+interface CursorSdkAgentCreateOptions {
+	/** API key loaded from the configured credential manager. */
+	apiKey: string;
+	/** Model selection for the agent session. */
+	model?: CursorSdkModelSelection;
+	/** Local filesystem execution settings. */
+	local?: CursorSdkLocalOptions;
+}
+
+/** Cursor SDK prompt send options. */
+interface CursorSdkSendOptions {
+	/** Model override for this prompt. */
+	model?: CursorSdkModelSelection;
+	/** Local execution controls for this prompt. */
+	local?: CursorSdkLocalOptions;
+}
+
+/** Cursor SDK terminal status returned by a completed run. */
+interface CursorSdkRunResult {
+	/** Provider status such as finished, failed, or canceled. */
+	status: string;
+	/** Text result returned by the agent. */
+	result?: string;
+}
+
+/** Cursor SDK run handle that resolves when the provider completes. */
+interface CursorSdkRun {
+	/** Waits for the current SDK run to finish. */
+	wait(): Promise<CursorSdkRunResult>;
+}
+
+/** Cursor SDK agent instance used for prompt dispatch. */
+interface CursorSdkAgent {
+	/** Sends one prompt to the agent. */
+	send(prompt: string, options?: CursorSdkSendOptions): Promise<CursorSdkRun>;
+	/** Releases any SDK resources associated with the agent. */
+	close?(): void;
+}
+
+/** Cursor SDK agent factory exported by @cursor/sdk. */
+interface CursorSdkAgentFactory {
+	/** Creates a local Cursor agent using a Keychain-backed API key. */
+	create(options: CursorSdkAgentCreateOptions): Promise<CursorSdkAgent>;
+}
+
+/** Cursor SDK model catalog record. */
+interface CursorSdkModelRecord {
+	/** Provider model identifier. */
+	id: string;
+	/** Optional display name returned by Cursor. */
+	displayName?: string;
+	/** Optional provider aliases for the same model. */
+	aliases?: string[];
+}
+
+/** Cursor SDK model catalog API. */
+interface CursorSdkModelsApi {
+	/** Lists models available to the configured account. */
+	list(options: { apiKey: string }): Promise<CursorSdkModelRecord[]>;
+}
+
+/** Cursor SDK namespace containing model APIs. */
+interface CursorSdkCursorNamespace {
+	/** Model catalog methods. */
+	models: CursorSdkModelsApi;
+}
+
+/** Minimal shape consumed from the optional @cursor/sdk package. */
+interface CursorSdkModule {
+	/** Agent constructor namespace. */
+	Agent: CursorSdkAgentFactory;
+	/** Cursor service namespace. */
+	Cursor: CursorSdkCursorNamespace;
+}
+
+/** Returns a human-readable label for UI notices. */
+const getAIToolLabel = (tool: AITool): string => AI_TOOL_LABELS[tool] ?? tool;
+
+/** Provider-facing instructions for each supported AI task action. */
 const ACTION_INSTRUCTIONS: Record<AIAction, string> = {
 	organize: 'Analyze this task and suggest appropriate tags and timeline position relative to the other tasks. Return a JSON object with { tags: string[], insertAfterTaskId: string | null }.',
 	order: 'Reorder these pending tasks by priority, dependency, and logical flow. Return a JSON array of task IDs in the optimal order.',
@@ -236,20 +394,66 @@ const ACTION_INSTRUCTIONS: Record<AIAction, string> = {
 	delegate: 'Execute the following task. The description below is your primary instruction.',
 };
 
+/** Delegate instruction used during review-only plan generation. */
 const PLAN_PHASE_INSTRUCTION = 'Analyze this task and produce a detailed step-by-step execution plan. Describe exactly what you will do, which files you will touch, and the expected outcome. Do NOT execute anything yet -- only output the plan.';
 
+/** Prefix that turns an approved plan into an execution prompt. */
 const EXECUTE_PHASE_PREFIX = 'The user has reviewed and approved the following execution plan. Proceed to execute it exactly as described.\n\n## Approved Plan\n';
 
 /** Sanitizes a string into a filesystem-safe slug. */
-const toSlug = (s: string): string =>
-	s.substring(0, 60).replace(/[\\/:*?"<>|#^[\]]/g, '-').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'untitled';
+const toSlug = (value: string): string =>
+	value.substring(0, 60).replace(/[\\/:*?"<>|#^[\]]/g, '-').replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'untitled';
 
 /** Only allows safe filesystem path characters -- no shell metacharacters. */
 const SAFE_PATH_RE = /^[a-zA-Z0-9_/.\-~]+$/;
 
+/** Returns true when Node APIs are available inside Obsidian desktop. */
+const isDesktopNodeRuntime = (): boolean =>
+	typeof process !== 'undefined' && process.versions?.node !== undefined && typeof require === 'function';
+
 /** Returns true if the AI tool path contains only safe filesystem characters. */
 export const validateToolPath = (path: string): boolean =>
 	path === '' || SAFE_PATH_RE.test(path);
+
+/** Redacts common secret-bearing headers, env vars, and token shapes from provider text. */
+export const redactSensitiveText = (value: string): string =>
+	value
+		.replace(/(Authorization\s*:\s*Bearer\s+)[^\s"'\\]+/gi, '$1[redacted]')
+		.replace(/\b(OPENAI_API_KEY|ANTHROPIC_API_KEY|api[_-]?key|token|password|secret)\b\s*[:=]\s*["']?[^"'\s,}]+/gi, '$1=[redacted]')
+		.replace(/\b(sk-[A-Za-z0-9_-]{16,})\b/g, '[redacted-api-key]');
+
+/** Caps provider error text so failed dispatch records cannot retain large response bodies. */
+export const truncateProviderText = (value: string, maxLength = MAX_PROVIDER_ERROR_TEXT_LENGTH): string => {
+	if (value.length <= maxLength) return value;
+	return `${value.substring(0, maxLength)}\n... (truncated)`;
+};
+
+/** Applies redaction and size limits to text stored or logged from provider failures. */
+export const sanitizeProviderText = (value: string): string =>
+	truncateProviderText(redactSensitiveText(value).trim());
+
+/** Validates and normalizes an OpenRouter-compatible HTTPS base URL before API keys are sent. */
+export const normalizeOpenRouterBaseUrl = (value: string): string => {
+	const rawValue = value.trim() || DEFAULT_OPENROUTER_BASE_URL;
+	let parsedUrl: URL;
+	try {
+		parsedUrl = new URL(rawValue);
+	} catch {
+		throw new Error('OpenRouter base URL must be a valid HTTPS URL.');
+	}
+
+	if (parsedUrl.protocol !== 'https:') {
+		throw new Error('OpenRouter base URL must use HTTPS.');
+	}
+	if (parsedUrl.username !== '' || parsedUrl.password !== '') {
+		throw new Error('OpenRouter base URL cannot include credentials.');
+	}
+	if (parsedUrl.search !== '' || parsedUrl.hash !== '') {
+		throw new Error('OpenRouter base URL cannot include query strings or fragments.');
+	}
+
+	return parsedUrl.toString().replace(/\/+$/, '');
+};
 
 /**
  * Resolves a CLI tool name to its full path via the user's login shell.
@@ -280,12 +484,20 @@ const launchDetached = (command: string, args: string[]): void => {
  */
 export class AIDispatcher implements IAIDispatcher {
 
+	/** Maximum number of provider requests allowed to run concurrently. */
 	private static readonly MAX_CONCURRENT = 3;
 
+	/** Dispatch records keyed by their persisted string identifiers. */
 	private dispatches = new Map<string, DispatchRecord>();
+	/** Subscribers notified whenever dispatch records change. */
 	private listeners: DispatchListener[] = [];
+	/** Subscribers notified when a dispatch reaches a terminal status. */
 	private finishListeners: DispatchFinishListener[] = [];
+	/** Monotonic ID counter used for new dispatch records. */
 	private nextId = 1;
+	/** Active provider request count, including SDK/fetch requests without child processes. */
+	private activeDispatchCount = 0;
+	/** Child processes that can be terminated from plugin unload or user action. */
 	private activeProcesses = new Set<{ kill(signal?: NodeJS.Signals | number): boolean }>();
 
 	/**
@@ -295,20 +507,20 @@ export class AIDispatcher implements IAIDispatcher {
 	 */
 	hydrate(entries: DispatchHistoryEntry[]): void {
 		for (const entry of entries) {
-			const rec: DispatchRecord = {
+			const record: DispatchRecord = {
 				...entry,
 				action: entry.action as AIAction,
 				output: undefined,
 			};
-			if (rec.status === 'running' || rec.status === 'plan-pending') {
-				rec.status = 'failed';
-				rec.endTime = rec.endTime ?? Date.now();
-				rec.error = 'Process lost on reload';
+			if (record.status === 'running' || record.status === 'plan-pending') {
+				record.status = 'failed';
+				record.endTime = record.endTime ?? Date.now();
+				record.error = 'Process lost on reload';
 			}
-			this.dispatches.set(rec.id, rec);
-			const num = parseInt(rec.id, 10);
-			if (Number.isNaN(num) === false && num >= this.nextId) {
-				this.nextId = num + 1;
+			this.dispatches.set(record.id, record);
+			const numericId = parseInt(record.id, 10);
+			if (Number.isNaN(numericId) === false && numericId >= this.nextId) {
+				this.nextId = numericId + 1;
 			}
 		}
 		this.notifyListeners();
@@ -316,20 +528,20 @@ export class AIDispatcher implements IAIDispatcher {
 
 	/** Serializes current dispatch records for disk persistence. */
 	toJSON(): DispatchHistoryEntry[] {
-		return [...this.dispatches.values()].map((rec) => ({
-			id: rec.id,
-			action: rec.action,
-			label: rec.label,
-			taskId: rec.taskId,
-			taskTitle: rec.taskTitle,
-			tool: rec.tool,
-			status: rec.status,
-			startTime: rec.startTime,
-			endTime: rec.endTime,
-			error: rec.error,
-			vaultPath: rec.vaultPath,
-			planText: rec.planText,
-			parentPlanId: rec.parentPlanId,
+		return [...this.dispatches.values()].map((record) => ({
+			id: record.id,
+			action: record.action,
+			label: record.label,
+			taskId: record.taskId,
+			taskTitle: record.taskTitle,
+			tool: record.tool,
+			status: record.status,
+			startTime: record.startTime,
+			endTime: record.endTime,
+			error: record.error,
+			vaultPath: record.vaultPath,
+			planText: record.planText,
+			parentPlanId: record.parentPlanId,
 		}));
 	}
 
@@ -376,50 +588,18 @@ export class AIDispatcher implements IAIDispatcher {
 	/** Clears completed/failed records from the list. */
 	clearFinished(): void {
 		const keepStatuses: DispatchStatus[] = ['running', 'plan-pending', 'plan-ready'];
-		for (const [id, rec] of this.dispatches) {
-			if (keepStatuses.includes(rec.status) === false) this.dispatches.delete(id);
+		for (const [id, record] of this.dispatches) {
+			if (keepStatuses.includes(record.status) === false) this.dispatches.delete(id);
 		}
 		this.notifyListeners();
 	}
 
 	/**
-	 * Writes the prompt to a temp vault file and executes the configured AI CLI tool.
-	 * Uses spawn() with explicit argv to avoid shell injection.
+	 * Writes the prompt to a temp vault file and executes the configured AI provider.
 	 */
 	async dispatch(app: App, settings: PluginSettings, action: AIAction, prompt: string, task?: Task): Promise<string> {
-		if (settings.aiTool === 'none') {
-			new Notice('No AI tool configured. Set one in Settings > AI.');
-			return '';
-		}
-		if (validateToolPath(settings.aiToolPath) === false) {
-			new Notice('AI tool path contains invalid characters. Check Settings > AI > Custom CLI path.');
-			return '';
-		}
-		if (this.activeProcesses.size >= AIDispatcher.MAX_CONCURRENT) {
-			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
-			return '';
-		}
-
-		const slug = task ? toSlug(task.title) : '_general';
-		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
-		await ensureVaultFolder(app, folder);
-		const tempPath = normalizePath(`${folder}/prompt.md`);
-		const existing = app.vault.getAbstractFileByPath(tempPath);
-		if (existing instanceof TFile) {
-			await app.vault.modify(existing, prompt);
-		} else {
-			await app.vault.create(tempPath, prompt);
-		}
-
-		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
-		const promptFile = `${vaultPath}/${tempPath}`;
-		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
-		const skipFlags = this.permissionsFlags(settings);
-
-		const fs = require('fs') as typeof import('fs');
-		const promptContent = fs.readFileSync(promptFile, 'utf-8');
-		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
-		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
+		if (this.canStartDispatch(settings) === false) return '';
+		const promptInfo = await this.writePromptFile(app, settings, prompt, task);
 
 		const actionLabel = ACTION_LABELS[action];
 		const recordId = String(this.nextId++);
@@ -432,62 +612,14 @@ export class AIDispatcher implements IAIDispatcher {
 			tool: settings.aiTool,
 			status: 'running',
 			startTime: Date.now(),
-			vaultPath,
+			vaultPath: promptInfo.vaultPath,
 		};
 		this.dispatches.set(recordId, record);
 		this.notifyListeners();
 
-		new Notice(`${actionLabel}: running ${settings.aiTool}...`);
-
-		const { spawn } = require('child_process') as typeof import('child_process');
-		return new Promise<string>((resolve) => {
-			const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
-			this.trackProcess(child);
-			record.pid = child.pid;
-			this.notifyListeners();
-
-			const stdoutChunks: Buffer[] = [];
-			const stderrChunks: Buffer[] = [];
-			child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
-			child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-
-			child.on('error', (err: Error) => {
-				this.untrackProcess(child);
-				record.status = 'failed';
-				record.endTime = Date.now();
-				record.error = err.message;
-				this.notifyListeners();
-				this.notifyFinish(record);
-				new Notice(`${actionLabel} failed to start.`);
-				console.error('[AIDispatcher]', err);
-				resolve('');
-			});
-
-			child.on('close', (code: number | null) => {
-				this.untrackProcess(child);
-				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
-				const stderr = Buffer.concat(stderrChunks).toString('utf-8');
-				if (code !== 0) {
-					record.status = 'failed';
-					record.endTime = Date.now();
-					record.error = `Process exited with code ${code}`;
-					record.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
-					this.notifyListeners();
-					this.notifyFinish(record);
-					new Notice(`${actionLabel} failed (exit ${code}).`);
-					console.error('[AIDispatcher] exit code', code, 'stderr:', stderr);
-					resolve('');
-					return;
-				}
-				record.status = 'completed';
-				record.endTime = Date.now();
-				record.output = stdout || undefined;
-				this.notifyListeners();
-				this.notifyFinish(record);
-				new Notice(`${actionLabel} complete.`);
-				resolve(recordId);
-			});
-		});
+		new Notice(`${actionLabel}: running ${getAIToolLabel(settings.aiTool)}...`);
+		const success = await this.runProviderIntoRecord(settings, promptInfo, record, actionLabel);
+		return success ? recordId : '';
 	}
 
 	/**
@@ -499,41 +631,9 @@ export class AIDispatcher implements IAIDispatcher {
 	 * Always uses `--print` / non-interactive mode so stdout is captured.
 	 */
 	async dispatchPlan(app: App, settings: PluginSettings, context: AIContext, task: Task): Promise<string> {
-		if (settings.aiTool === 'none') {
-			new Notice('No AI tool configured. Set one in Settings > AI.');
-			return '';
-		}
-		if (validateToolPath(settings.aiToolPath) === false) {
-			new Notice('AI tool path contains invalid characters. Check Settings > AI > Custom CLI path.');
-			return '';
-		}
-		if (this.activeProcesses.size >= AIDispatcher.MAX_CONCURRENT) {
-			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
-			return '';
-		}
-
+		if (this.canStartDispatch(settings) === false) return '';
 		const planPrompt = this.composePlanPrompt(context, task);
-
-		const slug = toSlug(task.title);
-		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
-		await ensureVaultFolder(app, folder);
-		const tempPath = normalizePath(`${folder}/prompt.md`);
-		const existing = app.vault.getAbstractFileByPath(tempPath);
-		if (existing instanceof TFile) {
-			await app.vault.modify(existing, planPrompt);
-		} else {
-			await app.vault.create(tempPath, planPrompt);
-		}
-
-		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
-		const promptFile = `${vaultPath}/${tempPath}`;
-		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
-		const skipFlags = this.permissionsFlags(settings);
-
-		const fs = require('fs') as typeof import('fs');
-		const promptContent = fs.readFileSync(promptFile, 'utf-8');
-		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
-		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
+		const promptInfo = await this.writePromptFile(app, settings, planPrompt, task);
 
 		const recordId = String(this.nextId++);
 		const record: DispatchRecord = {
@@ -545,72 +645,13 @@ export class AIDispatcher implements IAIDispatcher {
 			tool: settings.aiTool,
 			status: 'plan-pending',
 			startTime: Date.now(),
-			vaultPath,
+			vaultPath: promptInfo.vaultPath,
 		};
 		this.dispatches.set(recordId, record);
 		this.notifyListeners();
 
-		new Notice(`AI Plan: generating plan via ${settings.aiTool}...`);
-
-		const { spawn } = require('child_process') as typeof import('child_process');
-		const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
-		this.trackProcess(child);
-		record.pid = child.pid;
-		this.notifyListeners();
-
-		const stdoutChunks: Buffer[] = [];
-		const stderrChunks: Buffer[] = [];
-		child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
-		child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-
-		child.on('error', (err: Error) => {
-			this.untrackProcess(child);
-			record.status = 'failed';
-			record.endTime = Date.now();
-			record.error = err.message;
-			this.notifyListeners();
-			this.notifyFinish(record);
-			new Notice('AI Plan failed to start.');
-			console.error('[AIDispatcher] plan phase error', err);
-		});
-
-		child.on('close', (code: number | null) => {
-			this.untrackProcess(child);
-			const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
-			const stderr = Buffer.concat(stderrChunks).toString('utf-8');
-
-			if (code !== 0) {
-				record.status = 'failed';
-				record.endTime = Date.now();
-				record.error = `Process exited with code ${code}`;
-				record.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
-				this.notifyListeners();
-				this.notifyFinish(record);
-				new Notice(`AI Plan failed (exit ${code}).`);
-				console.error('[AIDispatcher] plan phase error, exit code', code, 'stderr:', stderr);
-				return;
-			}
-
-			const trimmedOutput = stdout.trim();
-			if (trimmedOutput.length === 0) {
-				record.status = 'failed';
-				record.endTime = Date.now();
-				record.error = 'AI returned empty plan (no stdout). Check that the CLI tool is installed and accessible.';
-				record.output = stderr || undefined;
-				this.notifyListeners();
-				this.notifyFinish(record);
-				new Notice('AI Plan failed: no output received.');
-				console.error('[AIDispatcher] plan phase returned empty stdout. stderr:', stderr);
-				return;
-			}
-
-			record.status = 'plan-ready';
-			record.endTime = Date.now();
-			record.planText = trimmedOutput;
-			record.output = stdout || undefined;
-			this.notifyListeners();
-			new Notice('AI Plan ready -- review and approve.');
-		});
+		new Notice(`AI Plan: generating plan via ${getAIToolLabel(settings.aiTool)}...`);
+		void this.runPlanIntoRecord(settings, promptInfo, record);
 
 		return recordId;
 	}
@@ -626,37 +667,18 @@ export class AIDispatcher implements IAIDispatcher {
 			new Notice('No approved plan found.');
 			return;
 		}
-		if (validateToolPath(settings.aiToolPath) === false) {
-			new Notice('AI tool path contains invalid characters. Check Settings > AI > Custom CLI path.');
-			return;
-		}
-		if (this.activeProcesses.size >= AIDispatcher.MAX_CONCURRENT) {
-			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
+		if (this.canStartDispatch(settings) === false) return;
+		if (settings.aiTool === AI_TOOL.OPENROUTER) {
+			this.failRecord(
+				planRecord,
+				'OpenRouter can generate plans but cannot execute local file or shell changes. Choose Cursor SDK, Codex CLI, or Claude Code to execute.',
+				'AI Execute failed.',
+			);
 			return;
 		}
 
 		const executePrompt = EXECUTE_PHASE_PREFIX + planRecord.planText;
-
-		const slug = toSlug(planRecord.taskTitle);
-		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
-		await ensureVaultFolder(app, folder);
-		const tempPath = normalizePath(`${folder}/prompt.md`);
-		const existing = app.vault.getAbstractFileByPath(tempPath);
-		if (existing instanceof TFile) {
-			await app.vault.modify(existing, executePrompt);
-		} else {
-			await app.vault.create(tempPath, executePrompt);
-		}
-
-		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
-		const promptFile = `${vaultPath}/${tempPath}`;
-		const toolPath = settings.aiToolPath || await this.resolveToolPath(settings.aiTool);
-		const skipFlags = this.permissionsFlags(settings);
-
-		const fs = require('fs') as typeof import('fs');
-		const promptContent = fs.readFileSync(promptFile, 'utf-8');
-		const args = this.buildArgs(settings.aiTool, skipFlags, promptContent);
-		const execCwd = this.resolveWorkingDirectory(vaultPath, task);
+		const promptInfo = await this.writePromptFile(app, settings, executePrompt, task);
 
 		planRecord.label = `AI Execute: ${planRecord.taskTitle}`;
 		planRecord.status = 'running';
@@ -665,65 +687,16 @@ export class AIDispatcher implements IAIDispatcher {
 		planRecord.output = undefined;
 		this.notifyListeners();
 
-		new Notice(`AI Execute: running ${settings.aiTool}...`);
-
-		const { spawn } = require('child_process') as typeof import('child_process');
-		return new Promise<void>((resolve) => {
-			const child = spawn(toolPath, args, { cwd: execCwd, stdio: ['ignore', 'pipe', 'pipe'] });
-			this.trackProcess(child);
-			planRecord.pid = child.pid;
-			this.notifyListeners();
-
-			const stdoutChunks: Buffer[] = [];
-			const stderrChunks: Buffer[] = [];
-			child.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
-			child.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
-
-			child.on('error', (err: Error) => {
-				this.untrackProcess(child);
-				planRecord.status = 'failed';
-				planRecord.endTime = Date.now();
-				planRecord.error = err.message;
-				this.notifyListeners();
-				this.notifyFinish(planRecord);
-				new Notice('AI Execute failed to start.');
-				console.error('[AIDispatcher] execute phase error', err);
-				resolve();
-			});
-
-			child.on('close', (code: number | null) => {
-				this.untrackProcess(child);
-				const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
-				const stderr = Buffer.concat(stderrChunks).toString('utf-8');
-				if (code !== 0) {
-					planRecord.status = 'failed';
-					planRecord.endTime = Date.now();
-					planRecord.error = `Process exited with code ${code}`;
-					planRecord.output = [stdout, stderr].filter(Boolean).join('\n--- stderr ---\n') || undefined;
-					this.notifyListeners();
-					this.notifyFinish(planRecord);
-					new Notice(`AI Execute failed (exit ${code}).`);
-					console.error('[AIDispatcher] execute phase error, exit code', code, 'stderr:', stderr);
-					resolve();
-					return;
-				}
-				planRecord.status = 'completed';
-				planRecord.endTime = Date.now();
-				planRecord.output = stdout || undefined;
-				this.notifyListeners();
-				this.notifyFinish(planRecord);
-				new Notice('AI Execute complete.');
-				resolve();
-			});
-		});
+		new Notice(`AI Execute: running ${getAIToolLabel(settings.aiTool)}...`);
+		await this.runProviderIntoRecord(settings, promptInfo, planRecord, 'AI Execute', AI_DISPATCH_PHASE.EXECUTE);
 	}
 
 	/** Marks a plan-ready record as rejected. */
 	rejectPlan(planId: string): void {
-		const rec = this.dispatches.get(planId);
-		if (rec === undefined || rec.status !== 'plan-ready') return;
-		rec.status = 'plan-rejected';
-		rec.endTime = Date.now();
+		const record = this.dispatches.get(planId);
+		if (record === undefined || record.status !== 'plan-ready') return;
+		record.status = 'plan-rejected';
+		record.endTime = Date.now();
 		this.notifyListeners();
 		new Notice('AI Plan rejected.');
 	}
@@ -731,6 +704,33 @@ export class AIDispatcher implements IAIDispatcher {
 	/** Returns a specific dispatch record by ID. */
 	getRecord(id: string): DispatchRecord | undefined {
 		return this.dispatches.get(id);
+	}
+
+	/** Refreshes provider model options when the selected provider exposes a catalog. */
+	async refreshModels(settings: PluginSettings): Promise<AIModelOption[]> {
+		try {
+			if (settings.aiTool === AI_TOOL.CURSOR_SDK) {
+				return await this.listCursorModels(settings);
+			}
+			if (settings.aiTool === AI_TOOL.OPENROUTER) {
+				return await this.listOpenRouterModels(settings);
+			}
+			return [];
+		} catch (error) {
+			throw this.providerError(error);
+		}
+	}
+
+	/** Returns false for optional providers whose runtime package is absent. */
+	isProviderAvailable(tool: AITool): boolean {
+		if (tool !== AI_TOOL.CURSOR_SDK) {
+			return tool !== AI_TOOL.NONE;
+		}
+		try {
+			return this.optionalCursorSdk() !== undefined;
+		} catch {
+			return false;
+		}
 	}
 
 	/**
@@ -754,8 +754,8 @@ export class AIDispatcher implements IAIDispatcher {
 
 	/** Sends SIGTERM to all tracked child processes. */
 	killAll(): void {
-		for (const proc of this.activeProcesses) {
-			proc.kill('SIGTERM');
+		for (const processHandle of this.activeProcesses) {
+			processHandle.kill('SIGTERM');
 		}
 		this.activeProcesses.clear();
 	}
@@ -772,9 +772,446 @@ export class AIDispatcher implements IAIDispatcher {
 		return prompt;
 	}
 
-	/** Resolves a CLI tool name to its full path, returning a Promise for API compat. */
-	private resolveToolPath(tool: string): Promise<string> {
-		return Promise.resolve(resolveCommand(tool));
+	/** Validates provider availability, concurrency, and local executable paths before work starts. */
+	private canStartDispatch(settings: PluginSettings): boolean {
+		if (settings.aiTool === AI_TOOL.NONE) {
+			new Notice('No AI tool configured. Set one in Settings > AI.');
+			return false;
+		}
+		if (isDesktopNodeRuntime() === false) {
+			new Notice('AI dispatch requires Obsidian desktop because provider credentials are stored in macOS Keychain.');
+			return false;
+		}
+		if (settings.aiTool === AI_TOOL.CURSOR_SDK && this.isProviderAvailable(AI_TOOL.CURSOR_SDK) === false) {
+			new Notice('Cursor SDK is not installed in this plugin folder. Select another AI provider or install @cursor/sdk locally.');
+			return false;
+		}
+		if (this.activeDispatchCount >= AIDispatcher.MAX_CONCURRENT) {
+			new Notice(`Max concurrent dispatches (${AIDispatcher.MAX_CONCURRENT}) reached. Wait for one to finish.`);
+			return false;
+		}
+		if (settings.aiTool === AI_TOOL.CODEX_CLI && validateToolPath(settings.aiProviders.codexCli.cliPath) === false) {
+			new Notice('Codex CLI path contains invalid characters. Check Settings > AI.');
+			return false;
+		}
+		if (settings.aiTool === AI_TOOL.CLAUDE_CODE && validateToolPath(settings.aiProviders.claudeCode.cliPath) === false) {
+			new Notice('Claude Code CLI path contains invalid characters. Check Settings > AI.');
+			return false;
+		}
+		return true;
+	}
+
+	/** Writes the prompt note used for auditability and returns local execution paths. */
+	private async writePromptFile(app: App, settings: PluginSettings, prompt: string, task?: Task): Promise<PromptFileInfo> {
+		const slug = task ? toSlug(task.title) : '_general';
+		const folder = normalizePath(`${settings.outputFolder}/dispatches/${slug}`);
+		await ensureVaultFolder(app, folder);
+		const tempPath = normalizePath(`${folder}/prompt.md`);
+		const existing = app.vault.getAbstractFileByPath(tempPath);
+		if (existing instanceof TFile) {
+			await app.vault.modify(existing, prompt);
+		} else {
+			await app.vault.create(tempPath, prompt);
+		}
+
+		const vaultPath = (app.vault.adapter as { basePath?: string }).basePath ?? '';
+		return {
+			vaultPath,
+			promptContent: prompt,
+			execCwd: this.resolveWorkingDirectory(vaultPath, task),
+		};
+	}
+
+	/** Runs a provider request and updates the dispatch record through success or failure. */
+	private async runProviderIntoRecord(
+		settings: PluginSettings,
+		promptInfo: PromptFileInfo,
+		record: DispatchRecord,
+		successLabel: string,
+		phase: AIDispatchPhase = AI_DISPATCH_PHASE.DISPATCH,
+	): Promise<boolean> {
+		this.trackDispatchStart();
+		try {
+			const result = await this.runSelectedProvider(settings, promptInfo, phase);
+			record.status = 'completed';
+			record.endTime = Date.now();
+			record.output = result.output;
+			this.notifyListeners();
+			this.notifyFinish(record);
+			new Notice(`${successLabel} complete.`);
+			return true;
+		} catch (error) {
+			this.failRecord(record, this.errorMessage(error), `${successLabel} failed.`);
+			console.error('[AIDispatcher] provider dispatch failed:', this.errorMessage(error));
+			return false;
+		} finally {
+			this.trackDispatchEnd();
+		}
+	}
+
+	/** Runs a plan-phase request and stores the plan text for explicit approval. */
+	private async runPlanIntoRecord(settings: PluginSettings, promptInfo: PromptFileInfo, record: DispatchRecord): Promise<void> {
+		this.trackDispatchStart();
+		try {
+			const result = await this.runSelectedProvider(settings, promptInfo, AI_DISPATCH_PHASE.PLAN);
+			const output = (result.output ?? '').trim();
+			if (output.length === 0) {
+				throw new Error('AI returned empty plan. Check that the provider is configured and accessible.');
+			}
+			record.status = 'plan-ready';
+			record.endTime = Date.now();
+			record.planText = output;
+			record.output = result.output;
+			this.notifyListeners();
+			new Notice('AI Plan ready -- review and approve.');
+		} catch (error) {
+			this.failRecord(record, this.errorMessage(error), 'AI Plan failed.');
+			console.error('[AIDispatcher] plan phase error:', this.errorMessage(error));
+		} finally {
+			this.trackDispatchEnd();
+		}
+	}
+
+	/** Marks a record as failed while storing only sanitized diagnostic text. */
+	private failRecord(record: DispatchRecord, message: string, notice: string, output?: string): void {
+		record.status = 'failed';
+		record.endTime = Date.now();
+		record.error = sanitizeProviderText(message);
+		record.output = output === undefined ? undefined : sanitizeProviderText(output);
+		this.notifyListeners();
+		this.notifyFinish(record);
+		new Notice(notice);
+	}
+
+	/** Routes a prompt to the selected provider implementation. */
+	private async runSelectedProvider(
+		settings: PluginSettings,
+		promptInfo: PromptFileInfo,
+		phase: AIDispatchPhase,
+	): Promise<ProviderRunResult> {
+		if (settings.aiTool === AI_TOOL.CURSOR_SDK) {
+			return this.runCursorSdk(settings, promptInfo);
+		}
+		if (settings.aiTool === AI_TOOL.CODEX_CLI) {
+			return this.runCliProvider(settings, promptInfo, AI_TOOL.CODEX_CLI, phase);
+		}
+		if (settings.aiTool === AI_TOOL.CLAUDE_CODE) {
+			return this.runCliProvider(settings, promptInfo, AI_TOOL.CLAUDE_CODE, phase);
+		}
+		if (settings.aiTool === AI_TOOL.OPENROUTER) {
+			if (phase === AI_DISPATCH_PHASE.EXECUTE) {
+				throw new Error('OpenRouter cannot execute local file or shell changes.');
+			}
+			return this.runOpenRouter(settings, promptInfo);
+		}
+		throw new Error('No AI provider configured.');
+	}
+
+	/** Runs the optional Cursor SDK provider with a Keychain-backed API key. */
+	private async runCursorSdk(settings: PluginSettings, promptInfo: PromptFileInfo): Promise<ProviderRunResult> {
+		const apiKey = await this.requireApiKey(settings.aiProviders.cursorSdk.apiKey, 'Cursor SDK');
+		const model = settings.aiProviders.cursorSdk.model.trim() || 'composer-latest';
+		const sdk = this.loadCursorSdk();
+		const agent = await sdk.Agent.create({
+			apiKey,
+			model: { id: model },
+			local: {
+				cwd: promptInfo.execCwd,
+				sandboxOptions: { enabled: settings.aiSkipPermissions === false },
+			},
+		});
+		try {
+			const run = await agent.send(promptInfo.promptContent, {
+				model: { id: model },
+				local: { force: settings.aiSkipPermissions },
+			});
+			const result = await run.wait();
+			if (result.status !== 'finished') {
+				throw new Error(`Cursor SDK run ended with status ${result.status}.`);
+			}
+			return { output: result.result ?? '' };
+		} finally {
+			agent.close?.();
+		}
+	}
+
+	/** Runs a local CLI provider with explicit argv and provider-specific environment variables. */
+	private async runCliProvider(
+		settings: PluginSettings,
+		promptInfo: PromptFileInfo,
+		tool: typeof AI_TOOL.CODEX_CLI | typeof AI_TOOL.CLAUDE_CODE,
+		phase: AIDispatchPhase,
+	): Promise<ProviderRunResult> {
+		const toolPath = tool === AI_TOOL.CODEX_CLI
+			? settings.aiProviders.codexCli.cliPath || resolveCommand('codex')
+			: settings.aiProviders.claudeCode.cliPath || resolveCommand('claude');
+		const args = this.buildCliArgs(settings, tool, phase, promptInfo.promptContent);
+		const env = await this.providerEnv(settings, tool);
+		const output = await this.spawnAndCapture(toolPath, args, promptInfo.execCwd, env);
+		return { output };
+	}
+
+	/** Builds local CLI arguments while only using dangerous bypass flags when explicitly enabled. */
+	private buildCliArgs(
+		settings: PluginSettings,
+		tool: typeof AI_TOOL.CODEX_CLI | typeof AI_TOOL.CLAUDE_CODE,
+		phase: AIDispatchPhase,
+		promptContent: string,
+	): string[] {
+		if (tool === AI_TOOL.CODEX_CLI) {
+			const args = ['exec', '-C', '.', '--ask-for-approval', 'never'];
+			const model = settings.aiProviders.codexCli.model.trim();
+			if (model.length > 0) args.push('--model', model);
+			if (settings.aiSkipPermissions) {
+				args.push('--dangerously-bypass-approvals-and-sandbox');
+			} else {
+				args.push('--sandbox', phase === AI_DISPATCH_PHASE.PLAN ? 'read-only' : 'workspace-write');
+			}
+			args.push(promptContent);
+			return args;
+		}
+
+		const args = ['--print'];
+		const model = settings.aiProviders.claudeCode.model.trim();
+		if (model.length > 0) args.push('--model', model);
+		if (settings.aiSkipPermissions) args.push('--dangerously-skip-permissions');
+		args.push(promptContent);
+		return args;
+	}
+
+	/** Builds an environment for local providers, adding API key overrides only when configured. */
+	private async providerEnv(
+		settings: PluginSettings,
+		tool: typeof AI_TOOL.CODEX_CLI | typeof AI_TOOL.CLAUDE_CODE,
+	): Promise<NodeJS.ProcessEnv> {
+		const env: NodeJS.ProcessEnv = { ...process.env };
+		if (tool === AI_TOOL.CODEX_CLI) {
+			const apiKey = await getKeychainSecret(settings.aiProviders.codexCli.apiKey);
+			if (apiKey) env.OPENAI_API_KEY = apiKey;
+		} else {
+			const apiKey = await getKeychainSecret(settings.aiProviders.claudeCode.apiKey);
+			if (apiKey) env.ANTHROPIC_API_KEY = apiKey;
+		}
+		return env;
+	}
+
+	/** Spawns a local provider process without a shell and captures its standard output. */
+	private spawnAndCapture(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
+		return new Promise((resolve, reject) => {
+			const { spawn } = require('child_process') as typeof import('child_process');
+			const child = spawn(command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
+			this.trackProcess(child);
+
+			const standardOutputChunks: Buffer[] = [];
+			const standardErrorChunks: Buffer[] = [];
+			child.stdout.on('data', (chunk: Buffer) => standardOutputChunks.push(chunk));
+			child.stderr.on('data', (chunk: Buffer) => standardErrorChunks.push(chunk));
+			child.on('error', (error: Error) => {
+				this.untrackProcess(child);
+				reject(error);
+			});
+			child.on('close', (code: number | null) => {
+				this.untrackProcess(child);
+				const standardOutput = Buffer.concat(standardOutputChunks).toString('utf-8');
+				const standardError = Buffer.concat(standardErrorChunks).toString('utf-8');
+				if (code !== 0) {
+					reject(new Error(this.providerProcessError(code, standardOutput, standardError)));
+					return;
+				}
+				resolve(standardOutput);
+			});
+		});
+	}
+
+	/** Builds a sanitized local-process failure message without retaining raw provider stderr indefinitely. */
+	private providerProcessError(code: number | null, standardOutput: string, standardError: string): string {
+		const message = [`Process exited with code ${code ?? 'unknown'}`, standardOutput, standardError]
+			.filter((part) => part.trim().length > 0)
+			.join('\n');
+		return sanitizeProviderText(message);
+	}
+
+	/** Runs the OpenRouter chat completion endpoint for plan or analysis output. */
+	private async runOpenRouter(settings: PluginSettings, promptInfo: PromptFileInfo): Promise<ProviderRunResult> {
+		const apiKey = await this.requireApiKey(settings.aiProviders.openRouter.apiKey, 'OpenRouter');
+		const model = this.resolveOpenRouterModel(settings);
+		const baseUrl = this.openRouterBaseUrl(settings);
+		const response = await fetch(`${baseUrl}/chat/completions`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				'Content-Type': 'application/json',
+				'HTTP-Referer': 'https://github.com/dudetru25/vault-dashboard',
+				'X-Title': 'Vault Dashboard',
+			},
+			body: JSON.stringify({
+				model,
+				messages: [{ role: 'user', content: promptInfo.promptContent }],
+				stream: false,
+			}),
+		});
+		if (response.ok === false) {
+			throw new Error(await this.responseError(response, 'OpenRouter chat request failed'));
+		}
+		const data = await response.json() as unknown;
+		return { output: this.extractOpenRouterText(data) };
+	}
+
+	/** Lists Cursor SDK models using the optional SDK package when available. */
+	private async listCursorModels(settings: PluginSettings): Promise<AIModelOption[]> {
+		const apiKey = await this.requireApiKey(settings.aiProviders.cursorSdk.apiKey, 'Cursor SDK');
+		const sdk = this.loadCursorSdk();
+		const models = await sdk.Cursor.models.list({ apiKey });
+		return models.map((model) => ({
+			id: model.id,
+			name: model.displayName ?? model.id,
+		}));
+	}
+
+	/** Lists OpenRouter models available to the saved API key. */
+	private async listOpenRouterModels(settings: PluginSettings): Promise<AIModelOption[]> {
+		const apiKey = await this.requireApiKey(settings.aiProviders.openRouter.apiKey, 'OpenRouter');
+		const response = await fetch(`${this.openRouterBaseUrl(settings)}/models/user`, {
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				Accept: 'application/json',
+				'HTTP-Referer': 'https://github.com/dudetru25/vault-dashboard',
+				'X-Title': 'Vault Dashboard',
+			},
+		});
+		if (response.ok === false) {
+			throw new Error(await this.responseError(response, 'OpenRouter model refresh failed'));
+		}
+		const data = await response.json() as unknown;
+		const record = this.asRecord(data);
+		const rawModels = Array.isArray(record.data) ? record.data : [];
+		return rawModels
+			.map((item): AIModelOption | null => {
+				const model = this.asRecord(item);
+				const id = typeof model.id === 'string' ? model.id.trim() : '';
+				if (id.length === 0) return null;
+				return {
+					id,
+					name: typeof model.name === 'string' && model.name.trim().length > 0 ? model.name.trim() : id,
+				};
+			})
+			.filter((model): model is AIModelOption => model !== null);
+	}
+
+	/** Loads a provider API key from Keychain and reports a setup-focused error when absent. */
+	private async requireApiKey(ref: PluginSettings['aiProviders']['cursorSdk']['apiKey'], label: string): Promise<string> {
+		const apiKey = await getKeychainSecret(ref);
+		if (apiKey === undefined) {
+			throw new Error(`${label} API key not found in macOS Keychain. Save it in Settings > AI Integration.`);
+		}
+		return apiKey;
+	}
+
+	/** Resolves the OpenRouter model from explicit selection or the first cached catalog item. */
+	private resolveOpenRouterModel(settings: PluginSettings): string {
+		const configured = settings.aiProviders.openRouter.model.trim();
+		if (configured.length > 0) return configured;
+		const cached = settings.aiProviders.openRouter.models[0]?.id;
+		if (cached) return cached;
+		throw new Error('No OpenRouter model selected. Refresh models and choose one in Settings > AI Integration.');
+	}
+
+	/** Returns a validated OpenRouter-compatible base URL before attaching Authorization headers. */
+	private openRouterBaseUrl(settings: PluginSettings): string {
+		return normalizeOpenRouterBaseUrl(settings.aiProviders.openRouter.baseUrl);
+	}
+
+	/** Loads the optional Cursor SDK package or throws a user-actionable configuration error. */
+	private loadCursorSdk(): CursorSdkModule {
+		const module = this.optionalCursorSdk();
+		if (module === undefined) {
+			throw new Error('Cursor SDK is not installed in this plugin folder. Install @cursor/sdk locally or select a different AI provider.');
+		}
+		return module;
+	}
+
+	/** Attempts to load @cursor/sdk without making it a required production dependency. */
+	private optionalCursorSdk(): CursorSdkModule | undefined {
+		try {
+			const module = require('@cursor/sdk') as unknown;
+			return this.parseCursorSdkModule(module);
+		} catch (error) {
+			if (this.isMissingCursorSdk(error)) return undefined;
+			throw error;
+		}
+	}
+
+	/** Validates the minimal runtime shape consumed from @cursor/sdk. */
+	private parseCursorSdkModule(value: unknown): CursorSdkModule {
+		const module = this.asRecord(value);
+		const agent = this.asRecord(module.Agent);
+		const cursor = this.asRecord(module.Cursor);
+		const modelsNamespace = this.asRecord(cursor.models);
+		if (typeof agent.create !== 'function' || typeof modelsNamespace.list !== 'function') {
+			throw new Error('@cursor/sdk is installed but did not expose the expected Agent/Cursor APIs.');
+		}
+		return {
+			Agent: { create: agent.create as CursorSdkAgentFactory['create'] },
+			Cursor: { models: { list: modelsNamespace.list as CursorSdkModelsApi['list'] } },
+		};
+	}
+
+	/** Returns true only for the top-level missing optional Cursor SDK package. */
+	private isMissingCursorSdk(error: unknown): boolean {
+		const record = this.asRecord(error);
+		const message = error instanceof Error ? error.message : String(error);
+		return record.code === 'MODULE_NOT_FOUND' && message.includes('@cursor/sdk');
+	}
+
+	/** Extracts assistant text from the OpenRouter chat completion response shape. */
+	private extractOpenRouterText(value: unknown): string {
+		const data = this.asRecord(value);
+		const choices = Array.isArray(data.choices) ? data.choices : [];
+		const first = this.asRecord(choices[0]);
+		const message = this.asRecord(first.message);
+		if (typeof message.content === 'string') return message.content;
+		if (Array.isArray(message.content)) {
+			return message.content
+				.map((part) => {
+					const record = this.asRecord(part);
+					return typeof record.text === 'string' ? record.text : '';
+				})
+				.join('');
+		}
+		throw new Error('OpenRouter returned no text content.');
+	}
+
+	/** Builds a redacted failure message from a non-2xx provider response. */
+	private async responseError(response: Response, fallback: string): Promise<string> {
+		const contentLength = Number(response.headers.get('content-length') ?? 0);
+		if (contentLength > MAX_PROVIDER_ERROR_TEXT_LENGTH) {
+			return `${fallback}: ${response.status} response body omitted (${contentLength} bytes)`;
+		}
+		const text = await response.text();
+		const message = text.trim().length > 0 ? `${fallback}: ${response.status} ${text}` : `${fallback}: ${response.status}`;
+		return sanitizeProviderText(message);
+	}
+
+	/** Converts provider errors into safe user-facing dispatch messages. */
+	private errorMessage(error: unknown): string {
+		const record = this.asRecord(error);
+		if (record.status === 401 || record.name === 'AuthenticationError') {
+			return 'AI provider rejected the API key. Re-enter a valid key in Settings > AI Integration.';
+		}
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.trim().length > 0 && message !== 'Error') return sanitizeProviderText(message);
+		const operation = typeof record.operation === 'string' ? record.operation : '';
+		return operation.length > 0 ? `${operation} failed.` : 'AI provider request failed.';
+	}
+
+	/** Wraps provider errors while preserving sanitized text for settings refresh flows. */
+	private providerError(error: unknown): Error {
+		return new Error(this.errorMessage(error));
+	}
+
+	/** Safely treats unknown provider data as an object record. */
+	private asRecord(value: unknown): Record<string, unknown> {
+		return typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
 	}
 
 	/** Resolves the effective working directory from task or vault root. */
@@ -782,32 +1219,23 @@ export class AIDispatcher implements IAIDispatcher {
 		return task?.workingDirectory || vaultPath;
 	}
 
-	/**
-	 * Builds the spawn argument list for the configured tool.
-	 * Cursor agent requires `--print` for headless/non-interactive mode.
-	 */
-	private buildArgs(tool: string, skipFlags: string[], promptContent: string): string[] {
-		if (tool === 'cursor') {
-			return ['agent', '--print', ...skipFlags, promptContent];
-		}
-		return ['--print', ...skipFlags, promptContent];
+	/** Increments the provider concurrency counter before async work starts. */
+	private trackDispatchStart(): void {
+		this.activeDispatchCount++;
 	}
 
-	/** Returns skip-permissions flags as an array for spawn argv. */
-	private permissionsFlags(settings: PluginSettings): string[] {
-		if (settings.aiSkipPermissions === false) return [];
-		if (settings.aiTool === 'claude-code') return ['--dangerously-skip-permissions'];
-		if (settings.aiTool === 'cursor') return ['--force'];
-		return [];
+	/** Decrements the provider concurrency counter after async work finishes. */
+	private trackDispatchEnd(): void {
+		this.activeDispatchCount = Math.max(0, this.activeDispatchCount - 1);
 	}
 
 	/** Adds a spawned process to the active set for lifecycle tracking. */
-	private trackProcess(proc: { kill(signal?: NodeJS.Signals | number): boolean }): void {
-		this.activeProcesses.add(proc);
+	private trackProcess(processHandle: { kill(signal?: NodeJS.Signals | number): boolean }): void {
+		this.activeProcesses.add(processHandle);
 	}
 
 	/** Removes a finished process from the active set. */
-	private untrackProcess(proc: { kill(signal?: NodeJS.Signals | number): boolean }): void {
-		this.activeProcesses.delete(proc);
+	private untrackProcess(processHandle: { kill(signal?: NodeJS.Signals | number): boolean }): void {
+		this.activeProcesses.delete(processHandle);
 	}
 }

@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { CRON_FREQUENCY, DEFAULT_SETTINGS, IMAGE_EXTENSIONS, isImageExtension } from '../../src/core/types';
+import {
+	AI_TOOL,
+	CRON_FREQUENCY,
+	DEFAULT_AI_PROVIDERS,
+	DEFAULT_SETTINGS,
+	IMAGE_EXTENSIONS,
+	isImageExtension,
+} from '../../src/core/types';
 
 describe('IMAGE_EXTENSIONS', () => {
 	it('contains expected formats', () => {
@@ -79,5 +86,15 @@ describe('DEFAULT_SETTINGS modules', () => {
 		expect(DEFAULT_SETTINGS.gmailDigest.query).toBe('in:anywhere newer_than:7d');
 		expect(DEFAULT_SETTINGS.gmailDigest.limit).toBe(500);
 		expect(DEFAULT_SETTINGS.gmailDigest.digestDate).toBe('today');
+	});
+
+	it('defaults AI integration to disabled with provider-specific Keychain refs', () => {
+		expect(DEFAULT_SETTINGS.aiTool).toBe(AI_TOOL.NONE);
+		expect(DEFAULT_SETTINGS.aiProviders.cursorSdk.apiKey).toEqual(DEFAULT_AI_PROVIDERS.cursorSdk.apiKey);
+		expect(DEFAULT_SETTINGS.aiProviders.cursorSdk.apiKey).toEqual({ service: 'orbit', account: 'cursor-api-key' });
+		expect(DEFAULT_SETTINGS.aiProviders.codexCli.apiKey.account).toBe('codex-cli:api-key');
+		expect(DEFAULT_SETTINGS.aiProviders.claudeCode.apiKey.account).toBe('claude-code:api-key');
+		expect(DEFAULT_SETTINGS.aiProviders.openRouter.apiKey.account).toBe('openrouter:api-key');
+		expect(DEFAULT_SETTINGS.aiProviders.openRouter.baseUrl).toBe('https://openrouter.ai/api/v1');
 	});
 });

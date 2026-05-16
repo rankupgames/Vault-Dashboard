@@ -4,16 +4,18 @@
  * Project: Vault Dashboard
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
- * Last Modified: 2026-05-13
+ * Last Modified: 2026-05-16
  */
 
-import { App, Notice, PluginSettingTab, setIcon, Setting } from 'obsidian';
+import { Notice, PluginSettingTab, setIcon, Setting, type App } from 'obsidian';
 import type VaultDashboardPlugin from './main';
-import { DEFAULT_SETTINGS } from './core/types';
+import { AI_TOOL, type AIKeychainRef, type AIModelOption, type AITool, DEFAULT_SETTINGS } from './core/types';
 import { AnalyticsExporter } from './services/AnalyticsExporter';
+import { deleteKeychainSecret, hasKeychainSecret, setKeychainSecret } from './services/KeychainSecrets';
 
 /** Plugin settings tab for Obsidian Settings panel. */
 export class SettingsTab extends PluginSettingTab {
+	/** Plugin instance used for settings persistence and dashboard refreshes. */
 	private plugin: VaultDashboardPlugin;
 
 	/**
@@ -224,45 +226,40 @@ export class SettingsTab extends PluginSettingTab {
 		}
 	}
 
-	/** Renders AI tool selection, CLI path, permission, and delegation settings. */
+	/** Renders AI provider selection, API keys, models, permissions, and delegation settings. */
 	private renderAISection(el: HTMLElement): void {
 		el.createEl('h2', { text: 'AI Integration' });
 
 		const settings = this.plugin.data.settings;
+		const cursorSdkAvailable = this.plugin.aiDispatcher.isProviderAvailable(AI_TOOL.CURSOR_SDK);
 
 		new Setting(el)
 			.setName('AI tool')
-			.setDesc('Select the CLI tool for AI dispatching. Set to "none" to disable all AI features.')
-			.addDropdown((dd) =>
-				dd
-					.addOption('none', 'None (disabled)')
-					.addOption('cursor', 'Cursor CLI')
-					.addOption('claude-code', 'Claude Code CLI')
+			.setDesc('Select the provider for AI dispatching. Set to "none" to disable all AI features.')
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption(AI_TOOL.NONE, 'None (disabled)')
+					.addOption(AI_TOOL.CODEX_CLI, 'Codex CLI')
+					.addOption(AI_TOOL.CLAUDE_CODE, 'Claude Code CLI')
+					.addOption(AI_TOOL.OPENROUTER, 'OpenRouter');
+				if (cursorSdkAvailable || settings.aiTool === AI_TOOL.CURSOR_SDK) {
+					dropdown.addOption(AI_TOOL.CURSOR_SDK, cursorSdkAvailable ? 'Cursor SDK' : 'Cursor SDK (not installed)');
+				}
+				dropdown
 					.setValue(settings.aiTool)
-					.onChange(async (val) => {
-						settings.aiTool = val as 'cursor' | 'claude-code' | 'none';
+					.onChange(async (value) => {
+						settings.aiTool = value as AITool;
 						await this.save();
 						this.display();
-					}),
-			);
+					});
+			});
 
-		if (settings.aiTool !== 'none') {
-			new Setting(el)
-				.setName('Custom CLI path')
-				.setDesc('Override the default CLI command path (leave empty for default).')
-				.addText((text) =>
-					text
-						.setPlaceholder(settings.aiTool === 'cursor' ? 'cursor' : 'claude')
-						.setValue(settings.aiToolPath)
-						.onChange(async (val) => {
-							settings.aiToolPath = val.trim();
-							await this.save();
-						}),
-				);
+		if (settings.aiTool !== AI_TOOL.NONE) {
+			this.renderSelectedAIProviderSettings(el, settings.aiTool);
 
 			new Setting(el)
 				.setName('Skip permission prompts')
-				.setDesc('Run AI CLI in non-interactive mode, bypassing confirmation dialogs.')
+				.setDesc('Allow the selected local AI tool to bypass confirmation dialogs for file and shell access.')
 				.addToggle((toggle) =>
 					toggle.setValue(settings.aiSkipPermissions).onChange(async (val) => {
 						settings.aiSkipPermissions = val;
@@ -329,6 +326,253 @@ export class SettingsTab extends PluginSettingTab {
 						}),
 				);
 		}
+	}
+
+	/** Renders settings for the currently selected AI provider. */
+	private renderSelectedAIProviderSettings(el: HTMLElement, tool: AITool): void {
+		const settings = this.plugin.data.settings;
+
+		if (tool === AI_TOOL.CURSOR_SDK) {
+			if (this.plugin.aiDispatcher.isProviderAvailable(AI_TOOL.CURSOR_SDK) === false) {
+				new Setting(el)
+					.setName('Cursor SDK unavailable')
+					.setDesc('The @cursor/sdk package is not installed in this plugin folder. Install it locally or select Codex CLI, Claude Code, or OpenRouter.');
+				return;
+			}
+			this.renderKeychainSecretSetting(
+				el,
+				'Cursor API key',
+				settings.aiProviders.cursorSdk.apiKey,
+				'Used by the Cursor Agent SDK. Stored in macOS Keychain.',
+			);
+			this.renderModelSetting(el, 'Cursor model', settings.aiProviders.cursorSdk.model, settings.aiProviders.cursorSdk.models, async (model) => {
+				settings.aiProviders.cursorSdk.model = model;
+				await this.save();
+			}, 'composer-latest');
+			this.renderModelRefreshSetting(el, 'Refresh Cursor models', async () => {
+				const models = await this.plugin.aiDispatcher.refreshModels(settings);
+				settings.aiProviders.cursorSdk.models = models;
+				settings.aiProviders.cursorSdk.modelsUpdatedAt = Date.now();
+				if (settings.aiProviders.cursorSdk.model.trim().length === 0 && models[0]) {
+					settings.aiProviders.cursorSdk.model = models[0].id;
+				}
+				await this.save();
+			});
+		}
+
+		if (tool === AI_TOOL.CODEX_CLI) {
+			this.renderKeychainSecretSetting(
+				el,
+				'Codex API key',
+				settings.aiProviders.codexCli.apiKey,
+				'Optional override for Codex CLI. Stored as OPENAI_API_KEY when dispatching.',
+			);
+			this.renderCliPathSetting(el, 'Codex CLI path', 'codex', settings.aiProviders.codexCli.cliPath, async (path) => {
+				settings.aiProviders.codexCli.cliPath = path;
+				settings.aiToolPath = path;
+				await this.save();
+			});
+			this.renderPlainModelSetting(el, 'Codex model', 'CLI default', settings.aiProviders.codexCli.model, async (model) => {
+				settings.aiProviders.codexCli.model = model;
+				await this.save();
+			});
+		}
+
+		if (tool === AI_TOOL.CLAUDE_CODE) {
+			this.renderKeychainSecretSetting(
+				el,
+				'Claude API key',
+				settings.aiProviders.claudeCode.apiKey,
+				'Optional override for Claude Code CLI. Stored as ANTHROPIC_API_KEY when dispatching.',
+			);
+			this.renderCliPathSetting(el, 'Claude Code path', 'claude', settings.aiProviders.claudeCode.cliPath, async (path) => {
+				settings.aiProviders.claudeCode.cliPath = path;
+				settings.aiToolPath = path;
+				await this.save();
+			});
+			this.renderPlainModelSetting(el, 'Claude model', 'CLI default', settings.aiProviders.claudeCode.model, async (model) => {
+				settings.aiProviders.claudeCode.model = model;
+				await this.save();
+			});
+		}
+
+		if (tool === AI_TOOL.OPENROUTER) {
+			this.renderKeychainSecretSetting(
+				el,
+				'OpenRouter API key',
+				settings.aiProviders.openRouter.apiKey,
+				'Used for OpenRouter chat and model refresh requests. Stored in macOS Keychain.',
+			);
+			new Setting(el)
+				.setName('OpenRouter base URL')
+				.setDesc('API base URL for OpenRouter-compatible requests.')
+				.addText((text) =>
+					text
+						.setPlaceholder('https://openrouter.ai/api/v1')
+						.setValue(settings.aiProviders.openRouter.baseUrl)
+						.onChange(async (value) => {
+							settings.aiProviders.openRouter.baseUrl = value.trim() || 'https://openrouter.ai/api/v1';
+							await this.save();
+						}),
+				);
+			this.renderModelSetting(el, 'OpenRouter model', settings.aiProviders.openRouter.model, settings.aiProviders.openRouter.models, async (model) => {
+				settings.aiProviders.openRouter.model = model;
+				await this.save();
+			}, 'Refresh models or paste a model id');
+			this.renderModelRefreshSetting(el, 'Refresh OpenRouter models', async () => {
+				const models = await this.plugin.aiDispatcher.refreshModels(settings);
+				settings.aiProviders.openRouter.models = models;
+				settings.aiProviders.openRouter.modelsUpdatedAt = Date.now();
+				if (settings.aiProviders.openRouter.model.trim().length === 0 && models[0]) {
+					settings.aiProviders.openRouter.model = models[0].id;
+				}
+				await this.save();
+			});
+		}
+	}
+
+	/** Renders a password input that saves, checks, and clears a Keychain-backed secret. */
+	private renderKeychainSecretSetting(el: HTMLElement, label: string, ref: AIKeychainRef, desc: string): void {
+		let pendingSecret = '';
+		const setting = new Setting(el)
+			.setName(label)
+			.setDesc(`${desc} Keychain: ${ref.service} / ${ref.account}.`)
+			.addText((text) => {
+				text.inputEl.type = 'password';
+				text
+					.setPlaceholder('Paste API key')
+					.onChange((value) => {
+						pendingSecret = value.trim();
+					});
+			})
+			.addButton((button) =>
+				button
+					.setIcon('save')
+					.setTooltip('Save API key')
+					.onClick(async () => {
+						if (pendingSecret.length === 0) {
+							new Notice('Paste an API key first.');
+							return;
+						}
+						await setKeychainSecret(ref, pendingSecret);
+						pendingSecret = '';
+						new Notice(`${label} saved to Keychain.`);
+						this.display();
+					}),
+			)
+			.addButton((button) =>
+				button
+					.setIcon('trash-2')
+					.setTooltip('Clear API key')
+					.setWarning()
+					.onClick(async () => {
+						await deleteKeychainSecret(ref);
+						new Notice(`${label} removed from Keychain.`);
+						this.display();
+					}),
+			);
+
+		void hasKeychainSecret(ref).then((hasSecret) => {
+			setting.setDesc(`${desc} Status: ${hasSecret ? 'configured' : 'not configured'}. Keychain: ${ref.service} / ${ref.account}.`);
+		});
+	}
+
+	/** Renders a provider model dropdown when a cached catalog exists, otherwise falls back to text input. */
+	private renderModelSetting(
+		el: HTMLElement,
+		label: string,
+		value: string,
+		models: AIModelOption[],
+		onChange: (model: string) => Promise<void>,
+		placeholder: string,
+	): void {
+		if (models.length === 0) {
+			this.renderPlainModelSetting(el, label, placeholder, value, onChange);
+			return;
+		}
+
+		const options = this.sortedModels(models);
+		new Setting(el)
+			.setName(label)
+			.setDesc('Select a cached model or refresh the provider model list.')
+			.addDropdown((dropdown) => {
+				if (value.trim().length > 0 && options.some((model) => model.id === value) === false) {
+					dropdown.addOption(value, value);
+				}
+				for (const model of options) {
+					dropdown.addOption(model.id, model.name === model.id ? model.id : `${model.name} (${model.id})`);
+				}
+				dropdown.setValue(value.trim() || (options[0]?.id ?? ''));
+				dropdown.onChange(onChange);
+			});
+	}
+
+	/** Renders a freeform model text field for providers without a cached catalog. */
+	private renderPlainModelSetting(
+		el: HTMLElement,
+		label: string,
+		placeholder: string,
+		value: string,
+		onChange: (model: string) => Promise<void>,
+	): void {
+		new Setting(el)
+			.setName(label)
+			.setDesc('Leave blank to use the provider default.')
+			.addText((text) =>
+				text
+					.setPlaceholder(placeholder)
+					.setValue(value)
+					.onChange(async (model) => {
+						await onChange(model.trim());
+					}),
+			);
+	}
+
+	/** Renders a refresh button that updates provider model catalogs using a saved API key. */
+	private renderModelRefreshSetting(el: HTMLElement, label: string, refresh: () => Promise<void>): void {
+		new Setting(el)
+			.setName(label)
+			.setDesc('Fetch available models for the selected provider using the saved API key.')
+			.addButton((button) =>
+				button
+					.setIcon('refresh-cw')
+					.setTooltip(label)
+					.onClick(async () => {
+						try {
+							await refresh();
+							new Notice('AI model list refreshed.');
+							this.display();
+						} catch (error) {
+							new Notice(error instanceof Error ? error.message : 'Model refresh failed.');
+						}
+					}),
+			);
+	}
+
+	/** Renders a CLI path override while allowing empty values to resolve through the login shell. */
+	private renderCliPathSetting(
+		el: HTMLElement,
+		label: string,
+		placeholder: string,
+		value: string,
+		onChange: (path: string) => Promise<void>,
+	): void {
+		new Setting(el)
+			.setName(label)
+			.setDesc('Override the CLI command path. Leave empty to resolve it from your login shell PATH.')
+			.addText((text) =>
+				text
+					.setPlaceholder(placeholder)
+					.setValue(value)
+					.onChange(async (path) => {
+						await onChange(path.trim());
+					}),
+			);
+	}
+
+	/** Sorts provider models by display name for stable dropdown rendering. */
+	private sortedModels(models: AIModelOption[]): AIModelOption[] {
+		return [...models].sort((a, b) => a.name.localeCompare(b.name));
 	}
 
 	/** Renders read-only Gmail digest command settings used by the dashboard buttons and prompts. */
