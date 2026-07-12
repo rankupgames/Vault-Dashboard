@@ -8,7 +8,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Vault Dashboard, please report it
+If you discover a security vulnerability in Vaultboard, please report it
 responsibly.
 
 **Do not open a public issue.**

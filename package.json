@@ -1,6 +1,7 @@
 {
-  "name": "vault-dashboard",
+  "name": "vaultboard",
   "version": "1.1.10061926",
+  "packageManager": "npm@11.14.1",
   "description": "Productivity dashboard for Obsidian with clock-aligned timers and task management",
   "main": "main.js",
   "scripts": {

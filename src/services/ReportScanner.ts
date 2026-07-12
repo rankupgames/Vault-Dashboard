@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Scans vault folders for cron report files with new-report detection
  * Created: 2026-03-07
  * Last Modified: 2026-03-08

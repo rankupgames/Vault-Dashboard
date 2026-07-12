@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Clock-aligned countdown timer with snap boundaries, rollover logic, and pause/resume
  * Created: 2026-03-07
  * Last Modified: 2026-03-07

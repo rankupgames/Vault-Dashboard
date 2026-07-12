@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Launchd-backed cron control module with Vault config notes
  * Created: 2026-05-12
  * Last Modified: 2026-05-13

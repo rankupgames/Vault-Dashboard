@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Ghost task utilities -- prefix-based identification and factory helpers
  * Created: 2026-03-17
  * Last Modified: 2026-03-17

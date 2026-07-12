@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Lightweight modal for creating a ghost task (timer-only, no task card)
  * Created: 2026-03-17
  * Last Modified: 2026-03-17

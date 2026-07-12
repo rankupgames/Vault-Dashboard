@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Composable timer control state -- single source of truth for button visibility
  * Created: 2026-03-17
  * Last Modified: 2026-03-17

@@ -1,14 +1,14 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Plugin settings tab for Obsidian Settings panel
  * Created: 2026-03-08
  * Last Modified: 2026-05-16
  */
 
 import { Notice, PluginSettingTab, setIcon, Setting, type App } from 'obsidian';
-import type VaultDashboardPlugin from './main';
+import type VaultboardPlugin from './main';
 import { AI_TOOL, type AIKeychainRef, type AIModelOption, type AITool, DEFAULT_SETTINGS } from './core/types';
 import { AnalyticsExporter } from './services/AnalyticsExporter';
 import { deleteKeychainSecret, hasKeychainSecret, setKeychainSecret } from './services/KeychainSecrets';
@@ -16,13 +16,13 @@ import { deleteKeychainSecret, hasKeychainSecret, setKeychainSecret } from './se
 /** Plugin settings tab for Obsidian Settings panel. */
 export class SettingsTab extends PluginSettingTab {
 	/** Plugin instance used for settings persistence and dashboard refreshes. */
-	private plugin: VaultDashboardPlugin;
+	private plugin: VaultboardPlugin;
 
 	/**
 	 * @param app - Obsidian app instance
-	 * @param plugin - VaultDashboardPlugin instance
+	 * @param plugin - VaultboardPlugin instance
 	 */
-	constructor(app: App, plugin: VaultDashboardPlugin) {
+	constructor(app: App, plugin: VaultboardPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -973,7 +973,7 @@ export class SettingsTab extends PluginSettingTab {
 						this.plugin.taskManager.toJSON(),
 						this.plugin.taskManager.getArchivedTasks(),
 					);
-					AnalyticsExporter.downloadCSV(csv, 'vault-dashboard-tasks.csv');
+					AnalyticsExporter.downloadCSV(csv, 'vaultboard-tasks.csv');
 					new Notice('CSV exported');
 				}),
 			);

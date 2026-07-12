@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Detail modal for archived tasks with restore and delete actions
  * Created: 2026-03-08
  * Last Modified: 2026-03-08

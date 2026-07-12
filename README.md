@@ -1,4 +1,4 @@
-# Vault Dashboard
+# Vaultboard
 
 ![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)
 ![Obsidian: 1.0+](https://img.shields.io/badge/Obsidian-1.0%2B-7c3aed)
@@ -8,13 +8,13 @@
 
 ## Why This Exists
 
-Most task timers treat time as a raw countdown: start 30 minutes, finish whenever. Real schedules don't work that way. Meetings start on the hour, focus blocks end at :30. **Vault Dashboard** snaps every timer to the next clean time boundary so your day stays structured without manual math. Finish early and the leftover minutes bank forward; go over and the debt rolls into the next task. It's a self-correcting schedule that keeps you on track across an entire work session.
+Most task timers treat time as a raw countdown: start 30 minutes, finish whenever. Real schedules don't work that way. Meetings start on the hour, focus blocks end at :30. **Vaultboard** snaps every timer to the next clean time boundary so your day stays structured without manual math. Finish early and the leftover minutes bank forward; go over and the debt rolls into the next task. It's a self-correcting schedule that keeps you on track across an entire work session.
 
 Opens as the first thing you see in your vault: tasks, timer, recent documents, and productivity history in one view.
 
 ## Screenshots
 
-![Vault Dashboard](assets/dashboard-screenshot.png)
+![Vaultboard](assets/dashboard-screenshot.png)
 
 Adapts to any Obsidian theme (light, dark, or custom).
 
@@ -55,11 +55,11 @@ Nest subtasks up to 4 levels deep under any parent task with a visual branch-and
 
 ### AI Integration
 
-Optional integration with **Cursor CLI** or **Claude Code CLI** for AI-assisted task management.
+Optional integration with **Cursor SDK**, **Codex CLI**, **Claude Code CLI**, or **OpenRouter** for AI-assisted task management.
 
 - **Auto-organize**: suggest tags and position when creating a task
 - **Auto-order**: reorder pending tasks by priority from the timeline header
-- **Delegation**: dispatch a task (with linked docs and images as context) to a CLI tool for execution
+- **Delegation**: dispatch a task (with linked docs and images as context) to the selected AI provider
 - **Plan approval**: AI generates a plan first; review, approve, or reject before execution
 - **Per-task working directory**: each task can specify its own execution context for CLI dispatches
 - **Dispatch module**: live status panel with elapsed time, terminal take-over, IDE launcher, and retry
@@ -97,11 +97,11 @@ The left column hosts independent widget panels, each collapsible, independently
 - **Undo/redo**: snapshot-based undo stack for all task mutations
 - **Export analytics**: CSV export or append summary to today's daily note
 - **Vault-side backup**: full JSON backup survives plugin reinstalls and updates
-- **Dashboard deep link**: `obsidian://vault-dashboard` protocol handler
+- **Vaultboard deep link**: `obsidian://vaultboard` protocol handler
 - **Pinned first tab**: auto-pins as the leftmost tab, survives layout changes
 - **Onboarding walkthrough**: 4-step guide on first launch
 - **Theme-aware**: all colors use Obsidian CSS variables, adapts to any theme
-- **Responsive layout**: 2-column desktop grid collapses to single-column on mobile (<800px)
+- **Responsive layout**: 2-column desktop grid collapses to a single column in narrow windows (<800px)
 
 ---
 
@@ -138,7 +138,7 @@ Start at 6:12, 30 min task, snap = 30 min:
 - **GPU-Composited Animations**: infinite CSS animations use `transform` and `will-change` hints to stay on the compositor thread and avoid layout/repaint thrashing.
 - **Generic Undo/Redo**: `UndoManager<T>` provides snapshot-based undo for any state type. TaskManager uses it for task + archive snapshots.
 - **Data-Driven Report Sources**: report modules read from user-configurable `ReportSourceConfig[]` in settings. Add, remove, or toggle sources from the settings panel.
-- **AI Context Assembly**: AIDispatcher gathers task metadata, linked documents, and images into a structured prompt, then dispatches to Cursor CLI or Claude Code CLI. Each task can specify its own working directory.
+- **AI Context Assembly**: AIDispatcher gathers task metadata, linked documents, and images into a structured prompt, then dispatches to the selected AI provider. Each task can specify its own working directory.
 - **Encapsulated View State**: no file-scope globals. All mutable UI state (collapsed IDs, filters, archive visibility) lives in typed `ViewState` objects owned by the view.
 
 ## Design Philosophy
@@ -206,28 +206,41 @@ WelcomeView <-- EventBus <-- TimerEngine("timer:tick") ------+
 
 ## Requirements
 
-- **Obsidian** 1.0.0 or later
+- **Obsidian Desktop** 1.0.0 or later (this plugin is desktop-only)
+- **macOS** for Keychain-backed API keys, Gmail digest scheduling, and launchd-backed scheduled jobs
 - **Node.js** 18+ (for building from source)
 - **Optional**: Templater plugin (for calendar day-note creation from template)
+
+## Security, Privacy, and External Services
+
+Vaultboard works locally unless you enable an optional integration. Review these capabilities before enabling the plugin:
+
+- **Network access**: AI dispatches can send the task prompt, task metadata, and any linked document or image content included as context to Cursor, OpenAI through Codex CLI, Anthropic through Claude Code, or an OpenRouter-compatible endpoint. Model-list refreshes also contact the selected provider. The optional Gmail intelligence workflow uses local tooling that may contact Google's Gmail API with read-only access.
+- **Accounts and API keys**: Optional AI features require the corresponding provider account, CLI login, or API key. API keys entered in Vaultboard are stored in macOS Keychain and are not written to Obsidian plugin data. Provider CLIs may also use credentials managed by those tools.
+- **Local and external processes**: When requested, Vaultboard can launch Cursor SDK agents, Codex CLI, Claude Code CLI, terminal or IDE applications, and local Python helpers. Enabling scheduled reports or Gmail digests installs or controls macOS launchd jobs, which can run after Obsidian closes.
+- **Vault and file access**: Vaultboard reads configured report folders, linked notes, and linked images. It creates or updates task data, prompt files, attachments, report configuration notes, exports, daily-note summaries, and vault-side backups. An approved AI execution may modify files or run commands in the task's configured working directory, including locations outside the vault.
+- **Privacy and telemetry**: Vaultboard does not include first-party telemetry, advertising, or analytics uploads. Its task analytics and history remain local unless you explicitly export them or include them in an external-provider request. Data sent through optional integrations is subject to the selected provider's privacy and retention policies.
+
+All AI providers and scheduled integrations are optional and can be disabled. Set the AI tool to `none` to prevent AI dispatches.
 
 ## Installation
 
 ### From Source
 
 ```bash
-git clone https://github.com/dudetru25/vault-dashboard.git
-cd vault-dashboard
-npm install
+git clone https://github.com/rankupgames/Vault-Dashboard.git
+cd Vault-Dashboard
+npm ci
 npm run build
 ```
 
 Then symlink or copy the built plugin into your vault:
 
 ```bash
-ln -s /path/to/vault-dashboard "/path/to/vault/.obsidian/plugins/vault-dashboard"
+ln -s /path/to/Vault-Dashboard "/path/to/vault/.obsidian/plugins/vaultboard"
 ```
 
-Enable **Vault Dashboard** in Obsidian > Settings > Community Plugins.
+Enable **Vaultboard** in Obsidian > Settings > Community Plugins.
 
 ### Development
 
@@ -247,4 +260,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Author
 
-**Miguel A. Lopez** | [Rank Up Games LLC](https://github.com/dudetru25)
+**Miguel A. Lopez** | [Rank Up Games LLC](https://github.com/rankupgames)

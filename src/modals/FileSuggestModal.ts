@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Fuzzy file picker modal for linking vault documents to tasks
  * Created: 2026-03-08
  * Last Modified: 2026-03-08

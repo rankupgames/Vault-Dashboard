@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Add/edit modal for dashboard-managed cron jobs
  * Created: 2026-05-13
  * Last Modified: 2026-05-13

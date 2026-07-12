@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Modal for creating or renaming a task board category
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

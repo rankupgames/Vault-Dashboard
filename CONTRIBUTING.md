@@ -12,7 +12,7 @@ npm run dev    # Watch mode -- rebuilds on save
 Symlink the repo into your vault's plugins folder:
 
 ```bash
-ln -s /path/to/Vault-Dashboard "/path/to/vault/.obsidian/plugins/vault-dashboard"
+ln -s /path/to/Vault-Dashboard "/path/to/vault/.obsidian/plugins/vaultboard"
 ```
 
 Reload Obsidian with `Cmd+R` / `Ctrl+R` after changes.

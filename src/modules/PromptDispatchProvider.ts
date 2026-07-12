@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Shared contract for modules that dispatch free-form prompts to the AI dispatcher
  * Created: 2026-05-12
  * Last Modified: 2026-05-12

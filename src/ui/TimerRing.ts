@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Composable SVG ring factory for circular timer progress indicators
  * Created: 2026-03-11
  * Last Modified: 2026-03-11

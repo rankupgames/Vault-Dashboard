@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Tracks and persists the screen position of an Electron popout window
  * Created: 2026-03-14
  * Last Modified: 2026-03-14

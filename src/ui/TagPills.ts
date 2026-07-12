@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Reusable tag pill strip with optional remove buttons
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

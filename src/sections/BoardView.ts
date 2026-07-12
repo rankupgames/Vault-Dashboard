@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Board/column view rendering tasks grouped by category
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

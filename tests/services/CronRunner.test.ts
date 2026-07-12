@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Tests for generated cron config note AI metadata
  * Created: 2026-05-14
  * Last Modified: 2026-05-16

@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Bundles the Obsidian plugin entry point and concatenates scoped CSS
  * Created: 2026-03-07
  * Last Modified: 2026-05-16

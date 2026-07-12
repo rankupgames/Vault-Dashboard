@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: macOS Keychain helpers for plugin-managed AI API keys
  * Created: 2026-05-14
  * Last Modified: 2026-05-16

@@ -85,6 +85,10 @@ jobs:
         with:
           node-version: "20.x"
 
+      - name: Use npm with release-age enforcement
+        if: steps.changes.outputs.skip != 'true'
+        run: npm install --global npm@11.14.1
+
       - name: Install dependencies
         if: steps.changes.outputs.skip != 'true'
         run: npm ci

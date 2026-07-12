@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Scans note checklists and extracts importable task items with nested subtasks
  * Created: 2026-03-08
  * Last Modified: 2026-03-13

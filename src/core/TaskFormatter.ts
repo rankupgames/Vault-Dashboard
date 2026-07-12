@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Shared formatting utilities for tasks and subtasks (clipboard copy, export)
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

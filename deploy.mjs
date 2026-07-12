@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Copies production plugin artifacts into a local Obsidian plugin folder
  * Created: 2026-03-07
  * Last Modified: 2026-05-16
@@ -40,7 +40,7 @@ const runtimeDependencyDirectories = () => {
 
 if (!existsSync(TARGET_FILE)) {
 	console.error(`Missing ${TARGET_FILE}. Create it with the absolute path to your vault plugin folder:`);
-	console.error(`  echo "/path/to/vault/.obsidian/plugins/vault-dashboard" > ${TARGET_FILE}`);
+	console.error(`  echo "/path/to/vault/.obsidian/plugins/vaultboard" > ${TARGET_FILE}`);
 	process.exit(1);
 }
 

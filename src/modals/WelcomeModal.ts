@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: First-open welcome modal listing instructions and features
  * Created: 2026-03-13
  * Last Modified: 2026-03-13
@@ -79,7 +79,7 @@ export class WelcomeModal extends Modal {
 		contentEl.empty();
 		contentEl.addClass('vw-welcome-modal');
 
-		contentEl.createEl('h2', { text: 'Welcome to Vault Dashboard' });
+		contentEl.createEl('h2', { text: 'Welcome to Vaultboard' });
 		contentEl.createDiv({
 			cls: 'vw-welcome-subtitle',
 			text: 'Here\'s what you can do:',

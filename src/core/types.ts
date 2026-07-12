@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Shared types, interfaces, and default data for the plugin
  * Created: 2026-03-07
  * Last Modified: 2026-05-16
@@ -565,7 +565,7 @@ export const DEFAULT_GMAIL_DIGEST_SETTINGS: GmailDigestSettings = {
 };
 
 /** Shared Keychain service name for provider secrets managed by this plugin. */
-const DEFAULT_AI_KEYCHAIN_SERVICE = 'vault-dashboard.ai';
+const DEFAULT_AI_KEYCHAIN_SERVICE = 'vaultboard.ai';
 
 /** Default AI provider configuration. */
 export const DEFAULT_AI_PROVIDERS: AIProviderSettings = {
@@ -653,7 +653,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableImageAttachments: true,
 	showConfirmDialogs: true,
 	autoArchiveDays: 0,
-	outputFolder: '_VaultDashboard',
+	outputFolder: '_Vaultboard',
 	taskCategories: [
 		{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
 		{ id: 'default-general', name: 'General', order: 1, isDefault: true },
@@ -681,10 +681,10 @@ export const isImageExtension = (ext: string): boolean =>
 	(IMAGE_EXTENSIONS as readonly string[]).includes(ext.toLowerCase());
 
 /** Obsidian view type identifier for the welcome dashboard. */
-export const VIEW_TYPE_WELCOME = 'vault-dashboard-view';
+export const VIEW_TYPE_WELCOME = 'vaultboard-view';
 
 /** Obsidian view type identifier for the mini timer pop-out. */
-export const VIEW_TYPE_MINI_TIMER = 'vault-dashboard-mini-timer';
+export const VIEW_TYPE_MINI_TIMER = 'vaultboard-mini-timer';
 
 /** Callback invoked on each timer tick with remaining ms and negative flag. */
 export type TimerEventCallback = (remaining: number, isNegative: boolean) => void;

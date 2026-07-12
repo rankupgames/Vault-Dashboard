@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Composable drag-hold utility -- requires a timed hold before enabling native drag
  * Created: 2026-03-17
  * Last Modified: 2026-05-13

@@ -1,13 +1,13 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Security-focused tests for AI provider dispatch helpers
  * Created: 2026-05-16
  * Last Modified: 2026-05-16
  */
 
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AI_TOOL, DEFAULT_SETTINGS, type PluginSettings } from '../../src/core/types';
 import {
 	AI_DISPATCH_PHASE,
@@ -16,6 +16,20 @@ import {
 	redactSensitiveText,
 	type AIDispatchPhase,
 } from '../../src/services/AIDispatcher';
+
+const { getKeychainSecretMock, requestUrlMock } = vi.hoisted(() => ({
+	getKeychainSecretMock: vi.fn(),
+	requestUrlMock: vi.fn(),
+}));
+
+vi.mock('obsidian', async (importOriginal) => ({
+	...await importOriginal<typeof import('obsidian')>(),
+	requestUrl: requestUrlMock,
+}));
+
+vi.mock('../../src/services/KeychainSecrets', () => ({
+	getKeychainSecret: getKeychainSecretMock,
+}));
 
 /** Test harness for private argument building without widening production visibility. */
 interface AIDispatcherHarness {
@@ -30,6 +44,11 @@ interface AIDispatcherHarness {
 
 /** Creates an isolated settings object so tests can mutate provider settings safely. */
 const makeSettings = (): PluginSettings => JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+
+beforeEach(() => {
+	getKeychainSecretMock.mockReset();
+	requestUrlMock.mockReset();
+});
 
 describe('AIDispatcher CLI permissions', () => {
 	it('does not force Codex dangerous sandbox bypass during execute when skip permissions is disabled', () => {
@@ -81,5 +100,50 @@ describe('provider error redaction', () => {
 		expect(redactSensitiveText(text)).not.toContain('provider-token-value');
 		expect(redactSensitiveText(text)).toContain('Authorization: Bearer [redacted]');
 		expect(redactSensitiveText(text)).toContain('OPENAI_API_KEY=[redacted]');
+	});
+});
+
+describe('OpenRouter Obsidian requests', () => {
+	it('loads models through requestUrl without automatic HTTP status throws', async () => {
+		const settings = makeSettings();
+		settings.aiTool = AI_TOOL.OPENROUTER;
+		settings.aiProviders.openRouter.apiKey = { source: 'keychain', account: 'openrouter' };
+		getKeychainSecretMock.mockResolvedValue('provider-token-value');
+		requestUrlMock.mockResolvedValue({
+			status: 200,
+			headers: {},
+			arrayBuffer: new ArrayBuffer(0),
+			json: { data: [{ id: 'test/model', name: 'Test Model' }] },
+			text: JSON.stringify({ data: [{ id: 'test/model', name: 'Test Model' }] }),
+		});
+
+		const models = await new AIDispatcher().refreshModels(settings);
+
+		expect(models).toEqual([{ id: 'test/model', name: 'Test Model' }]);
+		expect(requestUrlMock).toHaveBeenCalledWith(expect.objectContaining({
+			url: 'https://openrouter.ai/api/v1/models/user',
+			headers: expect.objectContaining({
+				'HTTP-Referer': 'https://github.com/rankupgames/Vault-Dashboard',
+				'X-Title': 'Vaultboard',
+			}),
+			throw: false,
+		}));
+	});
+
+	it('preserves redacted provider errors from non-2xx requestUrl responses', async () => {
+		const settings = makeSettings();
+		settings.aiTool = AI_TOOL.OPENROUTER;
+		settings.aiProviders.openRouter.apiKey = { source: 'keychain', account: 'openrouter' };
+		getKeychainSecretMock.mockResolvedValue('provider-token-value');
+		requestUrlMock.mockResolvedValue({
+			status: 401,
+			headers: { 'Content-Length': '49' },
+			arrayBuffer: new ArrayBuffer(0),
+			json: {},
+			text: 'Authorization: Bearer provider-token-value',
+		});
+
+		await expect(new AIDispatcher().refreshModels(settings))
+			.rejects.toThrow('OpenRouter model refresh failed: 401 Authorization: Bearer [redacted]');
 	});
 });

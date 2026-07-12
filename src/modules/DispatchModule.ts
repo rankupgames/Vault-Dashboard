@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Module showing active and recent AI dispatches with take-over capability
  * Created: 2026-03-09
  * Last Modified: 2026-03-09

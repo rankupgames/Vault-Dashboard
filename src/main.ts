@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Plugin entry point -- registers view, commands, and manages data persistence
  * Created: 2026-03-07
  * Last Modified: 2026-05-16
@@ -99,7 +99,7 @@ interface ElectronRemoteLike {
 }
 
 /** Plugin entry point -- registers view, commands, and manages data persistence. */
-export default class VaultDashboardPlugin extends Plugin {
+export default class VaultboardPlugin extends Plugin {
 	/** Plugin data (tasks, archived, timer state, settings). */
 	data: PluginData = DEFAULT_DATA;
 	/** Event bus for task and timer events. */
@@ -228,13 +228,13 @@ export default class VaultDashboardPlugin extends Plugin {
 			);
 		});
 
-		this.addRibbonIcon('layout-dashboard', 'Vault Dashboard', () => {
+		this.addRibbonIcon('layout-dashboard', 'Vaultboard', () => {
 			this.activateWelcomeLeaf();
 		});
 
 		this.addCommand({
 			id: 'open-welcome-dashboard',
-			name: 'Open Vault Dashboard',
+			name: 'Open Vaultboard',
 			callback: () => this.activateWelcomeLeaf(),
 		});
 
@@ -256,7 +256,7 @@ export default class VaultDashboardPlugin extends Plugin {
 			}),
 		);
 
-		this.registerObsidianProtocolHandler('vault-dashboard', () => {
+		this.registerObsidianProtocolHandler('vaultboard', () => {
 			this.activateWelcomeLeaf();
 		});
 
@@ -564,7 +564,7 @@ export default class VaultDashboardPlugin extends Plugin {
 			const restored = await BackupService.restore(this.app, DEFAULT_SETTINGS.outputFolder);
 			if (restored) {
 				saved = restored;
-				new Notice('Restored dashboard data from vault backup');
+				new Notice('Restored Vaultboard data from vault backup');
 			}
 		}
 		if (saved) {

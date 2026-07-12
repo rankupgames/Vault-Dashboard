@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Module-level tracker that closes all open modals on plugin unload
  * Created: 2026-03-17
  * Last Modified: 2026-03-17

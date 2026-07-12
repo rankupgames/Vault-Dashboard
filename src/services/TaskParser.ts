@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Pure utility for parsing checklist text into structured SubTask trees
  * Created: 2026-03-13
  * Last Modified: 2026-03-13

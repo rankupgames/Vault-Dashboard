@@ -1,7 +1,7 @@
 /*
  * Author: Miguel A. Lopez
  * Company: Rank Up Games LLC
- * Project: Vault Dashboard
+ * Project: Vaultboard
  * Description: Slim orchestrator view composing TimerSection, HeatmapBar, TaskTimeline, and modules
  * Created: 2026-03-07
  * Last Modified: 2026-03-09
@@ -150,7 +150,7 @@ export class WelcomeView extends ItemView {
 
 	/** @override */
 	getDisplayText(): string {
-		return 'Vault Dashboard';
+		return 'Vaultboard';
 	}
 
 	/** @override */
