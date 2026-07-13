@@ -72,12 +72,17 @@ graph TD
     SettingsTab
   end
 
+  subgraph settings ["settings/ -- Focused settings renderers"]
+    SettingsSections["General / AI / Gmail / Tasks / Dashboard / Data"]
+  end
+
   main.ts --> EventBus
   main.ts --> TimerEngine
   main.ts --> TaskManager
   main.ts --> ModuleRegistry
   main.ts --> BackupService
   main.ts --> PopoutPositionTracker
+  SettingsTab --> SettingsSections
 
   TimerEngine --> EventBus
   TaskManager --> EventBus
@@ -169,7 +174,9 @@ EventBus.emit("task:changed")
     |
     +---> main.ts: persist to data.json
     +---> main.ts: persist vault backup (BackupService)
-    +---> WelcomeView: re-render
+
+UI actions and background services explicitly request a WelcomeView refresh
+after their mutation batch; task persistence remains owned by main.ts.
 ```
 
 ## Design Decisions
@@ -266,7 +273,15 @@ bus.on('timer:tick', (payload) => { /* react */ });
 
 ## AI Integration Architecture
 
-`AIDispatcher` assembles context from the task (title, description, subtasks, linked documents, images) into a markdown prompt file. It invokes the configured CLI tool (Cursor or Claude Code) with the prompt path. Plan-phase dispatches produce a plan for review before execution. Dispatch records are stored in `PluginData.dispatchHistory` and hydrated on load. The `DispatchModule` renders live status with terminal take-over, plan preview, IDE launcher, and retry. All AI features are independently toggleable.
+`AIDispatcher` is a compatibility facade over the focused modules in `services/ai/`. `PromptComposer` assembles task metadata and attachments, `ProviderRunner` dispatches through Cursor SDK, Codex CLI, Claude Code CLI, or OpenRouter, and `ProviderSecurity` validates paths and redacts provider errors. Plan-phase dispatches produce a plan for review before execution. Dispatch records are stored in `PluginData.dispatchHistory` and hydrated on load. The `DispatchModule` renders live status with terminal take-over, plan preview, IDE launcher, and retry. All AI features are independently toggleable.
+
+Codex CLI remains the OpenAI/Codex integration boundary. Vaultboard relies on the user's Codex login or an optional Keychain-backed `OPENAI_API_KEY` override; it does not duplicate this path with a direct GPT API provider.
+
+## Automatic TODO Synchronization
+
+`TodoSyncService` scans the configured Vault-relative folder at startup and after Markdown create, modify, rename, or delete events. It imports pending top-level checklists through `TaskImporter`, preserves nested checklist children, and never invokes an AI provider.
+
+`PluginData.references` is the canonical dictionary for external links. Each `LinkedReference` owns the source path, line, text occurrence, lifecycle state, and target task ID exactly once. Automatic and manual note imports share the same serialized registry path. Repeated scans match stable text identity before line metadata, update renamed paths, and retire references when a source is completed, removed, or moved outside the configured scope. Timeline and board source actions and AI prompt context resolve through this registry instead of copying source metadata onto tasks.
 
 ## Core vs Obsidian Boundary
 
@@ -288,7 +303,14 @@ bus.on('timer:tick', (payload) => { /* react */ });
 | `main.ts` | Orchestration | Plugin entry, commands, ribbon, view registration, data persistence |
 | `WelcomeView.ts` | Orchestration | Orchestrator composing sections + modules into the dashboard |
 | `MiniTimerView.ts` | Orchestration | Pop-out timer view with ring, controls, and independent tick loop |
-| `SettingsTab.ts` | Orchestration | Plugin settings panel |
+| `SettingsTab.ts` | Orchestration | Small plugin settings orchestrator that owns persistence and renderer order |
+| `settings/SettingsSectionContext.ts` | Settings | Type-only shared dependencies and bound save/redisplay callbacks |
+| `settings/GeneralSettingsSection.ts` | Settings | General, timer, and audio controls |
+| `settings/AISettingsSection.ts` | Settings | AI provider, credential, model, safety, and dispatch controls |
+| `settings/GmailSettingsSection.ts` | Settings | Gmail intelligence command controls |
+| `settings/TaskSettingsSection.ts` | Settings | Task behavior, automatic TODO, and tag controls |
+| `settings/DashboardSettingsSection.ts` | Settings | Task tree, heatmap, reports, categories, and module controls |
+| `settings/DataSettingsSection.ts` | Settings | Task export and persisted onboarding controls |
 | `core/EventBus.ts` | Core | Typed pub/sub for decoupled communication |
 | `core/events.ts` | Core | Event name constants and typed payload interfaces |
 | `core/TimerEngine.ts` | Core | Clock-aligned timer with snap, rollover, pomodoro, and tick/state-change separation |
@@ -319,6 +341,7 @@ bus.on('timer:tick', (payload) => { /* react */ });
 | `services/AnalyticsExporter.ts` | Services | CSV export and daily note task summaries |
 | `services/TaskImporter.ts` | Services | Note checklist scanner for task import |
 | `services/TaskParser.ts` | Services | Pure checklist-to-subtask-tree parser |
+| `services/TodoSyncService.ts` | Services | Automatic checklist ingestion and canonical reference deduplication |
 | `services/BackupService.ts` | Services | Vault-side JSON backup for plugin data protection |
 | `services/VaultUtils.ts` | Services | Shared vault filesystem helpers |
 | `services/PopoutPositionTracker.ts` | Services | Tracks and restores mini timer window position |

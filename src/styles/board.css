@@ -116,11 +116,28 @@
 	opacity: 0.4;
 }
 
+.vw-board-task-row.vw-board-task-drop-before {
+	box-shadow: 0 -2px 0 var(--interactive-accent);
+}
+
+.vw-board-task-row.vw-board-task-drop-after {
+	box-shadow: 0 2px 0 var(--interactive-accent);
+}
+
 .vw-board-task-dot {
 	width: 8px;
 	height: 8px;
 	border-radius: 50%;
 	flex-shrink: 0;
+}
+
+.vw-board-task-dot[role='button'] {
+	cursor: pointer;
+}
+
+.vw-board-task-dot[role='button']:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 3px;
 }
 
 .vw-board-task-dot-pending {
@@ -178,7 +195,7 @@
 }
 
 .vw-board-task-archive {
-	display: none;
+	display: flex;
 	align-items: center;
 	justify-content: center;
 	width: 20px;
@@ -187,7 +204,9 @@
 	border-radius: 4px;
 	color: var(--text-faint);
 	cursor: pointer;
-	transition: color 0.12s ease, background 0.12s ease;
+	opacity: 0;
+	pointer-events: none;
+	transition: color 0.12s ease, background 0.12s ease, opacity 0.12s ease;
 }
 
 .vw-board-task-archive svg {
@@ -196,12 +215,83 @@
 }
 
 .vw-board-task-row:hover .vw-board-task-archive {
-	display: flex;
+	opacity: 1;
+	pointer-events: auto;
+}
+
+.vw-board-task-archive:focus {
+	opacity: 1;
+	pointer-events: auto;
 }
 
 .vw-board-task-archive:hover {
 	color: var(--text-normal);
 	background: var(--background-modifier-hover);
+}
+
+.vw-board-column-inbox,
+.vw-board-task-attribution,
+.vw-board-task-launch {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid color-mix(in srgb, var(--interactive-accent) 45%, transparent);
+	color: var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+}
+
+.vw-board-column-inbox {
+	gap: 3px;
+	min-height: 20px;
+	padding: 1px 5px;
+	border-radius: 5px;
+	font-size: 9px;
+	line-height: 1;
+	cursor: help;
+}
+
+.vw-board-column-inbox svg,
+.vw-board-task-attribution svg,
+.vw-board-task-launch svg {
+	width: 11px;
+	height: 11px;
+}
+
+.vw-board-task-attribution:hover,
+.vw-board-task-launch:hover,
+.vw-board-task-attribution:focus,
+.vw-board-task-launch:focus {
+	color: var(--text-on-accent);
+	background: var(--interactive-accent);
+}
+
+.vw-board-task-launch {
+	width: 20px;
+	height: 20px;
+	flex: 0 0 20px;
+	border-radius: 50%;
+}
+
+.vw-board-task-attribution {
+	gap: 2px;
+	height: 18px;
+	max-width: 72px;
+	padding: 0 4px;
+	border-radius: 4px;
+	font-size: 8px;
+	line-height: 1;
+	cursor: pointer;
+	overflow: hidden;
+	white-space: nowrap;
+}
+
+.vw-board-task-attribution span {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.vw-board-task-launch {
+	cursor: pointer;
 }
 
 .vw-board-column-body.vw-board-drop-target {

@@ -8,7 +8,14 @@
  */
 
 import { App, setIcon } from 'obsidian';
-import { Task, TaskCategory, PluginSettings } from '../core/types';
+import {
+	AI_TASKS_CATEGORY_ID,
+	DEFAULT_SETTINGS,
+	Task,
+	TaskCategory,
+	PluginSettings,
+	type LinkedReference,
+} from '../core/types';
 import { TaskManager } from '../core/TaskManager';
 import { TaskFormatter } from '../core/TaskFormatter';
 import { TaskModal } from '../modals/TaskModal';
@@ -17,6 +24,7 @@ import { setupDragHold } from '../ui/setupDragHold';
 import { ConfirmModal } from '../modals/ConfirmModal';
 import { attachOverflowTooltip } from '../ui/Tooltip';
 import type { IAIDispatcher } from '../services/AIDispatcher';
+import { getAITaskInboxPath } from '../services/AITaskCurator';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
 
 /** Dependencies for the board view (subset of TaskTimelineDeps). */
@@ -27,9 +35,13 @@ export interface BoardViewDeps {
 	saveCallback: () => void;
 	settings: PluginSettings;
 	onEditTask: (task: Task) => void;
+	/** Starts an externally authored task and opens its attributed project/session handoff. */
+	onStartAITask?: (task: Task) => void;
 	onSwitchView?: (mode: 'list' | 'board') => void;
 	onEnterCategory?: (categoryId: string) => void;
 	aiDispatcher: IAIDispatcher;
+	/** Canonical external source registry used for task source navigation. */
+	references: LinkedReference[];
 }
 
 /** Board/column view rendering tasks grouped by category. */
@@ -75,12 +87,12 @@ export class BoardView implements SectionRenderer {
 		}
 	}
 
-	/** Daily first, General second, custom boards sorted by order after. */
+	/** Daily first, General second, AI intake third, then custom boards by order. */
 	private getSortedCategories(): TaskCategory[] {
 		const cats = [...this.deps.settings.taskCategories];
 		return cats.sort((a, b) => {
-			const rankA = a.dailyReset ? 0 : a.id === 'default-general' ? 1 : 2;
-			const rankB = b.dailyReset ? 0 : b.id === 'default-general' ? 1 : 2;
+			const rankA = a.dailyReset ? 0 : a.id === 'default-general' ? 1 : a.id === AI_TASKS_CATEGORY_ID ? 2 : 3;
+			const rankB = b.dailyReset ? 0 : b.id === 'default-general' ? 1 : b.id === AI_TASKS_CATEGORY_ID ? 2 : 3;
 			if (rankA !== rankB) return rankA - rankB;
 			return a.order - b.order;
 		});
@@ -95,21 +107,28 @@ export class BoardView implements SectionRenderer {
 		const col = container.createDiv({ cls: 'vw-board-column' });
 		col.dataset.categoryId = cat.id;
 		if (cat.dailyReset) col.addClass('vw-board-column-daily');
+		const headerEl = col.createDiv({ cls: 'vw-board-column-header' });
 
-		// Column-level drag (reorder columns)
-		col.setAttribute('draggable', 'true');
-		col.addEventListener('dragstart', (e: DragEvent) => {
-			if (this.draggedTaskId !== null) return;
-			this.draggedColumnId = cat.id;
-			col.classList.add('vw-board-column-dragging');
-			e.dataTransfer?.setData('text/x-column', cat.id);
-			if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-		});
-		col.addEventListener('dragend', () => {
-			this.draggedColumnId = null;
-			col.classList.remove('vw-board-column-dragging');
-			container.querySelectorAll('.vw-board-column-drop-before, .vw-board-column-drop-after')
-				.forEach((el) => el.classList.remove('vw-board-column-drop-before', 'vw-board-column-drop-after'));
+		// Category dragging starts only from the header so task-card drags remain independent.
+		setupDragHold({
+			grip: headerEl,
+			draggable: col,
+			shouldStart: (event) => {
+				const target = event.target as HTMLElement;
+				return target.closest('.vw-board-column-add, .vw-board-column-inbox') === null;
+			},
+			onDragStart: (event) => {
+				this.draggedColumnId = cat.id;
+				col.classList.add('vw-board-column-dragging');
+				event.dataTransfer?.setData('text/x-column', cat.id);
+				if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+			},
+			onDragEnd: () => {
+				this.draggedColumnId = null;
+				col.classList.remove('vw-board-column-dragging');
+				container.querySelectorAll('.vw-board-column-drop-before, .vw-board-column-drop-after')
+					.forEach((element) => element.classList.remove('vw-board-column-drop-before', 'vw-board-column-drop-after'));
+			},
 		});
 		col.addEventListener('dragover', (e: DragEvent) => {
 			if (this.draggedColumnId === null || this.draggedColumnId === cat.id) return;
@@ -139,8 +158,6 @@ export class BoardView implements SectionRenderer {
 			}
 		});
 
-		const headerEl = col.createDiv({ cls: 'vw-board-column-header' });
-
 		if (cat.color) {
 			const accent = headerEl.createDiv({ cls: 'vw-board-column-accent' });
 			accent.style.backgroundColor = cat.color;
@@ -157,6 +174,8 @@ export class BoardView implements SectionRenderer {
 		nameGroup.style.cursor = 'pointer';
 		nameGroup.setAttribute('tabindex', '0');
 		nameGroup.addEventListener('click', () => this.deps.onEnterCategory?.(cat.id));
+
+		if (cat.id === AI_TASKS_CATEGORY_ID) this.renderExternalInboxHint(headerEl);
 
 		const addBtn = headerEl.createDiv({ cls: 'vw-board-column-add' });
 		setIcon(addBtn, 'plus');
@@ -187,6 +206,13 @@ export class BoardView implements SectionRenderer {
 			delBtn.addEventListener('click', () => {
 				const doDelete = (): void => {
 					this.deps.taskManager.removeCategoryWithTasks(cat.id);
+					if (this.deps.settings.todoCategoryId === cat.id) {
+						const fallbackCategory = this.deps.settings.taskCategories.find(
+							(category) => category.id === DEFAULT_SETTINGS.todoCategoryId,
+						)
+							?? this.deps.settings.taskCategories[0];
+						if (fallbackCategory !== undefined) this.deps.settings.todoCategoryId = fallbackCategory.id;
+					}
 					this.deps.saveCallback();
 					this.deps.onRenderAll();
 				};
@@ -217,6 +243,7 @@ export class BoardView implements SectionRenderer {
 		});
 		body.addEventListener('drop', (e: DragEvent) => {
 			e.preventDefault();
+			e.stopPropagation();
 			body.classList.remove('vw-board-drop-target');
 			if (this.draggedTaskId === null) return;
 			this.deps.taskManager.assignTaskCategory(this.draggedTaskId, cat.id);
@@ -231,8 +258,16 @@ export class BoardView implements SectionRenderer {
 		}
 
 		for (const task of tasks) {
-			this.renderTaskRow(body, task);
+			this.renderTaskRow(body, task, cat.id);
 		}
+	}
+
+	/** Shows where external vault agents write task manifests without invoking a provider. */
+	private renderExternalInboxHint(header: HTMLElement): void {
+		const hint = header.createDiv({ cls: 'vw-board-column-inbox' });
+		setIcon(hint, 'folder-input');
+		hint.createSpan({ text: 'Inbox' });
+		hint.setAttribute('aria-label', `External AI plans: ${getAITaskInboxPath(this.deps.settings)}`);
 	}
 
 	/** Reorders categories when a column is dropped onto another column. */
@@ -253,12 +288,16 @@ export class BoardView implements SectionRenderer {
 	}
 
 	/** Renders a draggable task card inside a board column. */
-	private renderTaskRow(body: HTMLElement, task: Task): void {
+	private renderTaskRow(body: HTMLElement, task: Task, categoryId: string): void {
 		const row = body.createDiv({ cls: 'vw-board-task-row' });
 
 		setupDragHold({
 			grip: row,
 			draggable: row,
+			shouldStart: (event) => {
+				const target = event.target as HTMLElement;
+				return target.closest('.vw-board-task-dot, .vw-board-task-archive, .vw-board-task-launch, .vw-board-task-attribution') === null;
+			},
 			onDragStart: (e) => {
 				this.draggedTaskId = task.id;
 				row.classList.add('vw-board-dragging');
@@ -271,20 +310,70 @@ export class BoardView implements SectionRenderer {
 				body.doc.querySelectorAll('.vw-board-drop-target').forEach((el) => {
 					el.classList.remove('vw-board-drop-target');
 				});
+				body.doc.querySelectorAll('.vw-board-task-drop-before, .vw-board-task-drop-after').forEach((element) => {
+					element.classList.remove('vw-board-task-drop-before', 'vw-board-task-drop-after');
+				});
 			},
+		});
+
+		row.addEventListener('dragover', (event: DragEvent) => {
+			if (this.draggedTaskId === null || this.draggedTaskId === task.id) return;
+			event.preventDefault();
+			event.stopPropagation();
+			if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+			const bounds = row.getBoundingClientRect();
+			const insertBefore = event.clientY < bounds.top + bounds.height / 2;
+			row.classList.toggle('vw-board-task-drop-before', insertBefore);
+			row.classList.toggle('vw-board-task-drop-after', insertBefore === false);
+		});
+		row.addEventListener('dragleave', () => {
+			row.classList.remove('vw-board-task-drop-before', 'vw-board-task-drop-after');
+		});
+		row.addEventListener('drop', (event: DragEvent) => {
+			if (this.draggedTaskId === null || this.draggedTaskId === task.id) return;
+			event.preventDefault();
+			event.stopPropagation();
+			const sourceTaskId = this.draggedTaskId;
+			const bounds = row.getBoundingClientRect();
+			const insertBefore = event.clientY < bounds.top + bounds.height / 2;
+			row.classList.remove('vw-board-task-drop-before', 'vw-board-task-drop-after');
+			this.deps.taskManager.moveTask(sourceTaskId, task.id, insertBefore);
+			this.deps.taskManager.assignTaskCategory(sourceTaskId, categoryId);
+			this.draggedTaskId = null;
+			this.deps.saveCallback();
+			this.deps.onRenderAll();
 		});
 
 		const isDone = task.status === 'completed' || task.status === 'skipped';
 		if (isDone) row.addClass('vw-board-task-completed');
 
+		let dot: HTMLElement;
 		if (isDone) {
-			const dot = row.createDiv({ cls: 'vw-board-task-dot vw-board-task-dot-completed' });
+			dot = row.createDiv({ cls: 'vw-board-task-dot vw-board-task-dot-completed' });
 			setIcon(dot, 'check');
 		} else {
 			const dotCls = task.status === 'active'
 				? 'vw-board-task-dot vw-board-task-dot-active'
 				: 'vw-board-task-dot vw-board-task-dot-pending';
-			row.createDiv({ cls: dotCls });
+			dot = row.createDiv({ cls: dotCls });
+		}
+
+		if (task.status === 'pending') {
+			dot.setAttribute('role', 'button');
+			dot.setAttribute('tabindex', '0');
+			dot.setAttribute('aria-label', 'Mark task complete');
+			const completeTask = (event: Event): void => {
+				event.stopPropagation();
+				this.deps.taskManager.completeTask(task.id, Date.now());
+				this.deps.saveCallback();
+				this.deps.onRenderAll();
+			};
+			dot.addEventListener('click', completeTask);
+			dot.addEventListener('keydown', (event) => {
+				if (event.key !== 'Enter' && event.key !== ' ') return;
+				event.preventDefault();
+				completeTask(event);
+			});
 		}
 
 		const info = row.createDiv({ cls: 'vw-board-task-info' });
@@ -296,6 +385,68 @@ export class BoardView implements SectionRenderer {
 		if (task.subtasks?.length) meta.push(`${task.subtasks.length} sub`);
 		if (task.tags?.length) meta.push(task.tags.join(', '));
 		info.createSpan({ cls: 'vw-board-task-meta', text: meta.join(' · ') });
+
+		const sourceReference = this.deps.references.find((reference) =>
+			reference.targetKind === 'task'
+			&& reference.targetId === task.id
+			&& reference.state === 'active',
+		);
+		if (sourceReference !== undefined) {
+			const sourceButton = row.createDiv({ cls: 'vw-board-task-archive' });
+			setIcon(sourceButton, 'list-checks');
+			sourceButton.setAttribute('aria-label', `Open source TODO at ${sourceReference.sourcePath}:${sourceReference.sourceLine}`);
+			sourceButton.setAttribute('role', 'button');
+			sourceButton.setAttribute('tabindex', '0');
+			const openSource = (event: Event): void => {
+				event.stopPropagation();
+				void this.deps.app.workspace.openLinkText(sourceReference.sourcePath, '', false);
+			};
+			sourceButton.addEventListener('click', openSource);
+			sourceButton.addEventListener('keydown', (event) => {
+				if (event.key !== 'Enter' && event.key !== ' ') return;
+				event.preventDefault();
+				openSource(event);
+			});
+		}
+
+		if (task.aiAttribution !== undefined) {
+			const attribution = task.aiAttribution;
+			const launchButton = row.createDiv({ cls: 'vw-board-task-launch' });
+			setIcon(launchButton, 'play');
+			launchButton.setAttribute('aria-label', 'Start timer and open project AI session');
+			launchButton.setAttribute('role', 'button');
+			launchButton.setAttribute('tabindex', '0');
+			const launchTask = (event: Event): void => {
+				event.stopPropagation();
+				this.deps.onStartAITask?.(task);
+			};
+			launchButton.addEventListener('click', launchTask);
+			launchButton.addEventListener('keydown', (event) => {
+				if (event.key !== 'Enter' && event.key !== ' ') return;
+				event.preventDefault();
+				launchTask(event);
+			});
+
+			const auditButton = row.createDiv({ cls: 'vw-board-task-attribution' });
+			setIcon(auditButton, 'bot');
+			auditButton.createSpan({ text: attribution.agent });
+			auditButton.setAttribute(
+				'aria-label',
+				`Open external AI attribution (${attribution.agent}/${attribution.model || 'agent-default'}, session ${attribution.sessionId})`,
+			);
+			auditButton.setAttribute('role', 'button');
+			auditButton.setAttribute('tabindex', '0');
+			const openAudit = (event: Event): void => {
+				event.stopPropagation();
+				void this.deps.app.workspace.openLinkText(attribution.moreInfo ?? attribution.manifestPath, '', false);
+			};
+			auditButton.addEventListener('click', openAudit);
+			auditButton.addEventListener('keydown', (event) => {
+				if (event.key !== 'Enter' && event.key !== ' ') return;
+				event.preventDefault();
+				openAudit(event);
+			});
+		}
 
 		// Archive button
 		const archiveBtn = row.createDiv({ cls: 'vw-board-task-archive' });

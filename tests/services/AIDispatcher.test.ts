@@ -8,10 +8,14 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { TFile, type App } from 'obsidian';
 import { AI_TOOL, DEFAULT_SETTINGS, type PluginSettings } from '../../src/core/types';
+import { TaskManager } from '../../src/core/TaskManager';
 import {
 	AI_DISPATCH_PHASE,
 	AIDispatcher,
+	composePrompt,
+	gatherContext,
 	normalizeOpenRouterBaseUrl,
 	redactSensitiveText,
 	type AIDispatchPhase,
@@ -60,6 +64,7 @@ describe('AIDispatcher CLI permissions', () => {
 		const args = dispatcher.buildCliArgs(settings, AI_TOOL.CODEX_CLI, AI_DISPATCH_PHASE.EXECUTE, 'approved plan');
 
 		expect(args).not.toContain('--dangerously-bypass-approvals-and-sandbox');
+		expect(args.slice(0, 5)).toEqual(['--ask-for-approval', 'never', 'exec', '-C', '.']);
 		expect(args).toContain('--sandbox');
 		expect(args).toContain('workspace-write');
 	});
@@ -74,6 +79,151 @@ describe('AIDispatcher CLI permissions', () => {
 
 		expect(args).toContain('--dangerously-bypass-approvals-and-sandbox');
 		expect(args).not.toContain('--sandbox');
+	});
+});
+
+describe('canonical reference context', () => {
+	const makeReference = (id: string, targetId: string, sourcePath: string) => ({
+		id,
+		kind: 'vault-checklist' as const,
+		targetKind: 'task' as const,
+		targetId,
+		sourcePath,
+		sourceLine: 1,
+		sourceText: `TODO for ${targetId}`,
+		sourceOccurrence: 0,
+		state: 'active' as const,
+	});
+
+	const makeReferenceHarness = () => {
+		const settings = makeSettings();
+		const taskManager = new TaskManager([], [], settings);
+		const focusTask = taskManager.addTask('Focus TODO', 30);
+		const unrelatedTask = taskManager.addTask('Unrelated TODO', 30);
+		const focusFile = new TFile('Projects/Focus.md');
+		const unrelatedFile = new TFile('Projects/Unrelated.md');
+		const focusLinkedFile = new TFile('Projects/Focus context.md');
+		const unrelatedLinkedFile = new TFile('Projects/Unrelated context.md');
+		const contents = new Map([
+			[focusFile.path, '- [ ] Focus TODO'],
+			[unrelatedFile.path, '- [ ] Unrelated TODO'],
+			[focusLinkedFile.path, 'Focus task context'],
+			[unrelatedLinkedFile.path, 'Unrelated task context'],
+		]);
+		taskManager.updateTask(focusTask.id, {
+			linkedDocs: [focusLinkedFile.path],
+			images: ['Images/Focus.png'],
+		});
+		taskManager.updateTask(unrelatedTask.id, {
+			linkedDocs: [unrelatedLinkedFile.path],
+			images: ['Images/Unrelated.png'],
+		});
+		const app = {
+			vault: {
+				getAbstractFileByPath: (path: string) => {
+					if (path === focusFile.path) return focusFile;
+					if (path === unrelatedFile.path) return unrelatedFile;
+					if (path === focusLinkedFile.path) return focusLinkedFile;
+					if (path === unrelatedLinkedFile.path) return unrelatedLinkedFile;
+					return null;
+				},
+				cachedRead: async (file: TFile) => contents.get(file.path) ?? '',
+			},
+		} as unknown as App;
+		const references = [
+			makeReference('ref-focus', focusTask.id, focusFile.path),
+			makeReference('ref-unrelated', unrelatedTask.id, unrelatedFile.path),
+		];
+
+		return {
+			app,
+			focusFile,
+			focusLinkedFile,
+			focusTask,
+			references,
+			taskManager,
+			unrelatedFile,
+			unrelatedLinkedFile,
+		};
+	};
+
+	it.each(['organize', 'create-doc', 'delegate'] as const)(
+		'excludes unrelated canonical TODO sources from focused %s prompts',
+		async (action) => {
+			const {
+				app,
+				focusFile,
+				focusLinkedFile,
+				focusTask,
+				references,
+				taskManager,
+				unrelatedFile,
+				unrelatedLinkedFile,
+			} = makeReferenceHarness();
+
+			const context = await gatherContext(
+				taskManager,
+				app,
+				references,
+				{ type: 'target', targetId: focusTask.id },
+			);
+			const prompt = composePrompt(action, context, focusTask);
+
+			expect(context.linkedDocContents.get(focusFile.path)).toBe('- [ ] Focus TODO');
+			expect(context.linkedDocContents.get(focusLinkedFile.path)).toBe('Focus task context');
+			expect(context.linkedDocContents.has(unrelatedFile.path)).toBe(false);
+			expect(context.linkedDocContents.has(unrelatedLinkedFile.path)).toBe(false);
+			expect(context.imagePaths).toEqual(['Images/Focus.png']);
+			expect(prompt).toContain(focusFile.path);
+			expect(prompt).not.toContain(unrelatedFile.path);
+		},
+	);
+
+	it('includes broader active canonical TODO sources for global ordering', async () => {
+		const {
+			app,
+			focusFile,
+			focusLinkedFile,
+			references,
+			taskManager,
+			unrelatedFile,
+			unrelatedLinkedFile,
+		} = makeReferenceHarness();
+
+		const context = await gatherContext(taskManager, app, references, { type: 'global' });
+		const prompt = composePrompt('order', context);
+
+		expect(context.linkedDocContents.get(focusFile.path)).toBe('- [ ] Focus TODO');
+		expect(context.linkedDocContents.get(unrelatedFile.path)).toBe('- [ ] Unrelated TODO');
+		expect(context.linkedDocContents.get(focusLinkedFile.path)).toBe('Focus task context');
+		expect(context.linkedDocContents.get(unrelatedLinkedFile.path)).toBe('Unrelated task context');
+		expect(context.imagePaths).toEqual(['Images/Focus.png', 'Images/Unrelated.png']);
+		expect(prompt).toContain(focusFile.path);
+		expect(prompt).toContain(unrelatedFile.path);
+	});
+
+	it('includes only the focused checklist line when two tasks share one source note', async () => {
+		const settings = makeSettings();
+		const taskManager = new TaskManager([], [], settings);
+		const focusTask = taskManager.addTask('Focus TODO', 30);
+		const unrelatedTask = taskManager.addTask('Unrelated task', 30);
+		const sharedFile = new TFile('Projects/Shared.md');
+		const app = {
+			vault: {
+				getAbstractFileByPath: (path: string) => path === sharedFile.path ? sharedFile : null,
+				cachedRead: async () => '- [ ] Focus TODO\n- [ ] PRIVATE NOTE DETAILS',
+			},
+		} as unknown as App;
+		const references = [
+			makeReference('ref-focus', focusTask.id, sharedFile.path),
+			{ ...makeReference('ref-unrelated', unrelatedTask.id, sharedFile.path), sourceLine: 2 },
+		];
+
+		const context = await gatherContext(taskManager, app, references, { type: 'target', targetId: focusTask.id });
+		const prompt = composePrompt('delegate', context, focusTask);
+
+		expect(context.linkedDocContents.get(sharedFile.path)).toBe('- [ ] Focus TODO');
+		expect(prompt).not.toContain('PRIVATE NOTE DETAILS');
 	});
 });
 
@@ -107,7 +257,7 @@ describe('OpenRouter Obsidian requests', () => {
 	it('loads models through requestUrl without automatic HTTP status throws', async () => {
 		const settings = makeSettings();
 		settings.aiTool = AI_TOOL.OPENROUTER;
-		settings.aiProviders.openRouter.apiKey = { source: 'keychain', account: 'openrouter' };
+		settings.aiProviders.openRouter.apiKey = { service: 'vaultboard.ai', account: 'openrouter' };
 		getKeychainSecretMock.mockResolvedValue('provider-token-value');
 		requestUrlMock.mockResolvedValue({
 			status: 200,
@@ -133,7 +283,7 @@ describe('OpenRouter Obsidian requests', () => {
 	it('preserves redacted provider errors from non-2xx requestUrl responses', async () => {
 		const settings = makeSettings();
 		settings.aiTool = AI_TOOL.OPENROUTER;
-		settings.aiProviders.openRouter.apiKey = { source: 'keychain', account: 'openrouter' };
+		settings.aiProviders.openRouter.apiKey = { service: 'vaultboard.ai', account: 'openrouter' };
 		getKeychainSecretMock.mockResolvedValue('provider-token-value');
 		requestUrlMock.mockResolvedValue({
 			status: 401,

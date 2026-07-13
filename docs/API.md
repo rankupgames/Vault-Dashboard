@@ -182,6 +182,26 @@ interface SubTask {
 }
 ```
 
+### LinkedReference
+
+```typescript
+interface LinkedReference {
+  id: string;
+  kind: 'vault-checklist';
+  targetKind: 'task';
+  targetId: string;
+  sourcePath: string;
+  sourceLine: number;
+  sourceText: string;
+  sourceOccurrence: number;
+  state: 'active' | 'retired';
+}
+```
+
+`PluginData.references` is the normalized external-reference dictionary. Tasks do not duplicate source metadata; consumers resolve references by `targetKind` and `targetId`.
+
+Automatic TODO settings are `autoImportTodos`, `todoSourceFolder`, `todoDefaultDurationMinutes`, and `todoCategoryId`. TODO refresh is deterministic and does not invoke the selected AI provider.
+
 ### TaskCategory
 
 ```typescript

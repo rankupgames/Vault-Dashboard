@@ -14,6 +14,7 @@ import {
 	MAX_PROVIDER_ERROR_TEXT_LENGTH,
 	normalizeOpenRouterBaseUrl,
 	sanitizeProviderText,
+	validateToolPath,
 } from './ProviderSecurity';
 
 /** Cursor SDK model selector accepted by the Agent API. */
@@ -79,6 +80,26 @@ const resolveCommand = (tool: string): string => {
 const launchDetached = (command: string, args: string[]): void => {
 	spawn(command, args, { detached: true, stdio: 'ignore' });
 };
+
+/**
+ * Terminal.app accepts a shell command string rather than an executable argv.
+ * Keep the script static and let AppleScript quote every caller-supplied value.
+ */
+const TERMINAL_INTERACTIVE_SESSION_SCRIPT = [
+	'on run argv',
+	'if (count of argv) < 3 then error "Missing task session arguments."',
+	'set workingDirectory to item 1 of argv',
+	'set executablePath to item 2 of argv',
+	'set commandText to "cd " & quoted form of workingDirectory & " && " & quoted form of executablePath',
+	'repeat with argumentIndex from 3 to count of argv',
+	'set commandText to commandText & " " & quoted form of (item argumentIndex of argv)',
+	'end repeat',
+	'tell application "Terminal"',
+	'activate',
+	'do script commandText',
+	'end tell',
+	'end run',
+].join('\n');
 
 /**
  * Encapsulates provider APIs, optional SDK loading, and child-process execution.
@@ -150,6 +171,42 @@ export class ProviderRunner {
 		}
 	}
 
+	/**
+	 * Requests a new interactive CLI session and returns after the detached launch.
+	 * Unsupported providers and malformed launch inputs fail synchronously.
+	 */
+	openInteractiveTaskSession(settings: PluginSettings, workingDirectory: string, prompt: string): void {
+		if (workingDirectory.trim().length === 0) {
+			throw new Error('Interactive task sessions require a working directory.');
+		}
+		if (prompt.trim().length === 0) {
+			throw new Error('Interactive task sessions require a prompt.');
+		}
+
+		const invocation = this.interactiveCliInvocation(settings, workingDirectory, prompt);
+		if (settings.terminalApp === 'ghostty') {
+			launchDetached('open', [
+				'-na',
+				'Ghostty.app',
+				'--args',
+				`--working-directory=${workingDirectory}`,
+				'-e',
+				invocation.command,
+				...invocation.args,
+			]);
+			return;
+		}
+
+		launchDetached('osascript', [
+			'-e',
+			TERMINAL_INTERACTIVE_SESSION_SCRIPT,
+			'--',
+			workingDirectory,
+			invocation.command,
+			...invocation.args,
+		]);
+	}
+
 	/** Opens a working directory in the selected editor. */
 	openIDE(workingDirectory: string, ide: 'cursor' | 'vscode'): void {
 		const tool = ide === 'cursor' ? 'cursor' : 'code';
@@ -184,7 +241,7 @@ export class ProviderRunner {
 		promptContent: string,
 	): string[] {
 		if (tool === AI_TOOL.CODEX_CLI) {
-			const args = ['exec', '-C', '.', '--ask-for-approval', 'never'];
+			const args = ['--ask-for-approval', 'never', 'exec', '-C', '.'];
 			const model = settings.aiProviders.codexCli.model.trim();
 			if (model.length > 0) args.push('--model', model);
 			if (settings.aiSkipPermissions) {
@@ -202,6 +259,35 @@ export class ProviderRunner {
 		if (settings.aiSkipPermissions) args.push('--dangerously-skip-permissions');
 		args.push(promptContent);
 		return args;
+	}
+
+	/** Builds the selected provider's interactive executable and argv without a shell. */
+	private interactiveCliInvocation(
+		settings: PluginSettings,
+		workingDirectory: string,
+		prompt: string,
+	): { command: string; args: string[] } {
+		if (settings.aiTool !== AI_TOOL.CODEX_CLI && settings.aiTool !== AI_TOOL.CLAUDE_CODE) {
+			throw new Error(
+				`Interactive task sessions support only Codex CLI or Claude Code; selected provider "${settings.aiTool}" is unsupported.`,
+			);
+		}
+
+		const provider = settings.aiTool === AI_TOOL.CODEX_CLI
+			? settings.aiProviders.codexCli
+			: settings.aiProviders.claudeCode;
+		const providerName = settings.aiTool === AI_TOOL.CODEX_CLI ? 'Codex CLI' : 'Claude Code';
+		const configuredPath = provider.cliPath.trim();
+		if (validateToolPath(configuredPath) === false) {
+			throw new Error(`${providerName} path contains invalid characters. Check Settings > AI Integration.`);
+		}
+
+		const command = configuredPath || resolveCommand(settings.aiTool === AI_TOOL.CODEX_CLI ? 'codex' : 'claude');
+		const args = settings.aiTool === AI_TOOL.CODEX_CLI ? ['-C', workingDirectory] : [];
+		const model = provider.model.trim();
+		if (model.length > 0) args.push('--model', model);
+		args.push('--', prompt);
+		return { command, args };
 	}
 
 	/** Runs the optional Cursor SDK provider with a Keychain-backed API key. */

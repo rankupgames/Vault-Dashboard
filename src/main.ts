@@ -7,25 +7,31 @@
  * Last Modified: 2026-05-16
  */
 
-import { Notice, Plugin, WorkspaceLeaf, TFile } from 'obsidian';
+import { Notice, Plugin, WorkspaceLeaf, TFile, type TAbstractFile } from 'obsidian';
 import {
+	AI_TASKS_CATEGORY_ID,
 	AI_TOOL,
 	CRON_FREQUENCY,
 	CRON_WEEKDAY,
 	DEFAULT_AI_PROVIDERS,
 	DEFAULT_DATA,
 	DEFAULT_SETTINGS,
+	DEFAULT_TASK_CATEGORIES,
 	type AIKeychainRef,
 	type AIModelOption,
 	type AIProviderSettings,
+	type AITaskManifestReceipt,
 	type AITool,
 	type CronFrequency,
 	type CronJobConfig,
 	type CronWeekday,
 	type GmailDigestSettings,
+	type LinkedReference,
 	type ModuleConfig,
 	type PluginData,
 	type PluginSettings,
+	type Task,
+	type TaskCategory,
 	VIEW_TYPE_WELCOME,
 	VIEW_TYPE_MINI_TIMER,
 } from './core/types';
@@ -45,6 +51,13 @@ import { destroyTooltip } from './ui/Tooltip';
 import { closeAllModals } from './core/modal-tracker';
 import { BackupService } from './services/BackupService';
 import { PopoutPositionTracker, type PopoutWindowHandle } from './services/PopoutPositionTracker';
+import { TodoSyncService, type TodoSyncSummary } from './services/TodoSyncService';
+import {
+	AITaskManifestIngestor,
+	isAITaskManifestPath,
+	type AITaskManifestInboxResult,
+	type AITaskManifestIngestionResult,
+} from './services/AITaskCurator';
 
 /** Minimal Electron display shape used to restore popout placement. */
 interface ElectronDisplayBounds {
@@ -114,6 +127,14 @@ export default class VaultboardPlugin extends Plugin {
 	moduleRegistry!: ModuleRegistry;
 	/** AI dispatch service for CLI tool integration. */
 	aiDispatcher!: IAIDispatcher;
+	/** Automatic Vault checklist ingestion and canonical reference service. */
+	todoSyncService!: TodoSyncService;
+	/** Strict inbox for task plans authored by external vault agents. */
+	aiTaskManifestIngestor!: AITaskManifestIngestor;
+	/** Serializes create/modify ingestion so one file cannot race another. */
+	private vaultIngestionQueue: Promise<void> = Promise.resolve();
+	/** Prevents new background ingestion from being appended after unload begins. */
+	private isUnloading = false;
 	/** Pending debounce handle for plugin data writes. */
 	private saveTimeout: number | null = null;
 	/** Last local date observed by the daily reset poller. */
@@ -140,6 +161,19 @@ export default class VaultboardPlugin extends Plugin {
 		this.taskManager.autoArchiveStale(this.data.settings.autoArchiveDays);
 		this.audioService = new AudioService(this.data.settings, this.eventBus);
 		this.moduleRegistry = new ModuleRegistry();
+		this.todoSyncService = new TodoSyncService(this.app, this.taskManager, {
+			getSettings: () => this.data.settings,
+			getReferences: () => this.data.references,
+			onReferencesChanged: () => this.scheduleSave(),
+		});
+		this.aiTaskManifestIngestor = new AITaskManifestIngestor({
+			app: this.app,
+			taskManager: this.taskManager,
+			getSettings: () => this.data.settings,
+			getReferences: () => this.data.references,
+			getReceipts: () => this.data.aiTaskManifestReceipts,
+			onDataChanged: () => this.scheduleSave(),
+		});
 		this.miniTimerTracker = new PopoutPositionTracker({
 			initial: this.data.miniTimerPosition,
 			onChange: (pos) => {
@@ -214,6 +248,7 @@ export default class VaultboardPlugin extends Plugin {
 				this.eventBus,
 				this.moduleRegistry,
 				this.aiDispatcher,
+				this.todoSyncService,
 				() => this.openMiniTimer(),
 			);
 		});
@@ -334,6 +369,47 @@ export default class VaultboardPlugin extends Plugin {
 		});
 
 		this.addCommand({
+			id: 'sync-vault-todos',
+			name: 'Sync Vault TODOs',
+			callback: () => {
+				void this.syncVaultTodos(true).catch(() => undefined);
+			},
+		});
+
+		this.addCommand({
+			id: 'sync-external-ai-task-plans',
+			name: 'Sync External AI Task Plans',
+			callback: () => {
+				void this.enqueueVaultIngestion(() => this.syncAITaskInbox(true)).catch(() => undefined);
+			},
+		});
+
+		this.registerEvent(
+			this.app.vault.on('create', (file) => {
+				if (file instanceof TFile) {
+					void this.enqueueVaultIngestion(() => this.ingestChangedVaultFile(file)).catch(() => undefined);
+				}
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on('modify', (file) => {
+				if (file instanceof TFile) {
+					void this.enqueueVaultIngestion(() => this.ingestChangedVaultFile(file)).catch(() => undefined);
+				}
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on('rename', (file, oldPath) => {
+				void this.enqueueVaultIngestion(() => this.handleVaultTodoRename(file, oldPath)).catch(() => undefined);
+			}),
+		);
+		this.registerEvent(
+			this.app.vault.on('delete', (file) => {
+				void this.enqueueVaultIngestion(() => this.handleVaultTodoDelete(file)).catch(() => undefined);
+			}),
+		);
+
+		this.addCommand({
 			id: 'pop-out-mini-timer',
 			name: 'Pop Out Mini Timer',
 			callback: () => this.openMiniTimer(),
@@ -345,6 +421,10 @@ export default class VaultboardPlugin extends Plugin {
 			if (this.data.settings.autoOpenOnStartup) {
 				setTimeout(() => this.ensureWelcomeLeaf(), 500);
 			}
+			void this.enqueueVaultIngestion(async () => {
+				if (this.data.settings.autoImportTodos) await this.syncVaultTodosNow();
+				await this.syncAITaskInbox();
+			}).catch(() => undefined);
 		});
 
 		if (this.data.settings.autoPinTab) {
@@ -365,6 +445,127 @@ export default class VaultboardPlugin extends Plugin {
 				this.refreshWelcomeViews();
 			}
 		}, 60_000);
+	}
+
+	/** Adds one Vault ingestion operation to the shared lifecycle without leaving a rejected queue. */
+	private enqueueVaultIngestion<T>(operation: () => Promise<T>): Promise<T> {
+		if (this.isUnloading) return Promise.reject(new Error('Vaultboard is unloading.'));
+		const result = this.vaultIngestionQueue.then(operation);
+		this.vaultIngestionQueue = result.then(
+			() => undefined,
+			(error) => {
+				console.error('[Vaultboard] Serialized Vault ingestion failed:', error);
+			},
+		);
+		return result;
+	}
+
+	/** Routes external AI manifests before ordinary checklist synchronization. */
+	private async ingestChangedVaultFile(file: TFile): Promise<void> {
+		if (isAITaskManifestPath(file.path, this.data.settings)) {
+			await this.ingestAITaskManifestFile(file);
+			return;
+		}
+		await this.syncVaultTodoFile(file);
+	}
+
+	/** Applies one external plan and reports malformed or conflicting manifests loudly. */
+	private async ingestAITaskManifestFile(file: TFile): Promise<AITaskManifestIngestionResult | undefined> {
+		try {
+			const result = await this.aiTaskManifestIngestor.ingestFile(file);
+			if (result.status === 'ingested') this.refreshWelcomeViews();
+			return result;
+		} catch (error) {
+			console.error(`[Vaultboard] External AI task manifest failed for ${file.path}:`, error);
+			new Notice(`External AI task manifest failed for ${file.path}. Check the developer console.`);
+			return undefined;
+		}
+	}
+
+	/** Scans the derived inbox for plans written while Vaultboard was not running. */
+	private async syncAITaskInbox(showNotice = false): Promise<AITaskManifestInboxResult[]> {
+		try {
+			const results = await this.aiTaskManifestIngestor.ingestInbox();
+			const ingested = results.filter((result) => result.status === 'ingested');
+			const unchanged = results.filter((result) => result.status === 'unchanged');
+			const failed = results.filter((result) => result.status === 'failed');
+			if (ingested.length > 0) this.refreshWelcomeViews();
+			for (const failure of failed) {
+				console.error(`[Vaultboard] External AI task manifest failed for ${failure.manifestPath}: ${failure.error}`);
+			}
+			if (showNotice || failed.length > 0) {
+				new Notice(`External AI task plans: ${ingested.length} ingested, ${unchanged.length} unchanged, ${failed.length} failed`);
+			}
+			return results;
+		} catch (error) {
+			console.error('[Vaultboard] External AI task inbox sync failed:', error);
+			new Notice('External AI task inbox sync failed. Check the developer console.');
+			return [];
+		}
+	}
+
+	/** Maintains canonical source paths on rename, then conditionally ingests the renamed note. */
+	private async handleVaultTodoRename(file: TAbstractFile, oldPath: string): Promise<void> {
+		try {
+			await this.todoSyncService.renameSource(oldPath, file.path);
+			this.refreshWelcomeViews();
+			if (file instanceof TFile && isAITaskManifestPath(file.path, this.data.settings)) {
+				await this.ingestAITaskManifestFile(file);
+				return;
+			}
+			if (this.data.settings.autoImportTodos === false || file instanceof TFile === false) return;
+			await this.syncVaultTodoFile(file);
+		} catch (error) {
+			console.error(`[Vaultboard] Failed to update TODO source after renaming ${oldPath}:`, error);
+			new Notice(`Vaultboard failed to update TODO links for ${oldPath}`);
+		}
+	}
+
+	/** Retires canonical source references on deletion regardless of automatic ingestion settings. */
+	private async handleVaultTodoDelete(file: TAbstractFile): Promise<void> {
+		try {
+			if (await this.todoSyncService.retireSource(file.path) > 0) this.refreshWelcomeViews();
+		} catch (error) {
+			console.error(`[Vaultboard] Failed to retire TODO source ${file.path}:`, error);
+			new Notice(`Vaultboard failed to retire TODO links for ${file.path}`);
+		}
+	}
+
+	/** Runs a full automatic TODO scan and optionally reports the result. */
+	async syncVaultTodos(showNotice = false): Promise<TodoSyncSummary> {
+		return this.enqueueVaultIngestion(() => this.syncVaultTodosNow(showNotice));
+	}
+
+	/** Executes a full TODO scan inside the shared Vault ingestion boundary. */
+	private async syncVaultTodosNow(showNotice = false): Promise<TodoSyncSummary> {
+		if (this.data.settings.autoImportTodos === false) {
+			if (showNotice) new Notice('Enable automatic TODO import in Vaultboard settings first.');
+			return { added: 0, linked: 0, retired: 0 };
+		}
+		try {
+			const summary = await this.todoSyncService.syncAll();
+			if (summary.added > 0 || summary.linked > 0 || summary.retired > 0) this.refreshWelcomeViews();
+			if (showNotice) {
+				new Notice(`Vault TODO sync: ${summary.added} added, ${summary.linked} linked, ${summary.retired} retired`);
+			}
+			return summary;
+		} catch (error) {
+			console.error('[Vaultboard] TODO sync failed:', error);
+			new Notice('Vault TODO sync failed. Check the developer console for details.');
+			throw error;
+		}
+	}
+
+	/** Synchronizes one changed note without interrupting unrelated Vault events. */
+	private async syncVaultTodoFile(file: TFile): Promise<void> {
+		if (this.data.settings.autoImportTodos === false) return;
+		try {
+			const summary = await this.todoSyncService.syncFile(file);
+			if (summary.added > 0 || summary.linked > 0 || summary.retired > 0) this.refreshWelcomeViews();
+		} catch (error) {
+			console.error(`[Vaultboard] TODO sync failed for ${file.path}:`, error);
+			new Notice(`Vault TODO sync failed for ${file.path}`);
+		}
 	}
 
 	/** Registers a module renderer if not already present. */
@@ -390,7 +591,10 @@ export default class VaultboardPlugin extends Plugin {
 
 	/** Tears down services, saves data, clears intervals, and detaches welcome views. */
 	async onunload(): Promise<void> {
+		this.isUnloading = true;
 		closeAllModals();
+		await this.vaultIngestionQueue;
+		await this.todoSyncService.drain();
 		this.miniTimerTracker.release();
 		this.aiDispatcher.killAll();
 		this.timerEngine.destroy();
@@ -616,19 +820,22 @@ export default class VaultboardPlugin extends Plugin {
 				savedSettingsRecord.aiTool,
 				savedSettingsRecord.aiToolPath,
 			);
-			if (saved.settings?.taskCategories) mergedSettings.taskCategories = saved.settings.taskCategories;
+			mergedSettings.taskCategories = this.normalizeTaskCategories(saved.settings?.taskCategories);
 			if (saved.settings?.activeCategoryId !== undefined) mergedSettings.activeCategoryId = saved.settings.activeCategoryId;
 
 			this.validateSettings(mergedSettings);
+			const references = this.normalizeLinkedReferences(saved.references);
 
 			this.data = {
 				settings: mergedSettings,
-				tasks: saved.tasks ?? [],
+				tasks: this.normalizeLoadedTasks(saved.tasks, references),
 				archivedTasks: saved.archivedTasks ?? [],
 				timerState: { ...DEFAULT_DATA.timerState, ...saved.timerState },
 				lastDashboardOpenedAt: saved.lastDashboardOpenedAt ?? 0,
-				dispatchHistory: saved.dispatchHistory ?? [],
-				miniTimerPosition: saved.miniTimerPosition ?? null,
+					dispatchHistory: saved.dispatchHistory ?? [],
+					references,
+					aiTaskManifestReceipts: this.normalizeAITaskManifestReceipts(saved.aiTaskManifestReceipts),
+					miniTimerPosition: saved.miniTimerPosition ?? null,
 			};
 		}
 	}
@@ -650,6 +857,16 @@ export default class VaultboardPlugin extends Plugin {
 		s.pomodoroLongBreakMinutes = this.clamp(s.pomodoroLongBreakMinutes, 5, 60);
 		s.pomodoroLongBreakInterval = this.clamp(s.pomodoroLongBreakInterval, 2, 8);
 		s.autoArchiveDays = Math.max(0, Math.floor(s.autoArchiveDays || 0));
+		s.autoImportTodos = s.autoImportTodos === true;
+		s.todoSourceFolder = this.stringSetting(s.todoSourceFolder, '');
+		s.todoDefaultDurationMinutes = this.boundedInteger(s.todoDefaultDurationMinutes, 30, 5, 480);
+		s.taskCategories = this.normalizeTaskCategories(s.taskCategories);
+		s.todoCategoryId = AI_TASKS_CATEGORY_ID;
+		s.aiTaskSkills = this.normalizeStringList(s.aiTaskSkills, DEFAULT_SETTINGS.aiTaskSkills);
+		s.aiTaskTools = this.normalizeStringList(s.aiTaskTools, DEFAULT_SETTINGS.aiTaskTools);
+		if (s.activeCategoryId !== null && s.taskCategories.some((category) => category.id === s.activeCategoryId) === false) {
+			s.activeCategoryId = null;
+		}
 
 		s.reportSources = this.normalizeReportSources(s.reportSources);
 		s.cronJobs = this.normalizeCronJobs(s.cronJobs);
@@ -660,6 +877,112 @@ export default class VaultboardPlugin extends Plugin {
 
 		const validIDEs: string[] = ['cursor', 'vscode', 'none'];
 		if (validIDEs.includes(s.postDispatchIDE) === false) s.postDispatchIDE = 'cursor';
+	}
+
+	/** Validates the persisted canonical reference dictionary before runtime use. */
+	private normalizeLinkedReferences(value: unknown): LinkedReference[] {
+		if (Array.isArray(value) === false) return [];
+		const references: LinkedReference[] = [];
+		for (const item of value) {
+			const candidate = this.asRecord(item);
+			if (
+				candidate.kind !== 'vault-checklist'
+				|| candidate.targetKind !== 'task'
+				|| typeof candidate.id !== 'string'
+				|| typeof candidate.targetId !== 'string'
+				|| typeof candidate.sourcePath !== 'string'
+				|| typeof candidate.sourceLine !== 'number'
+				|| typeof candidate.sourceText !== 'string'
+				|| typeof candidate.sourceOccurrence !== 'number'
+				|| (candidate.state !== 'active' && candidate.state !== 'retired')
+			) continue;
+			references.push(candidate as unknown as LinkedReference);
+		}
+		return references;
+	}
+
+	/** Retains only complete, uniquely identified external AI task ingestion receipts. */
+	private normalizeAITaskManifestReceipts(value: unknown): AITaskManifestReceipt[] {
+		if (Array.isArray(value) === false) return [];
+		const receipts: AITaskManifestReceipt[] = [];
+		const manifestIds = new Set<string>();
+		const manifestPaths = new Set<string>();
+		for (const item of value) {
+			const candidate = this.asRecord(item);
+			if (
+				typeof candidate.manifestId !== 'string'
+				|| typeof candidate.manifestPath !== 'string'
+				|| typeof candidate.fingerprint !== 'string'
+				|| typeof candidate.ingestedAt !== 'number'
+				|| Array.isArray(candidate.sourceTaskIds) === false
+				|| candidate.sourceTaskIds.every((id) => typeof id === 'string') === false
+				|| Array.isArray(candidate.taskIds) === false
+				|| candidate.taskIds.every((id) => typeof id === 'string') === false
+				|| manifestIds.has(candidate.manifestId)
+				|| manifestPaths.has(candidate.manifestPath)
+			) continue;
+			manifestIds.add(candidate.manifestId);
+			manifestPaths.add(candidate.manifestPath);
+			receipts.push(candidate as unknown as AITaskManifestReceipt);
+		}
+		return receipts;
+	}
+
+	/** Restores immutable built-ins and retains only well-formed, uniquely identified custom categories. */
+	private normalizeTaskCategories(value: unknown): TaskCategory[] {
+		const builtIns = DEFAULT_TASK_CATEGORIES.map((category) => ({ ...category }));
+		if (Array.isArray(value) === false) return builtIns;
+		for (const builtIn of builtIns) {
+			const saved = value
+				.map((item) => this.asRecord(item))
+				.find((candidate) => candidate.id === builtIn.id);
+			if (typeof saved?.color === 'string') builtIn.color = saved.color;
+		}
+		const builtInIds = new Set(builtIns.map((category) => category.id));
+		const custom: TaskCategory[] = [];
+		const seen = new Set(builtInIds);
+		for (const item of value) {
+			const candidate = this.asRecord(item);
+			const id = this.stringSetting(candidate.id, '');
+			const name = this.stringSetting(candidate.name, '');
+			if (id.length === 0 || name.length === 0 || seen.has(id)) continue;
+			seen.add(id);
+			custom.push({
+				id,
+				name,
+				order: typeof candidate.order === 'number' && Number.isFinite(candidate.order)
+					? Math.floor(candidate.order)
+					: builtIns.length + custom.length,
+				color: typeof candidate.color === 'string' ? candidate.color : undefined,
+				isDefault: false,
+				dailyReset: candidate.dailyReset === true,
+			});
+		}
+		custom.sort((first, second) => first.order - second.order);
+		custom.forEach((category, index) => { category.order = builtIns.length + index; });
+		return [...builtIns, ...custom];
+	}
+
+	/** Moves every live canonical TODO target into the immutable AI intake without touching unrelated tasks. */
+	private normalizeLoadedTasks(value: unknown, references: LinkedReference[]): Task[] {
+		if (Array.isArray(value) === false) return [];
+		const referencedTaskIds = new Set(references.map((reference) => reference.targetId));
+		return value.map((item) => {
+			const task = item as Task;
+			return typeof task?.id === 'string' && referencedTaskIds.has(task.id)
+				? { ...task, categoryId: AI_TASKS_CATEGORY_ID }
+				: task;
+		});
+	}
+
+	/** Normalizes compact user-configured skill/tool identifier lists. */
+	private normalizeStringList(value: unknown, fallback: string[]): string[] {
+		if (Array.isArray(value) === false) return [...fallback];
+		const normalized = value
+			.filter((item): item is string => typeof item === 'string')
+			.map((item) => item.trim())
+			.filter((item) => item.length > 0);
+		return [...new Set(normalized)].slice(0, 25);
 	}
 
 	/** Clamps a numeric value (or coerces non-numbers) to the given range. */

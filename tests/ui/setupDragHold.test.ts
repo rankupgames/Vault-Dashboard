@@ -50,4 +50,19 @@ describe('setupDragHold', () => {
 		expect(draggable.getAttribute('draggable')).toBeNull();
 		expect(draggable.classList.contains('vw-drag-ready')).toBe(false);
 	});
+
+	it('does not cancel a nested draggable child event', () => {
+		const parent = document.createElement('div');
+		const child = document.createElement('div');
+		parent.appendChild(child);
+		const onDragStart = vi.fn();
+
+		setupDragHold({ grip: parent, draggable: parent, onDragStart });
+
+		const childDrag = new Event('dragstart', { bubbles: true, cancelable: true });
+		child.dispatchEvent(childDrag);
+
+		expect(childDrag.defaultPrevented).toBe(false);
+		expect(onDragStart).not.toHaveBeenCalled();
+	});
 });

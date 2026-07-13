@@ -310,6 +310,14 @@ export class AIDispatcher implements IAIDispatcher {
 		this.providerRunner.openTerminal(vaultPath, terminalApp);
 	}
 
+	/**
+	 * Requests a new interactive task session in the configured terminal.
+	 * Successful return means the detached launch was requested; validation failures throw.
+	 */
+	openInteractiveTaskSession(settings: PluginSettings, workingDirectory: string, prompt: string): void {
+		this.providerRunner.openInteractiveTaskSession(settings, workingDirectory, prompt);
+	}
+
 	/** Opens a working directory in the selected editor. */
 	openIDE(workingDirectory: string, ide: 'cursor' | 'vscode'): void {
 		this.providerRunner.openIDE(workingDirectory, ide);

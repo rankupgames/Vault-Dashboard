@@ -24,6 +24,8 @@ export type { TimerControlState } from './timer-controls';
 export type {
 	SubTask,
 	Task,
+	AITaskAttribution,
+	AITaskManifestReceipt,
 	TaskCategory,
 	TaskTemplate,
 	TimerState,
@@ -33,10 +35,13 @@ export type {
 	ModuleConfig,
 	PluginSettings,
 	PluginData,
+	LinkedReference,
 	TimerEventCallback,
 	TimerCompleteCallback,
 } from './types';
 export {
+	AI_TASKS_CATEGORY_ID,
+	DEFAULT_TASK_CATEGORIES,
 	DEFAULT_TIMER_STATE,
 	DEFAULT_GMAIL_DIGEST_SETTINGS,
 	DEFAULT_SETTINGS,
