@@ -7,7 +7,16 @@
  * Last Modified: 2026-03-07
  */
 
-import { Task, SubTask, TaskCategory, TaskTemplate, PluginSettings, DispatchHistoryEntry } from './types';
+import {
+	AI_TASKS_CATEGORY_ID,
+	DEFAULT_TASK_CATEGORIES,
+	Task,
+	SubTask,
+	TaskCategory,
+	TaskTemplate,
+	PluginSettings,
+	DispatchHistoryEntry,
+} from './types';
 import { UndoManager } from './UndoManager';
 import { EventBus } from './EventBus';
 import { TaskEvents } from './events';
@@ -40,6 +49,11 @@ export class TaskManager {
 	/** Returns the undo manager for task snapshots. */
 	getUndoManager(): UndoManager<TaskUndoSnapshot> {
 		return this.undoManager;
+	}
+
+	/** Clears task-only history after an external mutation also changes plugin-owned reference state. */
+	clearUndoHistory(): void {
+		this.undoManager.clear();
 	}
 
 	/** Registers a callback invoked when tasks change. */
@@ -181,6 +195,24 @@ export class TaskManager {
 		this.pushUndo();
 		this.tasks.splice(idx, 1);
 		this.emitChange();
+	}
+
+	/** Updates one task while removing merged source tasks in a single undoable change. */
+	mergeTasks(
+		targetId: string,
+		mergedTaskIds: string[],
+		updates: Partial<Pick<Task, 'title' | 'description' | 'durationMinutes' | 'subtasks' | 'tags' | 'linkedDocs' | 'images' | 'workingDirectory' | 'categoryId' | 'aiAttribution'>>,
+	): Task | undefined {
+		const target = this.getTask(targetId);
+		if (target === undefined) return undefined;
+		const mergedIds = new Set(mergedTaskIds.filter((id) => id !== targetId));
+		if ([...mergedIds].some((id) => this.getTask(id) === undefined)) return undefined;
+		this.pushUndo();
+		Object.assign(target, updates);
+		this.tasks = this.tasks.filter((task) => mergedIds.has(task.id) === false);
+		this.reindex();
+		this.emitChange();
+		return target;
 	}
 
 	/** Marks a task as active and records rollover applied. */
@@ -673,7 +705,7 @@ export class TaskManager {
 	/** Renames an existing category. */
 	renameCategory(id: string, name: string): void {
 		const cat = this.settings.taskCategories.find((c) => c.id === id);
-		if (cat === undefined) return;
+		if (cat === undefined || id === AI_TASKS_CATEGORY_ID) return;
 		cat.name = name;
 		this.emitChange();
 	}
@@ -712,16 +744,16 @@ export class TaskManager {
 		return sorted.filter((t) => t.categoryId === categoryId);
 	}
 
-	/** Ensures the two built-in default categories exist and migrates orphan tasks to General. */
+	/** Restores canonical built-in categories and migrates uncategorized tasks to General. */
 	ensureDefaultCategories(): void {
-		const DEFAULTS: { id: string; name: string; order: number; isDefault: true; dailyReset?: true }[] = [
-			{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
-			{ id: 'default-general', name: 'General', order: 1, isDefault: true },
-		];
-		for (const def of DEFAULTS) {
+		for (const def of DEFAULT_TASK_CATEGORIES) {
 			const existing = this.settings.taskCategories.find((c) => c.id === def.id);
 			if (existing === undefined) {
 				this.settings.taskCategories.push({ ...def });
+			} else {
+				existing.name = def.name;
+				existing.isDefault = true;
+				existing.dailyReset = def.dailyReset;
 			}
 		}
 

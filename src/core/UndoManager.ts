@@ -39,6 +39,12 @@ export class UndoManager<T> {
 		return this.redoStack.length > 0;
 	}
 
+	/** Clears both history stacks after a mutation that cannot be represented by this snapshot type. */
+	clear(): void {
+		this.undoStack = [];
+		this.redoStack = [];
+	}
+
 	/**
 	 * Pops the previous snapshot and pushes current onto redo.
 	 * @param current - Current state to save for redo

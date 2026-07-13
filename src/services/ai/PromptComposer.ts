@@ -1,5 +1,5 @@
 import { App, TFile } from 'obsidian';
-import type { Task } from '../../core/types';
+import type { LinkedReference, Task } from '../../core/types';
 import { TaskManager } from '../../core/TaskManager';
 import type { AIAction } from './AIAction';
 import type { AIContext } from './AIContext';
@@ -18,18 +18,31 @@ const PLAN_PHASE_INSTRUCTION = 'Analyze this task and produce a detailed step-by
 /** Prefix that turns an approved plan into an execution prompt. */
 export const EXECUTE_PHASE_PREFIX = 'The user has reviewed and approved the following execution plan. Proceed to execute it exactly as described.\n\n## Approved Plan\n';
 
+/** Selects which canonical task-reference notes may enter an AI context. */
+export type ReferenceContextScope =
+	| { type: 'global' }
+	| { type: 'target'; targetId: string };
+
 /**
  * Reads tasks, linked notes, and referenced image paths into one prompt context.
  * Linked notes are read once even when multiple tasks reference the same path.
  */
-export const gatherContext = async (taskManager: TaskManager, app: App): Promise<AIContext> => {
+export const gatherContext = async (
+	taskManager: TaskManager,
+	app: App,
+	references: readonly LinkedReference[],
+	referenceScope: ReferenceContextScope,
+): Promise<AIContext> => {
 	const tasks = taskManager.toJSON();
 	const archivedTasks = taskManager.getArchivedTasks();
 	const allTasks = [...tasks, ...archivedTasks];
+	const contextTasks = referenceScope.type === 'global'
+		? allTasks
+		: allTasks.filter((task) => task.id === referenceScope.targetId);
 	const linkedDocContents = new Map<string, string>();
 	const seenPaths = new Set<string>();
 
-	for (const task of allTasks) {
+	for (const task of contextTasks) {
 		for (const documentPath of task.linkedDocs ?? []) {
 			if (seenPaths.has(documentPath)) continue;
 			seenPaths.add(documentPath);
@@ -40,9 +53,32 @@ export const gatherContext = async (taskManager: TaskManager, app: App): Promise
 			}
 		}
 	}
+	const referencesByPath = new Map<string, LinkedReference[]>();
+	for (const reference of references) {
+		if (
+			reference.state !== 'active'
+			|| (referenceScope.type === 'target' && reference.targetId !== referenceScope.targetId)
+			|| seenPaths.has(reference.sourcePath)
+		) continue;
+		const pathReferences = referencesByPath.get(reference.sourcePath) ?? [];
+		pathReferences.push(reference);
+		referencesByPath.set(reference.sourcePath, pathReferences);
+	}
+	for (const [sourcePath, pathReferences] of referencesByPath) {
+		seenPaths.add(sourcePath);
+		const file = app.vault.getAbstractFileByPath(sourcePath);
+		if (file instanceof TFile) {
+			const content = await app.vault.cachedRead(file);
+			const lines = content.split(/\r?\n/);
+			const excerpts = [...new Set(pathReferences
+				.map((reference) => lines[reference.sourceLine - 1])
+				.filter((line): line is string => line !== undefined))];
+			if (excerpts.length > 0) linkedDocContents.set(sourcePath, excerpts.join('\n'));
+		}
+	}
 
 	const imagePaths: string[] = [];
-	for (const task of allTasks) {
+	for (const task of contextTasks) {
 		for (const imagePath of task.images ?? []) {
 			if (imagePaths.includes(imagePath) === false) {
 				imagePaths.push(imagePath);

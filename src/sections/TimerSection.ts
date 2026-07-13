@@ -213,8 +213,9 @@ export class TimerSection implements SectionRenderer {
 	/**
 	 * Starts or queues the given task; shows confirmation if another task is active.
 	 * @param task - Task to start
+	 * @param onStarted - Optional callback invoked only when the timer actually starts
 	 */
-	handleStartTask(task: Task): void {
+	handleStartTask(task: Task, onStarted?: () => void): void {
 		const state = this.deps.timerEngine.getState();
 
 		if (state.isRunning && state.currentTaskId) {
@@ -224,6 +225,7 @@ export class TimerSection implements SectionRenderer {
 			new ConfirmStartModal(this.deps.app, activeTitle, task.title, (choice) => {
 				if (choice === 'start-now') {
 					this.overrideAndStart(task);
+					onStarted?.();
 				} else if (choice === 'queue-next') {
 					this.deps.taskManager.moveToFront(task.id);
 					this.deps.saveCallback();
@@ -234,6 +236,7 @@ export class TimerSection implements SectionRenderer {
 		}
 
 		this.startTaskImmediate(task);
+		onStarted?.();
 	}
 
 	/** Starts a ghost task, suspending the active real task if one is running. */

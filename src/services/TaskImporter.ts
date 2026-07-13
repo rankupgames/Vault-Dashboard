@@ -19,6 +19,10 @@ export interface TaskImportItem {
 	subtasks: SubTask[];
 	/** 1-based line number in source. */
 	line: number;
+	/** Completion status in the source note. */
+	status: 'pending' | 'completed';
+	/** Zero-based occurrence among identical top-level checklist titles. */
+	occurrence: number;
 	/** Whether selected for import. */
 	selected: boolean;
 }
@@ -28,21 +32,21 @@ export class TaskImporter {
 	/** Parses a note and returns importable task items from checklist lines. */
 	static async scanNote(app: App, file: TFile): Promise<TaskImportItem[]> {
 		const content = await app.vault.read(file);
-		const lines = content.split('\n');
-		const parsed = TaskParser.parseLines(lines);
+		const parsed = TaskParser.parseLines(content.split('\n'));
 
 		const items: TaskImportItem[] = [];
-		let lineIdx = 0;
+		const occurrences = new Map<string, number>();
 		for (const entry of parsed) {
-			const foundAt = lines.findIndex((l, i) => i >= lineIdx && l.includes(entry.title));
-			const line = foundAt >= 0 ? foundAt + 1 : lineIdx + 1;
-			if (foundAt >= 0) lineIdx = foundAt + 1;
+			const occurrence = occurrences.get(entry.title) ?? 0;
+			occurrences.set(entry.title, occurrence + 1);
 
 			items.push({
 				title: entry.title,
 				subtasks: entry.subtasks,
-				line,
-				selected: true,
+				line: entry.line,
+				status: entry.status,
+				occurrence,
+				selected: entry.status === 'pending',
 			});
 		}
 

@@ -97,4 +97,13 @@ describe('DEFAULT_SETTINGS modules', () => {
 		expect(DEFAULT_SETTINGS.aiProviders.openRouter.apiKey.account).toBe('openrouter:api-key');
 		expect(DEFAULT_SETTINGS.aiProviders.openRouter.baseUrl).toBe('https://openrouter.ai/api/v1');
 	});
+
+	it('keeps automatic TODO ingestion opt-in and configurable', () => {
+		expect(DEFAULT_SETTINGS.autoImportTodos).toBe(false);
+		expect(DEFAULT_SETTINGS.todoSourceFolder).toBe('');
+		expect(DEFAULT_SETTINGS.todoDefaultDurationMinutes).toBe(30);
+		expect(DEFAULT_SETTINGS.todoCategoryId).toBe('default-ai-tasks');
+		expect(DEFAULT_SETTINGS.aiTaskSkills).toEqual(['curate-ai-tasks']);
+		expect(DEFAULT_SETTINGS.aiTaskTools).toEqual(['read-files', 'edit-files', 'run-checks']);
+	});
 });

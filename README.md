@@ -90,6 +90,7 @@ The left column hosts independent widget panels, each collapsible, independently
 - **Unified attachments**: single section combining documents and images with fuzzy-search file picker, inline file creation, image picker, and drag-and-drop/paste drop zone
 - **Ghost task**: quick-start a timer without creating a saved task entry
 - **Task import from notes**: scan any note's checklists and selectively import items (with clipboard paste support)
+- **Automatic Vault TODO import**: opt-in scanning turns pending top-level Markdown checklists into dashboard tasks, preserves nested checklist children as subtasks, and uses one canonical reference registry to avoid duplicate imports while keeping source navigation available
 - **Archive**: completed and skipped tasks move to an archive with detail modal, restore, permanent delete, and auto-archive after configurable days
 - **Confirmation dialogs**: destructive actions prompt confirmation; starting a task while another is running offers Start Now, Queue Next, or Cancel
 - **Audio notifications**: synthesized tones on timer completion and overtime warning
@@ -160,7 +161,13 @@ src/
   main.ts              -- Plugin entry, commands, ribbon, view registration
   WelcomeView.ts       -- Orchestrator composing sections + modules
   MiniTimerView.ts     -- Pop-out mini timer (Spotify-style compact view)
-  SettingsTab.ts       -- Plugin settings panel
+  SettingsTab.ts       -- Settings panel orchestrator
+
+  settings/            -- Focused settings section renderers
+    GeneralSettingsSection.ts, AISettingsSection.ts,
+    GmailSettingsSection.ts, TaskSettingsSection.ts,
+    DashboardSettingsSection.ts, DataSettingsSection.ts,
+    SettingsSectionContext.ts
 
   core/                -- Zero Obsidian imports. Pure logic. Unit-testable.
     types.ts, EventBus.ts, events.ts, TimerEngine.ts,
@@ -179,7 +186,7 @@ src/
 
   services/            -- Obsidian-coupled vault/file operations
     AIDispatcher.ts, ReportScanner.ts, DocumentTracker.ts,
-    AnalyticsExporter.ts, TaskImporter.ts, TaskParser.ts,
+    AnalyticsExporter.ts, TaskImporter.ts, TaskParser.ts, TodoSyncService.ts,
     BackupService.ts, VaultUtils.ts, PopoutPositionTracker.ts
 
   ui/                  -- Shared DOM components (Tooltip, DropZone, TimerRing, TagPills, setupDragHold)
@@ -222,6 +229,24 @@ Vaultboard works locally unless you enable an optional integration. Review these
 - **Privacy and telemetry**: Vaultboard does not include first-party telemetry, advertising, or analytics uploads. Its task analytics and history remain local unless you explicitly export them or include them in an external-provider request. Data sent through optional integrations is subject to the selected provider's privacy and retention policies.
 
 All AI providers and scheduled integrations are optional and can be disabled. Set the AI tool to `none` to prevent AI dispatches.
+
+### Codex CLI setup
+
+Vaultboard's Codex/GPT integration uses the installed Codex CLI; it does not add a second direct OpenAI API provider or an OpenAI runtime dependency.
+
+1. Install Codex CLI using the [official Codex CLI guide](https://learn.chatgpt.com/docs/codex/cli).
+2. Verify the executable with `codex --version`.
+3. Run `codex login` for ChatGPT subscription authentication, or use the documented API-key login flow. Confirm with `codex login status`.
+4. In **Vaultboard Settings > AI Integration**, choose **Codex CLI**. Leave the executable path blank to use `PATH`, or set an explicit executable path.
+5. Optionally set a Codex model override. Leaving it blank uses the CLI default.
+
+The optional API-key override is stored in macOS Keychain and supplied as `OPENAI_API_KEY` only for the spawned Codex process. Codex dispatches are non-interactive and use `--ask-for-approval never`; keep **Bypass local provider safeguards** disabled to preserve the read-only or workspace-write sandbox. Enabling it removes that sandbox.
+
+### Automatic Vault TODO setup
+
+In **Vaultboard Settings > Tasks**, enable **Automatic Vault TODO import**, choose a Vault-relative source folder, duration, and destination category, then run **Sync now**. A blank source folder scans every Markdown note in the Vault. The synchronizer is deterministic and provider-independent: it never calls Codex, ChatGPT, or another LLM while refreshing TODOs.
+
+Only pending top-level `- [ ]` checklist items become tasks. Nested items become subtasks. Completed or removed source items retire their canonical link without deleting the dashboard task, and repeated scans do not create duplicates.
 
 ## Installation
 

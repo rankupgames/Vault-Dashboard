@@ -17,6 +17,9 @@ export interface ImportResult {
 	title: string;
 	durationMinutes: number;
 	subtasks?: SubTask[];
+	sourcePath: string;
+	sourceLine: number;
+	sourceOccurrence: number;
 }
 
 /** Modal for importing checklist items from vault notes as dashboard tasks. */
@@ -25,6 +28,8 @@ export class ImportModal extends Modal {
 	private items: TaskImportItem[] = [];
 	private defaultDuration = 30;
 	private listEl: HTMLElement | null = null;
+	private selectedFilePath = '';
+	private scanGeneration = 0;
 
 	/**
 	 * @param app - Obsidian app instance
@@ -51,8 +56,16 @@ export class ImportModal extends Modal {
 		pickBtn.addEventListener('click', (e) => {
 			e.preventDefault();
 			new ImportFilePicker(this.app, async (file) => {
+				const scanGeneration = ++this.scanGeneration;
+				this.selectedFilePath = '';
+				this.items = [];
+				fileLabel.setText(`Scanning ${file.path}...`);
+				this.renderItemList();
+				const items = await TaskImporter.scanNote(this.app, file);
+				if (scanGeneration !== this.scanGeneration) return;
+				this.selectedFilePath = file.path;
+				this.items = items;
 				fileLabel.setText(file.path);
-				this.items = await TaskImporter.scanNote(this.app, file);
 				this.renderItemList();
 			}).open();
 		});
@@ -75,12 +88,16 @@ export class ImportModal extends Modal {
 		const cancelBtn = actions.createEl('button', { cls: 'vw-timer-btn', text: 'Cancel' });
 
 		importBtn.addEventListener('click', () => {
-			const selected = this.items.filter((it) => it.selected);
+			if (this.selectedFilePath === '') return;
+			const selected = this.items.filter((it) => it.selected && it.status === 'pending');
 			if (selected.length === 0) return;
 			const results: ImportResult[] = selected.map((it) => ({
 				title: it.title,
 				durationMinutes: this.defaultDuration,
 				subtasks: it.subtasks.length > 0 ? it.subtasks : undefined,
+				sourcePath: this.selectedFilePath,
+				sourceLine: it.line,
+				sourceOccurrence: it.occurrence,
 			}));
 			this.onImport(results);
 			this.close();
@@ -109,6 +126,7 @@ export class ImportModal extends Modal {
 			const row = this.listEl.createDiv({ cls: 'vw-import-item' });
 			const cb = row.createEl('input', { attr: { type: 'checkbox' } }) as HTMLInputElement;
 			cb.checked = item.selected;
+			cb.disabled = item.status === 'completed';
 			cb.addEventListener('change', () => { item.selected = cb.checked; });
 
 			const label = row.createSpan({ text: item.title });

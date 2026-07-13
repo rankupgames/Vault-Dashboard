@@ -77,6 +77,25 @@ export class FuzzySuggestModal<T> extends Modal {
 	}
 }
 
+/** Minimal Obsidian settings tab surface used to exercise section orchestration. */
+export class PluginSettingTab {
+	/** Application dependency supplied to the settings tab. */
+	app: unknown;
+	/** DOM root that settings renderers populate during tests. */
+	containerEl: HTMLElement;
+
+	/** Creates a test settings surface without loading the real Obsidian runtime. */
+	constructor(app: unknown, _plugin: unknown) {
+		this.app = app;
+		this.containerEl = document.createElement('div');
+	}
+
+	/** Provides the overridable display contract exposed by Obsidian. */
+	display(): void {
+		// Test shim.
+	}
+}
+
 export class Notice {
 	message: string;
 

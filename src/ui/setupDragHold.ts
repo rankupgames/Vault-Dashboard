@@ -56,6 +56,7 @@ export const setupDragHold = (opts: DragHoldOpts): (() => void) => {
 	};
 
 	const onDragStartEvt = (e: DragEvent): void => {
+		if (e.target !== draggable) return;
 		if (dragArmed === false || draggable.getAttribute('draggable') !== 'true') { e.preventDefault(); return; }
 		dragArmed = false;
 		draggable.classList.remove('vw-drag-ready');

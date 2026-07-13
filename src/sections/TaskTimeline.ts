@@ -8,7 +8,7 @@
  */
 
 import { Notice, setIcon, TFile, type App } from 'obsidian';
-import type { PluginSettings, Task } from '../core/types';
+import type { LinkedReference, PluginSettings, Task } from '../core/types';
 import type { TimerEngine } from '../core/TimerEngine';
 import type { TaskManager } from '../core/TaskManager';
 import { SubtaskTree, type SubtreeViewState } from './SubtaskTree';
@@ -25,6 +25,7 @@ import { DropZone } from '../ui/DropZone';
 import { setupDragHold } from '../ui/setupDragHold';
 import { TaskParser } from '../services/TaskParser';
 import type { SectionRenderer, SectionZone } from '../interfaces/SectionRenderer';
+import type { TodoSyncService } from '../services/TodoSyncService';
 
 /** View state for the task timeline (collapse, archive, filters). */
 export interface TimelineViewState {
@@ -68,6 +69,10 @@ export interface TaskTimelineDeps {
 	viewState: TimelineViewState;
 	subtreeViewState: SubtreeViewState;
 	aiDispatcher: IAIDispatcher;
+	/** Canonical external source registry used for task source navigation. */
+	references: LinkedReference[];
+	/** Canonical TODO importer shared with automatic Vault synchronization. */
+	todoSyncService: TodoSyncService;
 	/** Switches between list and board view modes. */
 	onSwitchView?: (mode: 'list' | 'board') => void;
 	/** When set, shows only tasks from this category with a back button. */
@@ -206,7 +211,12 @@ export class TaskTimeline implements SectionRenderer {
 				aiOrderBtn.setAttribute('aria-label', 'AI auto-order tasks');
 				aiOrderBtn.setAttribute('tabindex', '0');
 				aiOrderBtn.addEventListener('click', async () => {
-					const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
+					const ctx = await gatherContext(
+						this.deps.taskManager,
+						this.deps.app,
+						this.deps.references,
+						{ type: 'global' },
+					);
 					const prompt = composePrompt('order', ctx);
 					const recordId = await this.deps.aiDispatcher.dispatch(this.deps.app, this.deps.settings, 'order', prompt);
 					if (recordId === '') return;
@@ -234,14 +244,23 @@ export class TaskTimeline implements SectionRenderer {
 		importBtn.addEventListener('click', () => {
 			new ImportModal(this.deps.app, (results) => {
 				const importCat = this.deps.categoryFilter ?? 'default-general';
-				for (const r of results) {
-					const task = this.deps.taskManager.addTask(r.title, r.durationMinutes);
-					if (r.subtasks) {
-						this.deps.taskManager.replaceSubtasks(task.id, r.subtasks);
-					}
-					this.deps.taskManager.assignTaskCategory(task.id, importCat);
-				}
-				this.deps.onRenderAll();
+				const imports = results.map((result) =>
+					this.deps.todoSyncService.importTodo({
+						title: result.title,
+						subtasks: result.subtasks ?? [],
+						sourcePath: result.sourcePath,
+						sourceLine: result.sourceLine,
+						sourceOccurrence: result.sourceOccurrence,
+						durationMinutes: result.durationMinutes,
+						categoryId: importCat,
+					}),
+				);
+				void Promise.all(imports)
+					.then(() => this.deps.onRenderAll())
+					.catch((error) => {
+						console.error('[Vaultboard] manual TODO import failed:', error);
+						new Notice('Manual TODO import failed. Check the developer console for details.');
+					});
 			}).open();
 		});
 
@@ -563,6 +582,30 @@ export class TaskTimeline implements SectionRenderer {
 				});
 			}
 
+			const sourceReference = this.deps.references.find((reference) =>
+				reference.targetKind === 'task'
+				&& reference.targetId === task.id
+				&& reference.state === 'active',
+			);
+			if (sourceReference !== undefined) {
+				const sourceBadge = row.createDiv({ cls: 'vw-task-docs-badge' });
+				const sourceIcon = sourceBadge.createSpan({ cls: 'vw-task-docs-badge-icon' });
+				setIcon(sourceIcon, 'list-checks');
+				sourceBadge.setAttribute('aria-label', `Open source TODO at ${sourceReference.sourcePath}:${sourceReference.sourceLine}`);
+				sourceBadge.setAttribute('role', 'button');
+				sourceBadge.setAttribute('tabindex', '0');
+				const openSource = (event: Event): void => {
+					event.stopPropagation();
+					void this.deps.app.workspace.openLinkText(sourceReference.sourcePath, '', false);
+				};
+				sourceBadge.addEventListener('click', openSource);
+				sourceBadge.addEventListener('keydown', (event) => {
+					if (event.key !== 'Enter' && event.key !== ' ') return;
+					event.preventDefault();
+					openSource(event);
+				});
+			}
+
 			const actions = row.createDiv({ cls: 'vw-task-actions' });
 			this.renderTaskActions(actions, task);
 
@@ -665,7 +708,12 @@ export class TaskTimeline implements SectionRenderer {
 					const runDelegate = async (): Promise<void> => {
 						this.deps.taskManager.updateTask(task.id, { delegationStatus: 'dispatched' });
 						this.deps.onRenderAll();
-						const ctx = await gatherContext(this.deps.taskManager, this.deps.app);
+						const ctx = await gatherContext(
+							this.deps.taskManager,
+							this.deps.app,
+							this.deps.references,
+							{ type: 'target', targetId: task.id },
+						);
 						const planId = await dispatcher.dispatchPlan(this.deps.app, this.deps.settings, ctx, task);
 						if (planId === '') return;
 

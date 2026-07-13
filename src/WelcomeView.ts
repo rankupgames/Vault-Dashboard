@@ -7,7 +7,7 @@
  * Last Modified: 2026-03-09
  */
 
-import { ItemView, WorkspaceLeaf, setIcon } from 'obsidian';
+import { ItemView, Notice, WorkspaceLeaf, setIcon } from 'obsidian';
 import { ConfirmModal } from './modals/ConfirmModal';
 import { PlanApprovalModal } from './modals/PlanApprovalModal';
 import { VIEW_TYPE_WELCOME, PluginData, Task, ModuleConfig } from './core/types';
@@ -36,6 +36,8 @@ import { ModuleCard } from './modules/ModuleCard';
 import { ModuleRegistry } from './modules/ModuleRegistry';
 import { generateHeatmapShades, generateBranchShades } from './core/ColorUtils';
 import type { SectionRenderer, SectionZone } from './interfaces/SectionRenderer';
+import type { TodoSyncService } from './services/TodoSyncService';
+import { composeAITaskExecutionPrompt } from './services/AITaskCurator';
 
 const ORPHAN_POPOVER_SELECTORS = '.vw-export-menu, .vw-tag-dropdown-menu, .vw-docs-popover, .vw-heatmap-tooltip';
 
@@ -50,6 +52,7 @@ export class WelcomeView extends ItemView {
 	private eventBus: EventBus;
 	private moduleRegistry: ModuleRegistry;
 	private aiDispatcher: IAIDispatcher;
+	private todoSyncService: TodoSyncService;
 	private sections: SectionRenderer[] = [];
 	private timerSection: TimerSection | null = null;
 	private quickAccessModule: QuickAccessModule | null = null;
@@ -74,6 +77,7 @@ export class WelcomeView extends ItemView {
 		eventBus: EventBus,
 		moduleRegistry: ModuleRegistry,
 		aiDispatcher: IAIDispatcher,
+		todoSyncService: TodoSyncService,
 		popoutMiniTimer?: () => void,
 	) {
 		super(leaf);
@@ -85,6 +89,7 @@ export class WelcomeView extends ItemView {
 		this.eventBus = eventBus;
 		this.moduleRegistry = moduleRegistry;
 		this.aiDispatcher = aiDispatcher;
+		this.todoSyncService = todoSyncService;
 		this.popoutMiniTimer = popoutMiniTimer ?? null;
 	}
 
@@ -333,6 +338,7 @@ export class WelcomeView extends ItemView {
 				saveCallback: this.saveCallback,
 				settings: this.data.settings,
 				onEditTask: (task) => this.openEditTaskModal(task),
+				onStartAITask: (task) => this.launchAITask(task, timer),
 				onSwitchView: (mode) => { this.viewMode = mode; this.activeCategoryId = null; this.renderAll(); },
 				onEnterCategory: (catId) => {
 					this.activeCategoryId = catId;
@@ -340,6 +346,7 @@ export class WelcomeView extends ItemView {
 					this.renderAll();
 				},
 				aiDispatcher: this.aiDispatcher,
+				references: this.data.references,
 			});
 			return [timer, heatmap, board];
 		}
@@ -355,12 +362,48 @@ export class WelcomeView extends ItemView {
 			viewState: this.timelineViewState,
 			subtreeViewState: this.subtreeViewState,
 			aiDispatcher: this.aiDispatcher,
+			references: this.data.references,
+			todoSyncService: this.todoSyncService,
 			onSwitchView: (mode) => { this.viewMode = mode; this.activeCategoryId = null; this.renderAll(); },
 			categoryFilter: this.activeCategoryId,
 			onBackToBoard: () => { this.viewMode = 'board'; this.activeCategoryId = null; this.renderAll(); },
 		});
 
 		return [timer, heatmap, timeline];
+	}
+
+	/** Starts a curated task, then opens its exact project root in an IDE and interactive AI session. */
+	private launchAITask(task: Task, timer: TimerSection): void {
+		const workingDirectory = task.workingDirectory?.trim();
+		if (workingDirectory === undefined || workingDirectory.length === 0) {
+			new Notice('Set this AI task\'s project root before starting a session.');
+			return;
+		}
+		if (this.data.settings.aiTool !== 'codex-cli' && this.data.settings.aiTool !== 'claude-code') {
+			new Notice('Interactive task sessions require Codex CLI or Claude Code in Settings > AI Integration.');
+			return;
+		}
+
+		let prompt: string;
+		try {
+			const vaultRoot = (this.app.vault.adapter as { basePath?: string }).basePath ?? '';
+			prompt = composeAITaskExecutionPrompt(task, this.data.settings, vaultRoot);
+		} catch (error) {
+			new Notice(error instanceof Error ? error.message : 'Could not prepare the AI task session.');
+			return;
+		}
+
+		timer.handleStartTask(task, () => {
+			try {
+				this.aiDispatcher.openInteractiveTaskSession(this.data.settings, workingDirectory, prompt);
+				if (this.data.settings.postDispatchIDE !== 'none') {
+					this.aiDispatcher.openIDE(workingDirectory, this.data.settings.postDispatchIDE);
+				}
+				new Notice(`Started ${task.title} and opened a new AI session.`);
+			} catch (error) {
+				new Notice(error instanceof Error ? error.message : 'Could not open the AI task session.');
+			}
+		});
 	}
 
 	/** Renders the collapsible module panel with drag-to-reorder and collapse controls. */
@@ -556,7 +599,12 @@ export class WelcomeView extends ItemView {
 			this.renderAll();
 
 			const runRetry = async (): Promise<void> => {
-				const ctx = await gatherContext(this.taskManager, this.app);
+				const ctx = await gatherContext(
+					this.taskManager,
+					this.app,
+					this.data.references,
+					{ type: 'target', targetId: task.id },
+				);
 				const planId = await dispatcher.dispatchPlan(this.app, this.data.settings, ctx, task);
 				if (planId === '') {
 					this.taskManager.updateTask(task.id, { delegationStatus: 'failed', delegationFeedback: 'Retry failed to start' });

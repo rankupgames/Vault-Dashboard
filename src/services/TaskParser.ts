@@ -15,11 +15,13 @@ export interface ParsedChecklistItem {
 	title: string;
 	/** Completion status derived from the checkbox marker. */
 	status: 'pending' | 'completed';
+	/** 1-based source line number. */
+	line: number;
 	/** Nested subtasks built from indented children. */
 	subtasks: SubTask[];
 }
 
-const CHECKLIST_RE = /^(\s*)- \[( |x)\]\s+(.+)/;
+const CHECKLIST_RE = /^(\s*)- \[( |x|X)\]\s+(.+)/;
 
 const makeId = (): string =>
 	`p_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 6)}`;
@@ -40,7 +42,7 @@ export class TaskParser {
 		let stack: StackEntry[] = [];
 		let currentItem: ParsedChecklistItem | null = null;
 
-		for (const line of lines) {
+		for (const [lineIndex, line] of lines.entries()) {
 			const match = line.match(CHECKLIST_RE);
 			if (match === null) {
 				currentItem = null;
@@ -49,11 +51,11 @@ export class TaskParser {
 			}
 
 			const indent = match[1].length;
-			const status: 'pending' | 'completed' = match[2] === 'x' ? 'completed' : 'pending';
+			const status: 'pending' | 'completed' = match[2].toLowerCase() === 'x' ? 'completed' : 'pending';
 			const title = match[3].trim();
 
 			if (indent === 0 || currentItem === null) {
-				currentItem = { title, status, subtasks: [] };
+				currentItem = { title, status, line: lineIndex + 1, subtasks: [] };
 				items.push(currentItem);
 				stack = [{ indent, children: currentItem.subtasks }];
 				continue;

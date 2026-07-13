@@ -44,6 +44,11 @@ export interface IAIDispatcher {
 	rejectPlan(planId: string): void;
 	/** Opens the configured terminal application at a vault path. */
 	openTerminal(vaultPath: string, terminalApp: 'ghostty' | 'terminal'): void;
+	/**
+	 * Requests a new interactive task session using the configured provider and terminal.
+	 * A successful return means launch was requested; synchronous validation failures throw.
+	 */
+	openInteractiveTaskSession(settings: PluginSettings, workingDirectory: string, prompt: string): void;
 	/** Opens a directory in the configured editor. */
 	openIDE(workingDirectory: string, ide: 'cursor' | 'vscode'): void;
 	/** Terminates every tracked local provider process. */

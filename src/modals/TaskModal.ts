@@ -512,7 +512,14 @@ export class TaskModal extends Modal {
 					return;
 				}
 				aiBtn.disabled = true;
-				const ctx = await gatherContext(this.taskManager, this.app);
+				const ctx = await gatherContext(
+					this.taskManager,
+					this.app,
+					[],
+					this.task === null
+						? { type: 'global' }
+						: { type: 'target', targetId: this.task.id },
+				);
 				let added = 0;
 				for (const docPath of ctx.linkedDocContents.keys()) {
 					if (this.pendingLinkedDocs.includes(docPath) === false) {

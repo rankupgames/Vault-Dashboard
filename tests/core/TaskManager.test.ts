@@ -430,6 +430,27 @@ describe('TaskManager', () => {
 		});
 	});
 
+	describe('AI Tasks category invariants', () => {
+		it('restores the canonical immutable intake category and refuses to rename it', () => {
+			const settings = makeSettings();
+			settings.taskCategories = [
+				{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
+				{ id: 'default-general', name: 'General', order: 1, isDefault: true },
+				{ id: 'default-ai-tasks', name: 'Mutable imports', order: 2, dailyReset: true },
+			];
+			const manager = new TaskManager([], [], settings);
+
+			manager.ensureDefaultCategories();
+			manager.renameCategory('default-ai-tasks', 'Renamed');
+
+			expect(settings.taskCategories.find((category) => category.id === 'default-ai-tasks')).toMatchObject({
+				name: 'AI Tasks',
+				isDefault: true,
+				dailyReset: undefined,
+			});
+		});
+	});
+
 	describe('getAverageAccuracy', () => {
 		it('returns 100% when no completed tasks', () => {
 			const result = mgr.getAverageAccuracy();

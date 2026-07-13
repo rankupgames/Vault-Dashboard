@@ -7,6 +7,9 @@
  * Last Modified: 2026-05-16
  */
 
+/** Immutable identifier for external AI-authored task intake. */
+export const AI_TASKS_CATEGORY_ID = 'default-ai-tasks';
+
 /** A named category for grouping tasks in the board view. */
 export interface TaskCategory {
 	/** Unique identifier. */
@@ -23,6 +26,13 @@ export interface TaskCategory {
 	dailyReset?: boolean;
 }
 
+/** Canonical built-in task categories restored during settings migration. */
+export const DEFAULT_TASK_CATEGORIES: readonly TaskCategory[] = [
+	{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
+	{ id: 'default-general', name: 'General', order: 1, isDefault: true },
+	{ id: AI_TASKS_CATEGORY_ID, name: 'AI Tasks', order: 2, isDefault: true },
+];
+
 /** A subtask within a parent task, supporting nested hierarchy. */
 export interface SubTask {
 	/** Unique identifier. */
@@ -33,6 +43,50 @@ export interface SubTask {
 	status: 'pending' | 'completed';
 	/** Optional nested subtasks. */
 	subtasks?: SubTask[];
+}
+
+/** Audit metadata proving how an external vault agent authored a task from source TODOs. */
+export interface AITaskAttribution {
+	/** Stable identifier supplied by the external manifest. */
+	manifestId: string;
+	/** Vault-relative path of the immutable manifest that created this task. */
+	manifestPath: string;
+	/** Session identifier supplied by the external agent. */
+	sessionId: string;
+	/** Freeform external agent or provider name. */
+	agent: string;
+	/** Optional model name supplied by the external agent. */
+	model: string;
+	/** Manifest creation timestamp in milliseconds. */
+	createdAt: number;
+	/** Optional Vault-relative note or reference with additional session context. */
+	moreInfo?: string;
+	/** Original dashboard task identifiers represented by this theme. */
+	sourceTaskIds: string[];
+	/** Canonical checklist reference identifiers represented by this theme. */
+	sourceReferenceIds: string[];
+	/** Vault-relative source note paths represented by this theme. */
+	sourcePaths: string[];
+	/** Skills requested for later interactive execution. */
+	skills: string[];
+	/** Execution capabilities requested for later interactive execution. */
+	tools: string[];
+}
+
+/** Persistent receipt used to make external AI task manifest ingestion immutable and idempotent. */
+export interface AITaskManifestReceipt {
+	/** Stable manifest identifier supplied by the external agent. */
+	manifestId: string;
+	/** Vault-relative inbox file path that was ingested. */
+	manifestPath: string;
+	/** Deterministic fingerprint of the validated manifest. */
+	fingerprint: string;
+	/** Time the manifest was applied to Vaultboard, in milliseconds. */
+	ingestedAt: number;
+	/** Original task identities consumed by this manifest. */
+	sourceTaskIds: string[];
+	/** Surviving themed task identities created by this manifest. */
+	taskIds: string[];
 }
 
 /** A task with timing, status, subtasks, and optional metadata. */
@@ -77,8 +131,35 @@ export interface Task {
 	delegationFeedback?: string;
 	/** AI dispatch records attached to this task. Archived alongside the task. */
 	dispatchRecords?: DispatchHistoryEntry[];
+	/** Provenance for a theme task authored through an external vault manifest. */
+	aiAttribution?: AITaskAttribution;
 	/** Category this task belongs to (uncategorized if absent). */
 	categoryId?: string;
+}
+
+/** Lifecycle state for a canonical external reference. */
+export type LinkedReferenceState = 'active' | 'retired';
+
+/** One normalized link from an external source to a Vaultboard entity. */
+export interface LinkedReference {
+	/** Stable reference identifier. */
+	id: string;
+	/** External source type. */
+	kind: 'vault-checklist';
+	/** Vaultboard entity type addressed by this reference. */
+	targetKind: 'task';
+	/** Vaultboard entity identifier addressed by this reference. */
+	targetId: string;
+	/** Vault-relative source note path. */
+	sourcePath: string;
+	/** Current 1-based source line. */
+	sourceLine: number;
+	/** Last observed checklist text, used to survive line movement. */
+	sourceText: string;
+	/** Zero-based occurrence among identical checklist titles in the note. */
+	sourceOccurrence: number;
+	/** Whether the source checklist is currently pending. */
+	state: LinkedReferenceState;
 }
 
 /** Reusable task template for quick creation. */
@@ -393,7 +474,11 @@ export interface PluginSettings {
 	aiAutoOrder: boolean;
 	/** AI delegation feature. */
 	aiDelegation: boolean;
-	/** Skip interactive permission prompts when dispatching to AI CLI tools. */
+	/** Skills attached to AI-authored task execution context. */
+	aiTaskSkills: string[];
+	/** Honest execution capabilities attached to AI-authored task context. */
+	aiTaskTools: string[];
+	/** Dangerously bypass local provider sandbox or permission safeguards. */
 	aiSkipPermissions: boolean;
 	/** Preferred terminal app for dispatch take-over. */
 	terminalApp: 'ghostty' | 'terminal';
@@ -409,6 +494,14 @@ export interface PluginSettings {
 	showConfirmDialogs: boolean;
 	/** Days after which completed tasks auto-archive (0 = disabled). */
 	autoArchiveDays: number;
+	/** Automatically import pending Markdown checklists from the configured Vault folder. */
+	autoImportTodos: boolean;
+	/** Vault-relative folder scanned for automatic TODO imports; blank scans all Markdown notes. */
+	todoSourceFolder: string;
+	/** Default duration assigned to automatically imported TODOs. */
+	todoDefaultDurationMinutes: number;
+	/** Compatibility field fixed to the immutable AI Tasks intake category. */
+	todoCategoryId: string;
 	/** Base folder for all plugin-generated output (prompts, attachments, documents). */
 	outputFolder: string;
 	/** Task category definitions for the board view. */
@@ -462,6 +555,10 @@ export interface PluginData {
 	lastDashboardOpenedAt: number;
 	/** Persisted AI dispatch history. */
 	dispatchHistory: DispatchHistoryEntry[];
+	/** Canonical external references used for deduplication and source navigation. */
+	references: LinkedReference[];
+	/** Successfully applied external AI task manifests. */
+	aiTaskManifestReceipts: AITaskManifestReceipt[];
 	/** Last known screen position of the mini timer popout (null = use default). */
 	miniTimerPosition: { x: number; y: number } | null;
 }
@@ -645,6 +742,8 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	aiAutoOrganize: false,
 	aiAutoOrder: false,
 	aiDelegation: false,
+	aiTaskSkills: ['curate-ai-tasks'],
+	aiTaskTools: ['read-files', 'edit-files', 'run-checks'],
 	aiSkipPermissions: false,
 	terminalApp: 'ghostty',
 	postDispatchIDE: 'cursor',
@@ -653,11 +752,12 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	enableImageAttachments: true,
 	showConfirmDialogs: true,
 	autoArchiveDays: 0,
+	autoImportTodos: false,
+	todoSourceFolder: '',
+	todoDefaultDurationMinutes: 30,
+	todoCategoryId: AI_TASKS_CATEGORY_ID,
 	outputFolder: '_Vaultboard',
-	taskCategories: [
-		{ id: 'default-daily', name: 'Daily Tasks', order: 0, isDefault: true, dailyReset: true },
-		{ id: 'default-general', name: 'General', order: 1, isDefault: true },
-	],
+	taskCategories: DEFAULT_TASK_CATEGORIES.map((category) => ({ ...category })),
 	activeCategoryId: null,
 	modulesCollapsed: false,
 };
@@ -670,6 +770,8 @@ export const DEFAULT_DATA: PluginData = {
 	timerState: DEFAULT_TIMER_STATE,
 	lastDashboardOpenedAt: 0,
 	dispatchHistory: [],
+	references: [],
+	aiTaskManifestReceipts: [],
 	miniTimerPosition: null,
 };
 
