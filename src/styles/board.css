@@ -224,10 +224,6 @@
 	pointer-events: auto;
 }
 
-.vw-board-task-archive:focus {
-	display: flex;
-}
-
 .vw-board-task-archive:hover {
 	color: var(--text-normal);
 	background: var(--background-modifier-hover);

@@ -58,7 +58,6 @@ const ACTION_LABELS: Record<AIAction, string> = {
 	order: 'AI Auto-Order',
 	'create-doc': 'AI Create Doc',
 	delegate: 'AI Delegate',
-	'curate-tasks': 'AI Task Curator',
 };
 
 /** Human-readable labels for configured providers shown in dispatch notices. */
