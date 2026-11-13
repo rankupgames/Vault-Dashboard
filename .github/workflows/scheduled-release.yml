@@ -11,6 +11,7 @@ concurrency:
 
 permissions:
   contents: write
+  statuses: read
 
 jobs:
   release:
@@ -21,37 +22,25 @@ jobs:
           ref: main
           fetch-depth: 0
 
+      # Scheduled and manual runs use the same check. No unreleased change is a successful skip.
       - name: Check for non-bot changes since last release
         id: changes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Manual trigger — building regardless"
-            exit 0
-          fi
+        run: bash scripts/release-changes.sh
 
-          LAST_TAG=$(gh release list --limit 1 --json tagName -q '.[0].tagName' 2>/dev/null || echo "")
-
-          if [ -z "$LAST_TAG" ]; then
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::No previous release found — will release"
-            exit 0
-          fi
-
-          echo "::notice::Comparing against last release $LAST_TAG"
-
-          BOT_EMAIL="github-actions[bot]@users.noreply.github.com"
-          REAL_COMMITS=$(git log "${LAST_TAG}..HEAD" --format='%ae' | grep -cv "$BOT_EMAIL" || true)
-
-          if [ "$REAL_COMMITS" -eq 0 ]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "::notice::No non-bot changes since $LAST_TAG — skipping"
-          else
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Found $REAL_COMMITS non-bot commit(s) since $LAST_TAG"
-          fi
+      # Download only the artifacts from the trusted reporter's exact successful build.
+      - name: Fetch Jenkins release files
+        if: steps.changes.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JENKINS_URL: ${{ vars.HOMELAB_JENKINS_URL }}
+          JENKINS_REPORTER_ID: ${{ vars.JENKINS_REPORTER_ID }}
+          JENKINS_USER: ${{ secrets.JENKINS_READER_USER }}
+          JENKINS_TOKEN: ${{ secrets.JENKINS_READER_TOKEN }}
+          CF_ACCESS_CLIENT_ID: ${{ secrets.CF_ACCESS_CLIENT_ID }}
+          CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
+        run: python3 scripts/fetch-release-artifacts.py
 
       - name: Bump version
         if: steps.changes.outputs.skip != 'true'
@@ -79,31 +68,6 @@ jobs:
             m.version = v;
             fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
           " "$NEW_VERSION"
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: steps.changes.outputs.skip != 'true'
-        with:
-          node-version: "20.x"
-
-      - name: Use npm with release-age enforcement
-        if: steps.changes.outputs.skip != 'true'
-        run: npm install --global npm@11.14.1
-
-      - name: Install dependencies
-        if: steps.changes.outputs.skip != 'true'
-        run: npm ci
-
-      - name: Lint
-        if: steps.changes.outputs.skip != 'true'
-        run: npm run lint
-
-      - name: Test
-        if: steps.changes.outputs.skip != 'true'
-        run: npm test
-
-      - name: Build
-        if: steps.changes.outputs.skip != 'true'
-        run: npm run build
 
       - name: Tag and release
         if: steps.changes.outputs.skip != 'true'

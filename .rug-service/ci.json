@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "runtime": {
+    "schemaVersion": 1,
+    "source": "https://config.rankupgames.cloud",
+    "version": "1.0.4",
+    "sha256": "eaa57bd910a74e296249b6c1e573f5c2ae980c51460bdba20c8f0cd5dd60d405",
+    "components": ["ci-runtime"]
+  },
+  "checkCommand": "bash scripts/ci-check.sh",
+  "cleanupCommand": "",
+  "artifacts": "main.js,manifest.json,styles.css"
+}
