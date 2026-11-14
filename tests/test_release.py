@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -80,6 +81,9 @@ class ArtifactDownload(unittest.TestCase):
             return source if args[0] == "git" else json.dumps([[status]])
 
         def open_request(request, **kwargs):
+            # The gateway rejects urllib's default identity before Access evaluates the credentials.
+            if request.get_header("User-agent", "Python-urllib").startswith("Python-urllib"):
+                raise HTTPError(request.full_url, 403, "Gateway rejected default User-Agent", {}, None)
             response = io.BytesIO(json.dumps(metadata).encode() if "/api/json?" in request.full_url
                                   else payloads[request.full_url.rsplit("/", 1)[1]])
             response.status = 200

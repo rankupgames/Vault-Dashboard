@@ -45,6 +45,7 @@ def fetch_artifacts():
         raise SystemExit("Jenkins artifact reader and Cloudflare Access credentials are required.")
     identity = os.environ["JENKINS_USER"] + ":" + os.environ["JENKINS_TOKEN"]
     headers = {
+        "User-Agent": "Vaultboard-Release/1.0",
         "Authorization": "Basic " + base64.b64encode(identity.encode()).decode(),
         "CF-Access-Client-Id": os.environ["CF_ACCESS_CLIENT_ID"],
         "CF-Access-Client-Secret": os.environ["CF_ACCESS_CLIENT_SECRET"],
