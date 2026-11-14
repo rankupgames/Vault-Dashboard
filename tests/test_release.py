@@ -1,4 +1,4 @@
-"""Release boundary regressions, run on the admitted Jenkins worker."""
+"""Release boundary regressions for local checks and Jenkins."""
 import importlib.util
 import io
 import json
