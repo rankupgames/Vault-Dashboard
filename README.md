@@ -250,6 +250,8 @@ Only pending top-level `- [ ]` checklist items become tasks. Nested items become
 
 ## Installation
 
+Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/rankupgames/Vault-Dashboard/releases/latest). Place the files in your vault's `.obsidian/plugins/vaultboard` folder, then enable **Vaultboard** in Community Plugins.
+
 ### From Source
 
 ```bash
@@ -274,6 +276,10 @@ npm run dev    # Watch mode -- rebuilds on save
 ```
 
 Reload Obsidian with `Cmd+R` (macOS) or `Ctrl+R` (Windows/Linux) after changes.
+
+### Releases
+
+Set the next version in `manifest.json`, `package.json`, and `package-lock.json` in the release PR. Update `versions.json` when the minimum Obsidian version changes. Once Jenkins passes on `main`, the Weekly Release workflow can publish that commit and its three plugin files on schedule or by manual dispatch.
 
 ## Roadmap
 

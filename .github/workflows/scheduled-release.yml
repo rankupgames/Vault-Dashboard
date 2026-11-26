@@ -15,23 +15,24 @@ permissions:
 
 jobs:
   release:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          ref: main
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
-      # Scheduled and manual runs use the same check. No unreleased change is a successful skip.
-      - name: Check for non-bot changes since last release
-        id: changes
+      # The version comes from the manifest merged through a pull request.
+      - name: Select unreleased manifest version
+        id: release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash scripts/release-changes.sh
+        run: python3 scripts/release-version.py
 
       # Download only the artifacts from the trusted reporter's exact successful build.
       - name: Fetch Jenkins release files
-        if: steps.changes.outputs.skip != 'true'
+        if: steps.release.outputs.version != ''
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JENKINS_URL: ${{ vars.HOMELAB_JENKINS_URL }}
@@ -42,76 +43,14 @@ jobs:
           CF_ACCESS_CLIENT_SECRET: ${{ secrets.CF_ACCESS_CLIENT_SECRET }}
         run: python3 scripts/fetch-release-artifacts.py
 
-      - name: Bump version
-        if: steps.changes.outputs.skip != 'true'
-        id: bump
-        run: |
-          NEW_VERSION=$(node -e "
-            const fs = require('fs');
-            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
-            const [major, minor, patch] = m.version.split('.');
-            const buildNum = patch.length > 6 ? parseInt(patch.slice(0, -6), 10) : 0;
-            const next = (isNaN(buildNum) ? 0 : buildNum) + 1;
-            const d = new Date();
-            const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-            const dd = String(d.getUTCDate()).padStart(2, '0');
-            const yy = String(d.getUTCFullYear()).slice(-2);
-            process.stdout.write(major + '.' + minor + '.' + next + mm + dd + yy);
-          ")
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "::notice::Bumped version to $NEW_VERSION"
-
-          node -e "
-            const fs = require('fs');
-            const v = process.argv[1];
-            const m = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
-            m.version = v;
-            fs.writeFileSync('manifest.json', JSON.stringify(m, null, 2) + '\n');
-          " "$NEW_VERSION"
-
       - name: Tag and release
-        if: steps.changes.outputs.skip != 'true'
+        if: steps.release.outputs.version != ''
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.bump.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
         run: |
-          node -e "
-            const fs = require('fs');
-            const v = process.env.VERSION;
-
-            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
-            pkg.version = v;
-            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
-
-            const lockPath = 'package-lock.json';
-            if (fs.existsSync(lockPath)) {
-              const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
-              lock.version = v;
-              if (lock.packages && lock.packages['']) lock.packages[''].version = v;
-              fs.writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
-            }
-
-            const manifest = JSON.parse(fs.readFileSync('manifest.json', 'utf8'));
-            const versions = JSON.parse(fs.readFileSync('versions.json', 'utf8'));
-            if (versions[v] === undefined) {
-              versions[v] = manifest.minAppVersion;
-              fs.writeFileSync('versions.json', JSON.stringify(versions, null, '\t') + '\n');
-            }
-          "
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add manifest.json package.json package-lock.json versions.json
-          if ! git diff --cached --quiet; then
-            git commit -m "chore: bump version to $VERSION"
-            git push origin HEAD
-          fi
-
-          git tag "$VERSION"
-          git push origin "$VERSION"
-
-          gh release create "$VERSION" \
+          git push origin "HEAD:refs/tags/$VERSION"
+          gh release create "$VERSION" --verify-tag --latest \
             --title="$VERSION" \
             --generate-notes \
             main.js manifest.json styles.css
