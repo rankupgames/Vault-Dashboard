@@ -15,51 +15,42 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("release_artifacts", ROOT / "scripts/fetch-release-artifacts.py")
 artifacts = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(artifacts)
+version_spec = importlib.util.spec_from_file_location("release_version", ROOT / "scripts/release-version.py")
+release_version = importlib.util.module_from_spec(version_spec)
+version_spec.loader.exec_module(release_version)
 
 
-class ReleaseChanges(unittest.TestCase):
-    def test_release_decisions_and_errors(self):
-        # Real git history catches the old [bot] regex bug and missing-tag errors.
-        with tempfile.TemporaryDirectory() as directory:
+class ReleaseVersion(unittest.TestCase):
+    def test_only_unreleased_manifest_versions_are_selected(self):
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(release_version, "Path") as paths, \
+                patch.object(release_version.subprocess, "check_output") as api:
             root = Path(directory)
             output = root / "output"
-            gh = root / "gh"
-            gh.write_text('#!/bin/sh\nprintf "%s" "$FIXTURE_TAG"\nexit "$FIXTURE_API_EXIT"\n')
-            gh.chmod(0o700)
-            env = dict(os.environ, PATH=f"{root}:{os.environ['PATH']}", GITHUB_OUTPUT=str(output),
-                       FIXTURE_TAG="v1", FIXTURE_API_EXIT="0")
+            manifest = root / "manifest.json"
+            paths.side_effect = lambda name: root / name
+            manifest.write_text('{"version":"1.1.10"}', encoding="utf-8")
+            with patch.dict(os.environ, {"GITHUB_OUTPUT": str(output)}):
+                for latest in ([], [{"tagName": "1.1.9"}]):
+                    api.return_value = json.dumps(latest)
+                    release_version.select_release()
+                    self.assertEqual(output.read_text(), "version=1.1.10\n")
+                    output.unlink()
 
-            def git(*args):
-                subprocess.run(["git", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", *args],
-                               cwd=root, check=True, capture_output=True)
+                api.return_value = '[{"tagName":"1.1.10"}]'
+                release_version.select_release()
+                self.assertFalse(output.exists())
 
-            def commit(email):
-                git("-c", "user.name=Fixture", "-c", f"user.email={email}",
-                    "commit", "--allow-empty", "-m", "fixture")
+                for tag in ("1.1.11", "1.1.9-beta"):
+                    api.return_value = json.dumps([{"tagName": tag}])
+                    with self.assertRaises(SystemExit):
+                        release_version.select_release()
+                    self.assertFalse(output.exists())
 
-            def run():
-                output.write_text("")
-                return subprocess.run(["bash", str(ROOT / "scripts/release-changes.sh")],
-                                      cwd=root, env=env, capture_output=True)
-
-            git("init", "--quiet")
-            commit("fixture@example.invalid")
-            git("tag", "v1")
-            for email in (None, "github-actions[bot]@users.noreply.github.com"):
-                if email:
-                    commit(email)
-                self.assertEqual(run().returncode, 0)
-                self.assertEqual(output.read_text(), "skip=true\n")
-            commit("fixture@example.invalid")
-            self.assertEqual(run().returncode, 0)
-            self.assertEqual(output.read_text(), "skip=false\n")
-            env["FIXTURE_TAG"] = ""
-            self.assertEqual(run().returncode, 0)
-            self.assertEqual(output.read_text(), "skip=false\n")
-            for tag, api_exit in (("missing-tag", "0"), ("v1", "1")):
-                env.update(FIXTURE_TAG=tag, FIXTURE_API_EXIT=api_exit)
-                self.assertNotEqual(run().returncode, 0)
-                self.assertEqual(output.read_text(), "")
+                api.side_effect = subprocess.CalledProcessError(1, "gh")
+                with self.assertRaises(subprocess.CalledProcessError):
+                    release_version.select_release()
+                self.assertFalse(output.exists())
 
 
 class ArtifactDownload(unittest.TestCase):
